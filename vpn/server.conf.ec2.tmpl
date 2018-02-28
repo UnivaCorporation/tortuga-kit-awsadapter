@@ -1,0 +1,22 @@
+port 1194
+proto udp
+dev tun
+ca /etc/openvpn/ca.crt
+cert /etc/openvpn/server.crt
+key /etc/openvpn/server.key
+dh /etc/openvpn/dh2048.pem
+server @VPN_NETWORK@ @VPN_NETMASK@
+ifconfig-pool-persist ipp.txt
+push "route @REMOTE_NETWORK@ @REMOTE_NETMASK@"
+client-config-dir /etc/openvpn/ccd
+keepalive 10 120
+comp-lzo
+persist-key
+persist-tun
+status openvpn-status.log
+verb 3
+
+route @LOCAL_NETWORK@ @LOCAL_NETMASK@
+route @LOCAL_NETWORK2@ @LOCAL_NETMASK2@
+
+cipher AES-256-CBC

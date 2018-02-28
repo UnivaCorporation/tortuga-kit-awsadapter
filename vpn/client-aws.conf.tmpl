@@ -1,0 +1,14 @@
+client
+dev tun
+proto udp
+remote @remote_ip@ 1194
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+ca /opt/tortuga/etc/CA/ca.pem
+cert /opt/tortuga/etc/certs/openvpn-aws-client/client.crt
+key /opt/tortuga/etc/certs/openvpn-aws-client/client.key
+comp-lzo
+verb 3
+cipher AES-256-CBC

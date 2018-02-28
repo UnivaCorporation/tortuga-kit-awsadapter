@@ -1,0 +1,13 @@
+[Unit]
+Description=AWS resource adapter spot instance support daemon
+After=syslog.target network.target auditd.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/sysconfig/awsspotd
+PIDFile=/var/run/awsspotd.pid
+ExecStart=<%= @instroot -%>/bin/awsspotd $AWSSPOTD_OPTIONS --pidfile /var/run/awsspotd.pid
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

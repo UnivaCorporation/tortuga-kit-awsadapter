@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+
+# Copyright 2008-2018 Univa Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import sys
+import subprocess
+import platform
+import time
+
+### SETTINGS
+
+
+def runCommand(cmd, retries=1):
+    for nRetry in range(retries):
+        p = subprocess.Popen(cmd, shell=True)
+
+        retval = p.wait()
+        if retval == 0:
+            break
+
+        time.sleep(5 + 2 ** (nRetry * 0.75))
+    else:
+        return -1
+
+    return retval
+
+
+def _installPackage(ostype, pkgList, yumopts=None, retries=10):
+    if ostype == 'fedora':
+        cmd = 'dnf'
+    else:
+        cmd = 'yum'
+
+    if yumopts:
+        cmd += ' ' + yumopts
+
+    cmd += ' -y install %s' % (pkgList)
+
+    retval = runCommand(cmd, retries)
+    if retval != 0:
+        raise Exception('Error installing package [%s]' % (pkgList))
+
+
+def installEPEL(vers):
+    epelbaseurl = ('http://dl.fedoraproject.org/pub/epel'
+                   '/epel-release-latest-%s.noarch.rpm' % (vers))
+
+    runCommand('rpm -ivh %s' % (epelbaseurl))
+
+
+def _isPackageInstalled(pkgName):
+    return (runCommand('rpm -q --quiet %s' % (pkgName)) == 0)
+
+
+def installPuppet(ostype, vers):
+    pkgname = 'puppetlabs-release-pc1'
+
+    url = 'http://yum.puppetlabs.com'
+
+    if ostype == 'fedora':
+        url += '/{0}-fedora-{1}.noarch.rpm'.format(pkgname, vers)
+    else:
+        url += '/{0}-el-{1}.noarch.rpm' % (pkgname, vers)
+
+    bRepoInstalled = _isPackageInstalled(pkgname)
+
+    if not bRepoInstalled:
+        retval = runCommand('rpm -ivh %s' % (url), 5)
+        if retval != 0:
+            sys.stderr.write(
+                'Error: unable to install package \"{0}\"\n'.format(pkgname))
+
+            sys.exit(1)
+
+    # Attempt to install puppet
+    if not _isPackageInstalled('puppet-agent'):
+        _installPackage(ostype, 'puppet-agent')
+
+
+def bootstrapPuppet():
+    cmd = ('/opt/puppetlabs/bin/puppet agent'
+           ' --logdest /tmp/puppet_bootstrap.log'
+           ' --onetime --server %s --waitforcert 120' % (installerHostName))
+
+    runCommand(cmd)
+
+
+def main():
+    if override_dns_domain:
+        with open('/etc/resolv.conf', 'w') as fp:
+            fp.write('# Created by Tortuga\n')
+
+            if dns_search is not None:
+                fp.write('search %s\n' % (dns_search))
+
+            if dns_options is not None:
+                fp.write('options %s\n' % (dns_options))
+
+            for dns_nameserver in dns_nameservers:
+                fp.write('nameserver %s\n' % (dns_nameserver))
+
+    runCommand('setenforce permissive')
+
+    vals = platform.dist()
+
+    vers = vals[1].split('.')[0]
+
+    # Install EPEL repository, if necessary
+    if vals[0] != 'fedora' and not _isPackageInstalled('epel-release'):
+        installEPEL(vers)
+
+    with open('/etc/hosts', 'a+') as fp:
+        fp.write('%s\t%s\n' % (installerIpAddress, installerHostName))
+
+    installPuppet(vals[0], vers)
+
+    bootstrapPuppet()
+
+
+if __name__ == '__main__':
+    main()

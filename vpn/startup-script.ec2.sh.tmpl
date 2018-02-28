@@ -1,0 +1,65 @@
+#!/bin/bash
+
+readonly LOCAL_NETWORK="@LOCAL_NETWORK@"
+readonly LOCAL_NETMASK="@LOCAL_NETMASK@"
+
+readonly LOCAL_NETWORK2="@LOCAL_NETWORK2@"
+readonly LOCAL_NETMASK2="@LOCAL_NETMASK2@"
+
+yum -y install openvpn
+
+[[ -d /etc/openvpn ]] || {
+  echo "Error: /etc/openvpn directory does not exist" >&2
+  exit 1
+}
+
+# Cleanup any existing files
+echo -n "Cleaning up any existing OpenVPN files... "
+rm -f /etc/openvpn/{ipp.txt,openvpn-status.log}
+echo "done."
+
+echo "Creating /etc/openvpn/server.key"
+
+cat <<ENDL | base64 -d >/etc/openvpn/server.key
+@server_key@
+ENDL
+
+chmod 0400 /etc/openvpn/server.key
+
+echo "Creating /etc/openvpn/server.crt"
+
+cat <<ENDL | base64 -d >/etc/openvpn/server.crt
+@server_crt@
+ENDL
+
+echo "Creating /etc/openvpn/ca.crt"
+
+cat <<ENDL | base64 -d >/etc/openvpn/ca.crt
+@ca_crt@
+ENDL
+
+echo "Creating /etc/openvpn/server.conf"
+
+cat <<ENDL | base64 -d >/etc/openvpn/server.conf 
+@server_conf@
+ENDL
+
+echo "Creating /etc/openvpn/dh2048.pem"
+
+cat <<ENDL | base64 -d >/etc/openvpn/dh2048.pem 
+@dh2048_pem@
+ENDL
+
+echo "Completing OpenVPN configuration... "
+mkdir /etc/openvpn/ccd
+cat >/etc/openvpn/ccd/client <<ENDL
+iroute ${LOCAL_NETWORK} ${LOCAL_NETMASK}
+iroute ${LOCAL_NETWORK2} ${LOCAL_NETMASK2}
+ENDL
+echo "done."
+
+echo "Enabling IP forwarding... "
+echo 1 > /proc/sys/net/ipv4/ip_forward
+echo "done."
+
+service openvpn start

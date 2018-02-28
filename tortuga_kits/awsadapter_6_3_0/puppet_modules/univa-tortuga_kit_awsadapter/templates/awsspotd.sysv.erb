@@ -1,0 +1,114 @@
+#!/bin/bash
+
+#######################################################################
+##                                                                   ##
+##   Copyright (c) 2011-2017, Univa.  All rights reserved.           ##
+##   Copyright (c) 2010, Univa UD.  All rights reserved.             ##
+##   http://univa.com                                                ##
+##                                                                   ##
+##   License:                                                        ##
+##     Tortuga Draft                                                ##
+##                                                                   ##
+##                                                                   ##
+#######################################################################
+
+#
+#	/etc/rc.d/init.d/awsspotd
+#
+# Starts Tortuga AWS resource adapter spot instance support daemon
+#
+# chkconfig: 345 98 98
+# description: Start Tortuga AWS resource adapter spot instance support daemon
+# processname: awsspotd
+
+### BEGIN INIT INFO
+# Provides: awsspotd
+# Required-Start: $local_fs
+# Required-Stop: $local_fs
+# Default-Start:  2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop Tortuga AWS resource adapter spot instance support daemon
+# Description: start and stop Tortuga AWS resource adapter spot instance support daemon 
+### END INIT INFO
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+[ -f /etc/sysconfig/awsspotd ] && . /etc/sysconfig/awsspotd
+
+# Source tortuga environment
+TORTUGA_ROOT=<%= @instroot %>
+
+. $TORTUGA_ROOT/etc/tortuga.sh
+
+DAEMON_CMD=${TORTUGA_ROOT}/bin/awsspotd
+DAEMON_NAME="Tortuga EC2 Spot Instance service"
+PIDFILE=/var/run/awsspotd.pid
+# For http
+DAEMON_ARGS="--daemon $AWSSPOTD_OPTIONS --pidfile $PIDFILE"
+
+RETVAL=0
+
+#
+# See how we were called.
+#
+
+start() {
+	# Check that we're a privileged user
+	[ `id -u` = 0 ] || exit 4
+	
+	# Check if program is executable
+	test -x ${DAEMON_CMD} || exit 5
+	
+	# Check if it is already running
+        status -p $PIDFILE > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+            echo -n $"Starting $DAEMON_NAME daemon: "	
+	    ${DAEMON_CMD} ${DAEMON_ARGS}
+	    RETVAL=$?
+	    [ $RETVAL -eq 0 ] &&  success $"$DAEMON_NAME startup" || failure $"$DAEMON_NAME startup"
+	    echo
+	fi
+	return $RETVAL
+}
+
+stop() {
+        status -p $PIDFILE > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+	    echo -n $"Stopping $DAEMON_NAME daemon: "
+            PID=`cat $PIDFILE`
+            kill $PID
+	    RETVAL=$?
+	    [ $RETVAL -eq 0 ] && rm -f $PIDFILE && success $"$DAEMON_NAME shutdown" || failure $"$DAEMON_NAME shutdown"
+	    echo
+        fi
+        return $RETVAL
+}
+
+
+restart() {
+	stop
+	start
+}	
+
+case "$1" in
+start)
+	start
+	;;
+stop)
+	stop
+	;;
+restart)
+	restart
+	;;
+status)
+	status -p $PIDFILE $0 
+
+	RETVAL=$?
+	;;
+*)
+	echo $"Usage: $0 {start|stop|status|restart}"
+	RETVAL=2
+esac
+
+exit $RETVAL
