@@ -23,7 +23,15 @@ def get_ec2_region(aws_access_key_id, aws_secret_access_key, region=None):
 
     if not region:
         # Use first region in list ('us-east-1')
-        return regions[0]
+        result = [region for region in regions
+                  if region.name == 'us-east-1']
+
+        if not result:
+            raise ConfigurationError(
+                'Unable to find default region [{}]'.format(
+                    'us-east-1'))
+
+        return result[0]
 
     for tmpregion in regions:
         if str(tmpregion.name) == region:
