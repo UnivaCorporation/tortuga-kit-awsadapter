@@ -9,6 +9,7 @@ to enable support for Amazon Web Services (AWS) in [Tortuga][].
 
 Change to subdirectory containing cloned Git repository and run `build-kit`.
 `build-kit` is provided by the `tortuga-core` package in the [Tortuga][] source.
+Be sure you have activated the tortuga virtual environment as suggested in the [Tortuga build instructions](https://github.com/UnivaCorporation/tortuga#build-instructions) before executing `build-kit`.
 
 ## Installation
 
