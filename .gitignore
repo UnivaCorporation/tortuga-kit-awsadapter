@@ -3,3 +3,4 @@ dist/
 man/**/*.8
 *.egg-info/
 **/puppet_modules/**/pkg/
+.mypy_cache/
