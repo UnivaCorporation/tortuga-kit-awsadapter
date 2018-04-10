@@ -16,7 +16,7 @@ Be sure you have activated the tortuga virtual environment as suggested in the [
 Install the kit:
 
 ```shell
-install-kit kit-oraclecloudadapter*.tar.bz2
+install-kit kit-awsadapter*.tar.bz2
 ```
 
 See the [Tortuga Installation and Administration Guide](https://github.com/UnivaCorporation/tortuga/blob/master/doc/tortuga-6-admin-guide.md) for configuration
