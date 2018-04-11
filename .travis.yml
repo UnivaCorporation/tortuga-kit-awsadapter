@@ -1,0 +1,29 @@
+language: python
+python:
+- '3.6'
+services:
+- docker
+env:
+- TORTUGA_BUILD_DOCKER="true"
+before_install:
+- docker pull puppet/puppet-agent
+install:
+- pip install tox
+- git clone https://github.com/UnivaCorporation/tortuga.git tortuga-base
+- cd tortuga-base/
+- pip install -r requirements.txt
+- paver build
+- cd ../
+- build-kit
+script:
+- echo "Done"
+deploy:
+  provider: releases
+  api_key:
+    secure: gBRuUHF/bvNl9G+NOMQyv13fwYUgz+DkggCRRR/kpMBSH9mQcpdVg2ujqoxCBN31qB/on0GkigBzlcYDrZAxdmjMpvDlWNqJKP40sLxvvoiJ7RxMq9K5ASijNvDRab5DUuQsg17akTi4aBYItwS8SA3LphrPmT7iA4UskSPUcsZEdvbIDe9AlogZq0z/Gc93GFG/rkMsWjzkPCCTXY6Q4vlfLs3yqbUBfNMhzj++aTNEul/n4o56Nh1bjkTWVB4ZH7bSHUflfppK9mRSgtCCG8wJLNKM16hTXJsVR4IF+khXweguVeydk0lW55yS5fPUIG2DyJRJFAiMZPkqFbfkThmpdcRrkSdtHn31+HmzV5XxZ3vv9E+5jGrvJorE/rYORd5TZcfpRDEkr92fleCh/vz/7q0GkFTO6ih0wLWvUYoyfUwHB6j+1aOdngel7uxSJW2ihLmAo2JgcsLEWhTyoWAHgtnJs181XcRadfnGEZHhM+3K5cKNSEAt5UHpHbpFwlvyZMHhB9+X3GyYcNCdn6QFAgL5MpPwjvtsTwn5JepsIPs46nFRw7moaTxgNz8qsacyC59XHsIZo5tMiNbeVH3/cavnpZjGD9CSpy7J7/qX6d1I7Erx9QICjfVJdPH95cMIiM4hIqbKrVunIWAQqPF6M4dICoW4Uz/jGZN5kbA=
+  file_glob: true
+  file: "dist/kit-awsadapter*.tar.bz2"
+  skip_cleanup: true
+  on:
+    all_branches: true
+    tags: true
