@@ -40,6 +40,7 @@ from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.exceptions.invalidArgument import InvalidArgument
 from tortuga.exceptions.configurationError import ConfigurationError
 from tortuga.exceptions.commandFailed import CommandFailed
+from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
@@ -56,12 +57,111 @@ from .helpers import ec2_get_root_block_devices, _get_encoded_list
 from .awsHelpers import get_ec2_region
 
 
-class Aws(ResourceAdapter): \
-        # pylint: disable=too-many-public-methods
+class Aws(ResourceAdapter):
+    """
+    AWS resource adapter
 
-    '''AWS resource adapter'''
-
+    """
     __adaptername__ = 'aws'
+
+    settings = {
+        'ami': settings.StringSetting(
+            required=True,
+            description='AMI ID to use for launching node instances'
+        ),
+        'awsAccessKey': settings.StringSetting(
+            required=True,
+            secret=True,
+            description='AWS API access key',
+            mutually_exclusive=['iam_instance_profile_name'],
+            requires=['awsSecretKey']
+        ),
+        'awsSecretKey': settings.StringSetting(
+            required=True,
+            secret=True,
+            description='AWS API secret key',
+            mutually_exclusive=['iam_instance_profile_name'],
+            requires=['awsAccessKey']
+        ),
+        'block_device_map': settings.StringSetting(
+            description='Block device map for new node instances'
+        ),
+        'cloud_init': settings.FileSetting(
+            description='Path to cloud init script',
+            mutually_exclusive=['user_data_template_script']
+        ),
+        'user_data_script_template': settings.FileSetting(
+            description='Path to user date template script',
+            mutually_exclusive=['cloud_init_script']
+        ),
+        'endpoint': settings.StringSetting(
+            description='AWS (or compatible) API endpoint'
+        ),
+        'iam_instance_profile_name': settings.StringSetting(
+            description='IAM Instance Profile (IIP) name to associate with '
+                        'new node instance(s)',
+            mutually_exclusive=['awsAccessKey', 'awsSecretKey']
+        ),
+        'instancetype': settings.StringSetting(
+            description='AWS compute node instance type',
+            required=True
+        ),
+        'keypair': settings.StringSetting(
+            description='Name of AWS SSH keypair to install on new node '
+                        'instances',
+            required=True
+        ),
+        'override_dns_domain': settings.BooleanSetting(
+            description='Allow the compute node bootstrap process to manage '
+                        '/etc/resolv.conf'
+        ),
+        'dns_search': settings.StringSetting(
+            description='The DNS search order to be configured on new node '
+                        'instances',
+            requires=['override_dns_domain']
+        ),
+        'dns_options': settings.StringSetting(
+            description='specifies the "options" field in /etc/resolv.conf '
+                        'on new node instances',
+            requires=['override_dns_domain']
+        ),
+        'dns_nameservers': settings.StringSetting(
+            description='specifies the "nameservers" field in '
+                        '/etc/resolv.conf on compute node instances and is '
+                        'a space-separated list of IP addresses',
+            requires=['override_dns_domain']
+        ),
+        'region': settings.StringSetting(
+            description='AWS region',
+            default='us-east-1'
+        ),
+        'zone': settings.StringSetting(
+            description='AWS zone'
+        ),
+        'placementgroup': settings.StringSetting(
+            description='AWS placement group'
+        ),
+        'securitygroup': settings.StringSetting(
+            description='AWS security group. This security group must allow '
+                        'unrestricted access between the Tortuga installer '
+                        'and compute instances.'
+        ),
+        'subnet_id': settings.StringSetting(
+            description='AWS subnet ID for new node instances'
+        ),
+        'tags': settings.StringSetting(
+            description='AWS tags, a space separated list in the form of '
+                        'key=value'
+        ),
+        'use_instance_hostname': settings.BooleanSetting(
+            description='When true, the AWS-assigned host name will be '
+                        'used as the host name for new instances'
+        ),
+        'vcpus': settings.IntegerSetting(
+            description='The of virtual CPUs for the resource adapter '
+                        'configuration profile'
+        )
+    }
 
     # Location of instance cache file
     DEFAULT_INSTANCE_CACHE_CONFIG_FILE = 'aws-instance.conf'
@@ -158,7 +258,7 @@ class Aws(ResourceAdapter): \
                     'dns_nameservers',
                     'dns_options',
                     'iam_instance_profile_name',
-                   ]:  # noqa
+                    ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
         if 'awsaccesskey' in configDict:
@@ -187,7 +287,6 @@ class Aws(ResourceAdapter): \
 
         # Security group has to be a list
         if config['securitygroup']:
-
             vals = config['securitygroup'].split(',')
 
             config['securitygroup'] = [
@@ -203,13 +302,14 @@ class Aws(ResourceAdapter): \
 
         config['monitoring_enabled'] = \
             configDict['monitoring_enabled'] \
-            if 'monitoring_enabled' in configDict and \
-            configDict['monitoring_enabled'].lower() == 'true' else False
+                if 'monitoring_enabled' in configDict and \
+                   configDict[
+                       'monitoring_enabled'].lower() == 'true' else False
 
         config['ebs_optimized'] = \
             configDict['ebs_optimized'] \
-            if 'ebs_optimized' in configDict and \
-            configDict['ebs_optimized'].lower() == 'true' else False
+                if 'ebs_optimized' in configDict and \
+                   configDict['ebs_optimized'].lower() == 'true' else False
 
         if 'user_data_script_template' in configDict:
             if not configDict['user_data_script_template'].startswith('/'):
@@ -240,7 +340,7 @@ class Aws(ResourceAdapter): \
         # hosted on EC2.
         config['use_instance_hostname'] = \
             configDict['use_instance_hostname'].lower() == 'true' \
-            if 'use_instance_hostname' in configDict else self.runningOnEc2()
+                if 'use_instance_hostname' in configDict else self.runningOnEc2()
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -261,7 +361,7 @@ class Aws(ResourceAdapter): \
         # Convert 'associate_public_ip_address' to bool
         config['associate_public_ip_address'] = \
             config['associate_public_ip_address'].lower() == 'true' \
-            if config['associate_public_ip_address'] is not None else None
+                if config['associate_public_ip_address'] is not None else None
 
         if 'use_custom_dns_domain' in config and \
                 config['use_custom_dns_domain']:
@@ -303,7 +403,8 @@ class Aws(ResourceAdapter): \
         del config['dns_search']
 
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
-        if config['subnet_id'] and config['override_dns_domain'] and not config['dns_domain']:
+        if config['subnet_id'] and config['override_dns_domain'] and not \
+        config['dns_domain']:
             # Attempt to look up default DNS domain from DHCP options set
             domain = self.__get_vpc_default_domain(config)
             if domain:
@@ -452,7 +553,7 @@ class Aws(ResourceAdapter): \
                 # Determine value of 'encrypted' flag (either undefined or the
                 # string 'encrypted')
                 if (arglen > 4 and elements[4] and
-                        bdt.volume_type != 'io1') or \
+                    bdt.volume_type != 'io1') or \
                         (arglen > 5 and bdt.volume_type == 'io1' and
                          elements[5]):
                     encrypted_str = elements[5].lower() \
@@ -475,13 +576,13 @@ class Aws(ResourceAdapter): \
         return bdm
 
     def __instanceCacheGet(self, conn, node):
-        '''
+        """
         Retrieves the instance associated with a node out of
         the cache
 
         Raises:
             ResourceNotFound
-        '''
+        """
 
         config = self.instanceCacheGet(node.name)
 
@@ -520,11 +621,11 @@ class Aws(ResourceAdapter): \
     def start(self, addNodesRequest, dbSession, dbHardwareProfile,
               dbSoftwareProfile=None):
 
-        '''Create one or more nodes
+        """Create one or more nodes
 
         Raises:
             InvalidArgument
-        '''
+        """
 
         self.getLogger().debug(
             '[aws] start(addNodeRequest=[%s], dbSession=[%s],'
@@ -562,7 +663,7 @@ class Aws(ResourceAdapter): \
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
             if 'metadata' in addNodesRequest['nodeDetails'][0] and \
-                'ec2_instance_id' in \
+                    'ec2_instance_id' in \
                     addNodesRequest['nodeDetails'][0]['metadata']:
                 return self.__insert_nodes(dbSession, launch_request)
 
@@ -901,7 +1002,7 @@ class Aws(ResourceAdapter): \
             raise ConfigurationError(msg)
 
     def __add_idle_nodes(self, session, launch_request):
-        '''Create nodes in idle state'''
+        """Create nodes in idle state"""
 
         addNodesRequest = launch_request.addNodesRequest
         dbHardwareProfile = launch_request.hardwareprofile
@@ -967,13 +1068,13 @@ class Aws(ResourceAdapter): \
         settings_dict = {
             'installerHostName': self.installer_public_hostname,
             'installerIp': '\'{0}\''.format(installerIp)
-                           if installerIp else 'None',
+            if installerIp else 'None',
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
             'override_dns_domain': str(configDict['override_dns_domain']),
             'dns_options': '\'{0}\''.format(configDict['dns_options'])
-                           if configDict['dns_options'] else None,
+            if configDict['dns_options'] else None,
             'dns_domain': dns_domain_value,
             'dns_nameservers': _get_encoded_list(
                 configDict['dns_nameservers']),
@@ -982,7 +1083,7 @@ class Aws(ResourceAdapter): \
         return settings_dict
 
     def __get_common_user_data_content(self, settings_dict):
-        result = '''\
+        result = """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
 port = %(adminport)d
@@ -995,7 +1096,7 @@ dns_options = %(dns_options)s
 dns_search = %(dns_domain)s
 dns_domain = %(dns_domain)s
 dns_nameservers = %(dns_nameservers)s
-''' % (settings_dict)
+""" % (settings_dict)
 
         return result
 
@@ -1023,10 +1124,10 @@ dns_nameservers = %(dns_nameservers)s
 
         if node and not configDict['use_instance_hostname']:
             # Use cloud-init to set fully-qualified domain name of instance
-            cloud_init = '''#cloud-config
+            cloud_init = """#cloud-config
 
 fqdn: %s
-''' % (node.name)
+""" % (node.name)
 
             sub_message = MIMEText(
                 cloud_init, 'text/cloud-config', sys.getdefaultencoding())
@@ -1849,11 +1950,11 @@ fqdn: %s
 
     def __launchEC2(self, conn, configDict, nodeCount=1,
                     security_group_ids=None, userData=None):
-        '''Launch one or more EC2 instances
+        """Launch one or more EC2 instances
 
         Raises:
             CommandFailed
-        '''
+        """
 
         self.getLogger().debug(
             '[aws] __launchEC2(): nodeCount=[%s]' % (nodeCount))
@@ -1972,7 +2073,7 @@ fqdn: %s
         return result
 
     def stop(self, hardwareProfileName, deviceName):
-        '''Stops addhost daemon from creating additional nodes'''
+        """Stops addhost daemon from creating additional nodes"""
         pass
 
     def suspendActiveNode(self, dbNode):  # pylint: disable=unused-argument
@@ -1991,7 +2092,7 @@ fqdn: %s
         return None
 
     def idleActiveNode(self, dbNodes):
-        '''Change the given active node(s) to an idle node'''
+        """Change the given active node(s) to an idle node"""
 
         for node in dbNodes:
             self.getLogger().info('[aws] Idling node [{0}]'.format(node.name))
@@ -2116,7 +2217,7 @@ fqdn: %s
 
     def transferNode(self, nodeIdSoftwareProfileTuples,
                      newSoftwareProfileName):
-        '''Transfer the given idle node'''
+        """Transfer the given idle node"""
 
         for node, oldSoftwareProfileName in nodeIdSoftwareProfileTuples:
             # Note call in log
@@ -2133,13 +2234,13 @@ fqdn: %s
 
     def migrateNode(self, node, remainingNodeList, liveMigrate=True): \
             # pylint: disable=unused-argument
-        '''Migrate the given node'''
+        """Migrate the given node"""
 
         # Not supported for EC2 nodes
         raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
-        '''Determines if this node is running on EC2'''
+        """Determines if this node is running on EC2"""
 
         if self.__runningOnEc2 is None:
             try:
@@ -2439,8 +2540,8 @@ fqdn: %s
                 value))
 
         with open(
-            os.path.join(
-                self._cm.getKitConfigBase(), 'aws-instances.csv')) as fp:
+                os.path.join(
+                    self._cm.getKitConfigBase(), 'aws-instances.csv')) as fp:
             dr = csv.DictReader(fp)
 
             for entry in dr:
