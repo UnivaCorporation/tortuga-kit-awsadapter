@@ -14,47 +14,48 @@
 
 # pylint: disable=no-member
 
-import os
-import sys
-import xml.etree.cElementTree as ET
-import itertools
-import shlex
-import uuid
-import random
-import json
 import csv
+import itertools
+import json
+import os
+import random
+import shlex
+import sys
+import uuid
+import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+import gevent
+import gevent.queue
+import zmq
+
 import boto
 import boto.ec2
 import boto.vpc
 from boto.ec2.connection import EC2Connection
-from boto.ec2.networkinterface import NetworkInterfaceCollection
-from boto.ec2.networkinterface import NetworkInterfaceSpecification
-import zmq
-import gevent
-import gevent.queue
-
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
-from tortuga.exceptions.tortugaException import TortugaException
-from tortuga.exceptions.invalidArgument import InvalidArgument
-from tortuga.exceptions.configurationError import ConfigurationError
+from boto.ec2.networkinterface import (NetworkInterfaceCollection,
+                                       NetworkInterfaceSpecification)
+from tortuga.addhost.addHostServerLocal import AddHostServerLocal
+from tortuga.db.dbManager import DbManager
+from tortuga.db.models.nic import Nic
+from tortuga.db.models.node import Node
 from tortuga.exceptions.commandFailed import CommandFailed
-from tortuga.objects import resourceadapter_settings as settings
-from tortuga.os_utility import osUtility
+from tortuga.exceptions.configurationError import ConfigurationError
+from tortuga.exceptions.invalidArgument import InvalidArgument
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
-from tortuga.db.nics import Nics
-from tortuga.db.nodes import Nodes
-from tortuga.addhost.addHostServerLocal import AddHostServerLocal
-from tortuga.resourceAdapter.utility \
-    import get_provisioning_hwprofilenetwork
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
-from tortuga.db.dbManager import DbManager
-from .exceptions import AWSOperationTimeoutError
-from .launchRequest import LaunchRequest, init_node_request_queue
-from .helpers import ec2_get_root_block_devices, _get_encoded_list
+from tortuga.exceptions.tortugaException import TortugaException
+from tortuga.objects import resourceadapter_settings as settings
+from tortuga.os_utility import osUtility
+from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+from tortuga.resourceAdapter.utility import get_provisioning_hwprofilenetwork
+
 from .awsHelpers import get_ec2_region
+from .exceptions import AWSOperationTimeoutError
+from .helpers import _get_encoded_list, ec2_get_root_block_devices
+from .launchRequest import LaunchRequest, init_node_request_queue
 
 
 class Aws(ResourceAdapter):
@@ -743,14 +744,14 @@ class Aws(ResourceAdapter):
                 self.getLogger().debug(
                     '[aws] __insert_nodes(): add node [{0}]'.format(fqdn))
 
-            node = Nodes(name=fqdn)
+            node = Node(name=fqdn)
             node.softwareprofile = launch_request.softwareprofile
             node.hardwareprofile = launch_request.hardwareprofile
             node.isIdle = False
             node.state = 'Provisioned'
             node.addHostSession = self.addHostSession
 
-            node.nics = [Nics(ip=ip, boot=True)]
+            node.nics = [Nic(ip=ip, boot=True)]
 
             nodes.append(node)
 
@@ -1279,7 +1280,7 @@ fqdn: %s
         successfully. Clean up those that didn't start or timed out before
         reaching 'running' state.
 
-        Returns list of Nodes objects
+        Returns list of Node objects
         """
 
         configDict = launch_request.configDict
@@ -1679,7 +1680,7 @@ fqdn: %s
                 external_nics[0].ip = ip
             else:
                 if not node.nics:
-                    internal_nics = [Nics(boot=True)]
+                    internal_nics = [Nic(boot=True)]
 
                     node.nics = internal_nics
                 else:
@@ -1732,7 +1733,7 @@ fqdn: %s
                           generate_ip=False,
                           default_hostname=True,
                           initial_state='Launching'):
-        node = Nodes()
+        node = Node()
 
         # Generate the 'internal' host name
         if hardwareprofile.nameFormat != '*':
@@ -1754,12 +1755,12 @@ fqdn: %s
 
         if create_external_nic:
             # Create external interface
-            external_nic = Nics()
+            external_nic = Nic()
 
             nics.append(external_nic)
 
         # Create internal (default) network interface
-        internal_nic = Nics(boot=True)
+        internal_nic = Nic(boot=True)
 
         if generate_ip:
             # Get provisioning/private network
