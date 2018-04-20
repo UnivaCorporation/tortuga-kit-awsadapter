@@ -14,24 +14,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-import optparse
 import configparser
-import threading
 import json
-import time
 import logging
+import optparse
+import sys
+import threading
+import time
+
 import boto
 import boto.ec2
 import gevent
 import gevent.queue
-from tortuga.exceptions.nodeNotFound import NodeNotFound
-from tortuga.exceptions.nodeAlreadyExists import NodeAlreadyExists
-from tortuga.node.nodeApi import NodeApi
-from tortuga.wsapi.addHostWsApi import AddHostWsApi
-from tortuga.hardwareprofile.hardwareProfileApi import HardwareProfileApi
 import zmq
 from daemonize import Daemonize
+
+from tortuga.exceptions.nodeAlreadyExists import NodeAlreadyExists
+from tortuga.exceptions.nodeNotFound import NodeNotFound
+from tortuga.hardwareprofile.hardwareProfileApi import HardwareProfileApi
+from tortuga.node.nodeApi import NodeApi
+from tortuga.wsapi.addHostWsApi import AddHostWsApi
 
 
 PIDFILE = '/var/log/awsspotd.pid'
@@ -509,7 +511,7 @@ class AWSSpotdAppClass(object):
                 pass
 
 
-if __name__ == '__main__':
+def main():
     parser = optparse.OptionParser()
 
     aws_group = optparse.OptionGroup(parser, 'AWS Options')

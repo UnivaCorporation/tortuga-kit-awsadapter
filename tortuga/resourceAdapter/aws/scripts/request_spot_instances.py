@@ -14,15 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import sys
 
-try:
-    from tortuga.cli.tortugaCli import TortugaCli
-    from tortuga.wsapi.addHostWsApi import AddHostWsApi
-except ImportError:
-    sys.stderr.write('Error: Tortuga environment must be sourced\n')
-    sys.exit(1)
+from tortuga.cli.tortugaCli import TortugaCli
+from tortuga.wsapi.addHostWsApi import AddHostWsApi
 
 
 class RequestSpotInstancesCLI(TortugaCli):
@@ -82,5 +77,5 @@ class RequestSpotInstancesCLI(TortugaCli):
         AddHostWsApi().addNodes(addNodesRequest)
 
 
-if __name__ == '__main__':
+def main():
     RequestSpotInstancesCLI().run()
