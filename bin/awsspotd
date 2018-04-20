@@ -489,7 +489,7 @@ class AWSSpotdAppClass(object):
 
             if not cfg.has_section(sir_id) or \
                     not cfg.has_option(sir_id, 'node'):
-                self.logger.warn(
+                self.logger.warning(
                     'Spot instance [{0}] does not have an'
                     ' associated node'.format(sir_id))
 
