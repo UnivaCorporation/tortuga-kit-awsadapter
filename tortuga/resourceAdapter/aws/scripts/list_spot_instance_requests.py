@@ -19,11 +19,12 @@ List spot instance requests *KNOWN* to Tortuga. This is not a replacement
 for 'aws ec2 describe-spot-instance-requests'
 """
 
-from __future__ import print_function
+import configparser
 import os.path
 import sys
-import configparser
+
 import boto3
+
 from tortuga.cli.tortugaCli import TortugaCli
 from tortuga.config.configManager import ConfigManager
 from tortuga.resourceAdapter.aws import Aws
@@ -85,5 +86,5 @@ class AppClass(TortugaCli):
                     sir[u'State'], sir[u'Status'][u'Code'], node_label))
 
 
-if __name__ == '__main__':
+def main():
     AppClass().run()

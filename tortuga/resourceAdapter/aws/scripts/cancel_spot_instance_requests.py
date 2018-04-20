@@ -14,16 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-import os.path
-import sys
 import configparser
 import logging
+import os.path
+import sys
+
+import boto3
+
 from tortuga.cli.tortugaCli import TortugaCli
 from tortuga.config.configManager import ConfigManager
-from tortuga.resourceAdapter.aws import Aws
 from tortuga.node.nodeApi import NodeApi
-import boto3
+from tortuga.resourceAdapter.aws import Aws
 
 
 class CancelSpotInstanceRequestsCLI(TortugaCli):
@@ -194,5 +195,5 @@ class CancelSpotInstanceRequestsCLI(TortugaCli):
         return node_name
 
 
-if __name__ == '__main__':
+def main():
     CancelSpotInstanceRequestsCLI().run()

@@ -14,11 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import datetime
+
 import boto.vpc
-from tortuga.resourceAdapter.aws import Aws
+
 from tortuga.cli.tortugaCli import TortugaCli
+from tortuga.resourceAdapter.aws import Aws
 
 
 class AppClass(TortugaCli):
@@ -93,5 +94,5 @@ class AppClass(TortugaCli):
                       spot_price.product_description)
 
 
-if __name__ == '__main__':
+def main():
     AppClass().run()
