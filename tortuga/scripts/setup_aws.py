@@ -59,14 +59,10 @@ def disable_colour(ctx, param, value):
               help='Enable verbose output')
 @click.option('--debug', is_flag=True, default=False,
               help='Enable debug mode')
-@click.option('--no-autodetect', is_flag=True, default=False,
-              help='Disable AWS region autodetect')
 @click.option('--ignore-iam', is_flag=True, default=False,
               help='Ignore (current) IAM profile/assumed-role')
 @click.option('--unattended', is_flag=True, default=False,
               help='Run without prompting for input')
-@click.option('--region', default=DEFAULT_AWS_REGION,
-              help='Override detected AWS region')
 @click.option('--no-color', '--no-colour', is_flag=True, expose_value=False,
               callback=disable_colour,
               help='Disable colo[u]r output')
@@ -75,55 +71,24 @@ def disable_colour(ctx, param, value):
                     ' (default: {0})'.format(
                         DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME)),
               default=DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME)
-def main(verbose, debug, no_autodetect, ignore_iam, unattended, region, profile):
+def main(verbose, debug, ignore_iam, unattended, profile):
     ec2_metadata = get_ec2_metadata()
 
     print(bright_white('Configuring Tortuga AWS resource adapter'))
 
     if unattended:
-        no_autodetect = False
         ignore_iam = False
         verbose = True
 
-    if not region:
-        region = ec2_metadata['placement']['availability-zone'][:-1] \
-            if ec2_metadata and not no_autodetect else None
+    region = ec2_metadata['placement']['availability-zone'][:-1] \
+        if ec2_metadata else None
 
-        if verbose:
-            print_statement(
-                'Region [{0}] obtained from EC2 instance metadata',
-                region)
+    if verbose:
+        print_statement(
+            'Region [{0}] obtained from EC2 instance metadata',
+            region)
 
-    if region:
-        print_statement('Detected AWS region: [{0}]', region)
-    else:
-        if not no_autodetect:
-            error_message('Error: unable to determine current AWS region')
-
-            if unattended:
-                sys.exit(1)
-
-        # Query for region
-        prompt = format_string_with_arg('AWS region [{0}]:', region)
-
-        response = input(prompt + ' ')
-        if not response:
-            region = DEFAULT_AWS_REGION
-        else:
-            region = response
-
-            try:
-                # validate region
-                session = boto3.session.Session()
-                if region not in session.get_available_regions('ec2'):
-                    error_message('Error: invalid AWS region [{0}]', region)
-
-                    sys.exit(1)
-            except botocore.exceptions.EndpointConnectionError:
-                error_message(
-                    'Error connecting to EC2 endpoint (invalid region?)')
-
-                sys.exit(1)
+    print_statement('Detected AWS region: [{0}]', region)
 
     creds = False
 
@@ -458,6 +423,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region, profile)
         'securitygroup': group_id,
         'subnet_id': subnet_id,
         'tags': 'Name=\"UGE compute node\"',
+        'region': region,
     }
 
     adapter_cfg.update(override_adapter_cfg)
