@@ -25,6 +25,7 @@ import uuid
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional, Union
 
 import gevent
 import gevent.queue
@@ -87,13 +88,17 @@ class Aws(ResourceAdapter):
         'block_device_map': settings.StringSetting(
             description='Block device map for new node instances'
         ),
-        'cloud_init': settings.FileSetting(
+        'cloud_init': settings.BooleanSetting(
+            description='Enable/disable cloud-init script user-data',
+            default=True
+        ),
+        'cloud_init_script_template': settings.FileSetting(
             description='Path to cloud init script',
-            mutually_exclusive=['user_data_template_script']
+            mutually_exclusive=['user_data_script_template']
         ),
         'user_data_script_template': settings.FileSetting(
             description='Path to user date template script',
-            mutually_exclusive=['cloud_init_script']
+            mutually_exclusive=['cloud_init_script_template']
         ),
         'endpoint': settings.StringSetting(
             description='AWS (or compatible) API endpoint'
@@ -207,12 +212,32 @@ class Aws(ResourceAdapter):
         # Initialize EC2 connection
         return EC2Connection(**connectionArgs)
 
-    def getResourceAdapterConfig(self, sectionName=None):
+    def getResourceAdapterConfig(
+            self, sectionName: Optional[Union[str, None]] = None):
         """
         Raises:
             ConfigurationError
         """
-        configDict = super(Aws, self).getResourceAdapterConfig(sectionName)
+
+        # load default configuration
+        configDict = self._loadConfigDict()
+
+        if sectionName:
+            overrideConfigDict = self._loadConfigDict(sectionName=sectionName)
+
+            # 'user_data_script_template' and 'cloud_init_script_template'
+            # are mutually exclusive arguments. Ensure resource adapter
+            # configuration overrides default settings accordingly.
+
+            if 'user_data_script_template' in overrideConfigDict and \
+                    'cloud_init_script_template' in configDict:
+                del configDict['cloud_init_script_template']
+
+            if 'cloud_init_script_template' in overrideConfigDict and \
+                    'user_data_script_template' in configDict:
+                del configDict['user_data_script_template']
+
+            configDict.update(overrideConfigDict)
 
         config = {}
 
@@ -245,6 +270,7 @@ class Aws(ResourceAdapter):
                     'securitygroup', 'sleeptime', 'zone',
                     'placementgroup', 'endpoint',
                     'user_data_script_template', 'cloud_init',
+                    'cloud_init_script_template',
                     'subnet_id', 'vpc_gateway',
                     'use_instance_hostname',
                     'awsaccesskey',
@@ -312,21 +338,50 @@ class Aws(ResourceAdapter):
                 if 'ebs_optimized' in configDict and \
                    configDict['ebs_optimized'].lower() == 'true' else False
 
-        if 'user_data_script_template' in configDict:
-            if not configDict['user_data_script_template'].startswith('/'):
-                # Path is not fully-qualified, so qualify it
-                config['user_data_script_template'] = \
-                    os.path.join(self._cm.getKitConfigBase(),
-                                 configDict['user_data_script_template'])
-            else:
-                config['user_data_script_template'] = \
-                    configDict['user_data_script_template']
+        if 'cloud_init_script_template' in configDict and \
+                configDict['cloud_init_script_template'] and \
+                'user_data_script_template' in configDict and \
+                configDict['user_data_script_template']:
+            raise ConfigurationError(
+                '\'cloud_init_script_template\' and'
+                ' \'user_data_script_template\' settings are mutually'
+                ' exclusive')
 
-            # automatically toggle 'cloud_init' flag
-            config['cloud_init'] = True
+        if 'user_data_script_template' in configDict and \
+                configDict['user_data_script_template']:
+            try:
+                config['user_data_script_template'] = \
+                    self._get_config_file_path(
+                        configDict['user_data_script_template']
+                    )
+
+                del config['cloud_init_script_template']
+
+                # automatically toggle 'cloud_init' flag
+                config['cloud_init'] = True
+            except ConfigurationError as exc:
+                raise ConfigurationError(
+                    'Invalid \'user_data_script_template\''
+                    ' setting: {0}'.format(exc)
+                )
+        elif 'cloud_init_script_template' in configDict and \
+                configDict['cloud_init_script_template']:
+            try:
+                config['cloud_init_script_template'] = \
+                    self._get_config_file_path(
+                        configDict['cloud_init_script_template']
+                    )
+
+                del config['user_data_script_template']
+
+                config['cloud_init'] = True
+            except ConfigurationError as exc:
+                raise ConfigurationError(
+                    'Invalid \'cloud_init_script_template\''
+                    'setting: {0}'.format(exc)
+                )
         else:
-            config['cloud_init'] = configDict['cloud_init'].lower() == 'true' \
-                if 'cloud_init' in configDict else False
+            config['cloud_init'] = False
 
         if 'vpn' in configDict:
             raise ConfigurationError(
@@ -982,24 +1037,6 @@ class Aws(ResourceAdapter):
                     '\'use_instance_hostname\' is disabled, but hardware'
                     ' profile does not have a name format defined')
 
-        if configDict['cloud_init'] and \
-                configDict['user_data_script_template'] is None:
-            msg = ('cloud-init is enabled, but user_data_script_template is'
-                   ' not defined. This is probably not the desired behaviour.')
-
-            self.getLogger().error(msg)
-
-            raise ConfigurationError(msg)
-
-        if configDict['user_data_script_template'] and \
-                not os.path.exists(configDict['user_data_script_template']):
-            msg = 'Configured user data script [%s] does not exist' % (
-                configDict['user_data_script_template'])
-
-            self.getLogger().error(msg)
-
-            raise ConfigurationError(msg)
-
     def __add_idle_nodes(self, session, launch_request):
         """Create nodes in idle state"""
 
@@ -1098,12 +1135,21 @@ dns_nameservers = %(dns_nameservers)s
 
         return result
 
-    def __get_user_data(self, configDict, node=None):
+    def __get_user_data(self, configDict: dict,
+                        node: Optional[Union[Node, None]] = None):
         if not configDict['cloud_init']:
             return None
 
+        if 'user_data_script_template' in configDict:
+            return self.__get_user_data_script(configDict, node=node)
+
+        # process template file specified by 'cloud_init_script_template'
+        # as YAML cloud-init configuration data
+        return self.expand_cloud_init_user_data_template(configDict, node=node)
+
+    def __get_user_data_script(self, configDict, node=None):
         self.getLogger().info(
-            'Using cloud-init script template [%s]' % (
+            'Using user-data script template [%s]' % (
                 configDict['user_data_script_template']))
 
         settings_dict = self.__get_common_user_data_settings(configDict, node)
