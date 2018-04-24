@@ -25,6 +25,7 @@ import botocore
 import click
 import colorama
 
+from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.resourceAdapterConfiguration.api \
     import ResourceAdapterConfigurationApi
@@ -573,20 +574,21 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
     api = ResourceAdapterConfigurationApi()
 
     # check for resource adapter configuration
-    try:
-        api.get('aws', profile_name)
+    with DbManager().session() as session:
+        try:
+            api.get(session, 'aws', profile_name)
 
-        print_statement(
-            'Updating AWS resource adapter configuration profile [{0}]',
-            profile_name)
+            print_statement(
+                'Updating AWS resource adapter configuration profile [{0}]',
+                profile_name)
 
-        api.update('aws', profile_name, normalized_cfg)
-    except ResourceNotFound:
-        print_statement(
-            'Creating AWS resource adapter configuration profile [{0}]',
-            profile_name)
+            api.update(session, 'aws', profile_name, normalized_cfg)
+        except ResourceNotFound:
+            print_statement(
+                'Creating AWS resource adapter configuration profile [{0}]',
+                profile_name)
 
-        api.create('aws', profile_name, normalized_cfg)
+            api.create(session, 'aws', profile_name, normalized_cfg)
 
 
 def get_resource_name_from_tag(subnet):
