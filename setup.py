@@ -45,7 +45,7 @@ setup(
             'list-spot-instance-nodes=tortuga.resourceAdapter.aws.scripts.list_spot_instance_nodes:main',
             'list-spot-instance-requests=tortuga.resourceAdapter.aws.scripts.list_spot_instance_requests:main',
             'request-spot-instances=tortuga.resourceAdapter.aws.scripts.request_spot_instances:main',
-            'setup-aws=tortuga.resourceAdapter.aws.scripts.setup_aws:main',
+            'setup-aws=tortuga.scripts.setup_aws:main',
         ]
     }
 )
