@@ -25,6 +25,7 @@ import uuid
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import Optional, Union
 
 import gevent
 import gevent.queue
@@ -87,13 +88,17 @@ class Aws(ResourceAdapter):
         'block_device_map': settings.StringSetting(
             description='Block device map for new node instances'
         ),
-        'cloud_init': settings.FileSetting(
+        'cloud_init': settings.BooleanSetting(
+            description='Enable/disable cloud-init script user-data',
+            default=True
+        ),
+        'cloud_init_script_template': settings.FileSetting(
             description='Path to cloud init script',
-            mutually_exclusive=['user_data_template_script']
+            mutually_exclusive=['user_data_script_template']
         ),
         'user_data_script_template': settings.FileSetting(
             description='Path to user date template script',
-            mutually_exclusive=['cloud_init_script']
+            mutually_exclusive=['cloud_init_script_template']
         ),
         'endpoint': settings.StringSetting(
             description='AWS (or compatible) API endpoint'
@@ -191,7 +196,7 @@ class Aws(ResourceAdapter):
             region=configDict['region'])
 
         if 'proxy_host' in configDict:
-            self._logger.debug('[aws] Using proxy for AWS (%s:%s)' % (
+            self._logger.debug('Using proxy for AWS (%s:%s)' % (
                 configDict['proxy_host'], configDict['proxy_port']))
 
             connectionArgs['proxy'] = configDict['proxy_host']
@@ -207,12 +212,32 @@ class Aws(ResourceAdapter):
         # Initialize EC2 connection
         return EC2Connection(**connectionArgs)
 
-    def getResourceAdapterConfig(self, sectionName=None):
+    def getResourceAdapterConfig(
+            self, sectionName: Optional[Union[str, None]] = None):
         """
         Raises:
             ConfigurationError
         """
-        configDict = super(Aws, self).getResourceAdapterConfig(sectionName)
+
+        # load default configuration
+        configDict = self._loadConfigDict()
+
+        if sectionName:
+            overrideConfigDict = self._loadConfigDict(sectionName=sectionName)
+
+            # 'user_data_script_template' and 'cloud_init_script_template'
+            # are mutually exclusive arguments. Ensure resource adapter
+            # configuration overrides default settings accordingly.
+
+            if 'user_data_script_template' in overrideConfigDict and \
+                    'cloud_init_script_template' in configDict:
+                del configDict['cloud_init_script_template']
+
+            if 'cloud_init_script_template' in overrideConfigDict and \
+                    'user_data_script_template' in configDict:
+                del configDict['user_data_script_template']
+
+            configDict.update(overrideConfigDict)
 
         config = {}
 
@@ -227,7 +252,7 @@ class Aws(ResourceAdapter):
             errmsg = 'Missing required EC2 configuration parameter(s): %s' % (
                 ' '.join(missing))
 
-            self.getLogger().error('[aws] ' + errmsg)
+            self.getLogger().error(errmsg)
 
             raise ConfigurationError(errmsg)
 
@@ -245,6 +270,7 @@ class Aws(ResourceAdapter):
                     'securitygroup', 'sleeptime', 'zone',
                     'placementgroup', 'endpoint',
                     'user_data_script_template', 'cloud_init',
+                    'cloud_init_script_template',
                     'subnet_id', 'vpc_gateway',
                     'use_instance_hostname',
                     'awsaccesskey',
@@ -312,21 +338,50 @@ class Aws(ResourceAdapter):
                 if 'ebs_optimized' in configDict and \
                    configDict['ebs_optimized'].lower() == 'true' else False
 
-        if 'user_data_script_template' in configDict:
-            if not configDict['user_data_script_template'].startswith('/'):
-                # Path is not fully-qualified, so qualify it
-                config['user_data_script_template'] = \
-                    os.path.join(self._cm.getKitConfigBase(),
-                                 configDict['user_data_script_template'])
-            else:
-                config['user_data_script_template'] = \
-                    configDict['user_data_script_template']
+        if 'cloud_init_script_template' in configDict and \
+                configDict['cloud_init_script_template'] and \
+                'user_data_script_template' in configDict and \
+                configDict['user_data_script_template']:
+            raise ConfigurationError(
+                '\'cloud_init_script_template\' and'
+                ' \'user_data_script_template\' settings are mutually'
+                ' exclusive')
 
-            # automatically toggle 'cloud_init' flag
-            config['cloud_init'] = True
+        if 'user_data_script_template' in configDict and \
+                configDict['user_data_script_template']:
+            try:
+                config['user_data_script_template'] = \
+                    self._get_config_file_path(
+                        configDict['user_data_script_template']
+                    )
+
+                del config['cloud_init_script_template']
+
+                # automatically toggle 'cloud_init' flag
+                config['cloud_init'] = True
+            except ConfigurationError as exc:
+                raise ConfigurationError(
+                    'Invalid \'user_data_script_template\''
+                    ' setting: {0}'.format(exc)
+                )
+        elif 'cloud_init_script_template' in configDict and \
+                configDict['cloud_init_script_template']:
+            try:
+                config['cloud_init_script_template'] = \
+                    self._get_config_file_path(
+                        configDict['cloud_init_script_template']
+                    )
+
+                del config['user_data_script_template']
+
+                config['cloud_init'] = True
+            except ConfigurationError as exc:
+                raise ConfigurationError(
+                    'Invalid \'cloud_init_script_template\''
+                    'setting: {0}'.format(exc)
+                )
         else:
-            config['cloud_init'] = configDict['cloud_init'].lower() == 'true' \
-                if 'cloud_init' in configDict else False
+            config['cloud_init'] = False
 
         if 'vpn' in configDict:
             raise ConfigurationError(
@@ -367,7 +422,7 @@ class Aws(ResourceAdapter):
         if 'use_custom_dns_domain' in config and \
                 config['use_custom_dns_domain']:
             self.getLogger().warning(
-                '[aws] Setting \'use_custom_dns_domain\' is deprecated.'
+                'Setting \'use_custom_dns_domain\' is deprecated.'
                 ' Please use \'override_dns_domain\' to remove this'
                 ' warning.')
 
@@ -382,7 +437,7 @@ class Aws(ResourceAdapter):
         if config['override_dns_domain']:
             if config['dns_search']:
                 self.getLogger().warning(
-                    '[aws] Setting \'dns_search\' is deprecated. Please use'
+                    'Setting \'dns_search\' is deprecated. Please use'
                     ' \'dns_domain\' to remove this warning.')
 
                 # Map deprecated 'dns_search' setting to 'dns_domain'
@@ -420,7 +475,7 @@ class Aws(ResourceAdapter):
                     'Invalid/malformed value for \'vcpus\'')
 
         self.getLogger().debug(
-            '[aws] Using DNS domain {0} for compute nodes'.format(
+            'Using DNS domain {0} for compute nodes'.format(
                 config['dns_domain']))
 
         if config['override_dns_domain'] is None:
@@ -493,22 +548,20 @@ class Aws(ResourceAdapter):
                     'Malformed block device mapping entry: %s' % (entry))
 
             self.getLogger().debug(
-                '[aws] __process_block_device_map(): device=[%s]' % (device))
+                '__process_block_device_map(): device=[%s]' % (device))
 
             elements = mapping.split(':')
             if not elements:
                 self.getLogger().debug(
-                    '[aws] Ignoring malformed mapping for device [%s]' % (
-                        device))
+                    'Ignoring malformed mapping for device [%s]' % (device))
 
                 continue
 
             bdt = boto.ec2.blockdevicemapping.BlockDeviceType()
 
             if elements[0].startswith('none'):
-                self.getLogger().warn(
-                    '[aws] Suppressing existing device mapping for [%s]' % (
-                        device))
+                self.getLogger().warning(
+                    'Suppressing existing device mapping for [%s]' % (device))
 
                 bdt.no_device = True
             elif elements[0].startswith('ephemeral'):
@@ -533,8 +586,8 @@ class Aws(ResourceAdapter):
                     bdt.volume_type = elements[3]
 
                     if bdt.volume_type not in ('standard', 'gp2', 'io1'):
-                        self.getLogger().warn(
-                            '[aws] Unrecognized block device volume type'
+                        self.getLogger().warning(
+                            'Unrecognized block device volume type'
                             ' [%s]' % (bdt.volume_type))
 
                     if bdt.volume_type == 'io1':
@@ -572,7 +625,7 @@ class Aws(ResourceAdapter):
             # Add device mapping
             bdm[device] = bdt
 
-        self.getLogger().debug('[aws] block device map: %s' % (bdm))
+        self.getLogger().debug('block device map: %s' % (bdm))
 
         return bdm
 
@@ -589,14 +642,14 @@ class Aws(ResourceAdapter):
 
         if 'instance' not in config:
             self.getLogger().debug(
-                '[aws] Cache miss: node [%s], no instance' % (node.name))
+                'Cache miss: node [%s], no instance' % (node.name))
 
             return None
 
         instance_id = config['instance']
 
         self.getLogger().debug(
-            '[aws] Cache hit: node [%s], instance [%s]' % (
+            'Cache hit: node [%s], instance [%s]' % (
                 node.name, instance_id))
 
         instance = self.__get_instance_by_instance_id(conn, instance_id)
@@ -604,7 +657,7 @@ class Aws(ResourceAdapter):
         if not instance:
             # We couldn't find the instance we wanted
             self.getLogger().error(
-                '[aws] Cache error: node [%s], instance [%s], not found'
+                'Cache error: node [%s], instance [%s], not found'
                 ' in EC2' % (node.name, instance_id))
 
         return instance
@@ -629,7 +682,7 @@ class Aws(ResourceAdapter):
         """
 
         self.getLogger().debug(
-            '[aws] start(addNodeRequest=[%s], dbSession=[%s],'
+            'start(addNodeRequest=[%s], dbSession=[%s],'
             ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])' % (
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name if dbSoftwareProfile else '(none)'))
@@ -698,7 +751,7 @@ class Aws(ResourceAdapter):
         AWS instance exists before the Tortuga associated node record.
         """
 
-        self.getLogger().debug('[aws] __insert_nodes()')
+        self.getLogger().debug('__insert_nodes()')
 
         nodes = []
 
@@ -726,15 +779,15 @@ class Aws(ResourceAdapter):
                     nodedetail['metadata']['ec2_instance_id'])
 
                 if not instance:
-                    self.getLogger().warn(
-                        '[aws] Error inserting node [{0}]. AWS instance [{1}]'
+                    self.getLogger().warning(
+                        'Error inserting node [{0}]. AWS instance [{1}]'
                         ' does not exist'.format(
                             fqdn, nodedetail['metadata']['ec2_instance_id']))
 
                     continue
 
                 self.getLogger().debug(
-                    '[aws] __insert_nodes(): add node [{0}]'
+                    '__insert_nodes(): add node [{0}]'
                     ' instance: [{1}]'.format(
                         fqdn,
                         nodedetail['metadata']['ec2_instance_id']))
@@ -742,7 +795,7 @@ class Aws(ResourceAdapter):
                 instance = None
 
                 self.getLogger().debug(
-                    '[aws] __insert_nodes(): add node [{0}]'.format(fqdn))
+                    '__insert_nodes(): add node [{0}]'.format(fqdn))
 
             node = Node(name=fqdn)
             node.softwareprofile = launch_request.softwareprofile
@@ -764,7 +817,7 @@ class Aws(ResourceAdapter):
 
                 # Add tags
                 self.getLogger().debug(
-                    '[aws] Assigning tags to instance [{0}]'.format(
+                    'Assigning tags to instance [{0}]'.format(
                         instance.id))
 
                 self.__assign_tags(
@@ -812,7 +865,7 @@ class Aws(ResourceAdapter):
         """
 
         self.getLogger().debug(
-            '[aws] request_spot_instances(addNodeRequest=[%s], dbSession=[%s],'
+            'request_spot_instances(addNodeRequest=[%s], dbSession=[%s],'
             ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])' % (
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name))
@@ -941,7 +994,7 @@ class Aws(ResourceAdapter):
                     message = socket.recv()
 
                     self.getLogger().debug(
-                        '[aws] request_spot_instances():'
+                        'request_spot_instances():'
                         ' response=[{0}]'.format(message))
             finally:
                 socket.close()
@@ -983,24 +1036,6 @@ class Aws(ResourceAdapter):
                 raise ConfigurationError(
                     '\'use_instance_hostname\' is disabled, but hardware'
                     ' profile does not have a name format defined')
-
-        if configDict['cloud_init'] and \
-                configDict['user_data_script_template'] is None:
-            msg = ('cloud-init is enabled, but user_data_script_template is'
-                   ' not defined. This is probably not the desired behaviour.')
-
-            self.getLogger().error('[aws] {0}'.format(msg))
-
-            raise ConfigurationError(msg)
-
-        if configDict['user_data_script_template'] and \
-                not os.path.exists(configDict['user_data_script_template']):
-            msg = 'Configured user data script [%s] does not exist' % (
-                configDict['user_data_script_template'])
-
-            self.getLogger().error('[aws] ' + msg)
-
-            raise ConfigurationError(msg)
 
     def __add_idle_nodes(self, session, launch_request):
         """Create nodes in idle state"""
@@ -1045,8 +1080,7 @@ class Aws(ResourceAdapter):
             nodes.append(node)
 
             # Log node creation
-            self.getLogger().debug(
-                '[aws] Created idle node [%s]' % (node.name))
+            self.getLogger().debug('Created idle node [%s]' % (node.name))
 
         return nodes
 
@@ -1101,12 +1135,21 @@ dns_nameservers = %(dns_nameservers)s
 
         return result
 
-    def __get_user_data(self, configDict, node=None):
+    def __get_user_data(self, configDict: dict,
+                        node: Optional[Union[Node, None]] = None):
         if not configDict['cloud_init']:
             return None
 
+        if 'user_data_script_template' in configDict:
+            return self.__get_user_data_script(configDict, node=node)
+
+        # process template file specified by 'cloud_init_script_template'
+        # as YAML cloud-init configuration data
+        return self.expand_cloud_init_user_data_template(configDict, node=node)
+
+    def __get_user_data_script(self, configDict, node=None):
         self.getLogger().info(
-            '[aws] Using cloud-init script template [%s]' % (
+            'Using user-data script template [%s]' % (
                 configDict['user_data_script_template']))
 
         settings_dict = self.__get_common_user_data_settings(configDict, node)
@@ -1201,7 +1244,7 @@ fqdn: %s
         count = addNodesRequest['count']
 
         self.getLogger().info(
-            '[aws] Preallocating %d node(s) for mapping to AWS instances' % (
+            'Preallocating %d node(s) for mapping to AWS instances' % (
                 count))
 
         nodes = self.__createNodes(
@@ -1246,7 +1289,7 @@ fqdn: %s
                     node_request['status'] = 'error'
 
                     self.getLogger().exception(
-                        '[aws] Error launching AWS instance')
+                        'Error launching AWS instance')
 
                     launch_exception = exc
 
@@ -1266,7 +1309,7 @@ fqdn: %s
                 raise
 
             self.getLogger().exception(
-                '[aws] Exception while launching instances')
+                'Exception while launching instances')
 
     def __delete_failed_nodes(self, dbSession, launch_request):
         for node_request in launch_request.node_request_queue:
@@ -1317,7 +1360,7 @@ fqdn: %s
             warnmsg = ('only %d of %d requested instances launched'
                        ' successfully' % (completed, count))
 
-            self.getLogger().warning('[aws] %s' % (warnmsg))
+            self.getLogger().warning(warnmsg)
 
         return [node_request['node']
                 for node_request in node_request_queue
@@ -1337,7 +1380,7 @@ fqdn: %s
             # Subsequent update() calls are successful.
 
             self.getLogger().debug(
-                '[aws] Ignoring exception raised while'
+                'Ignoring exception raised while'
                 ' updating instance: %s' % (str(exc)))
 
             return None
@@ -1369,7 +1412,7 @@ fqdn: %s
             sleeptime = (temp / 2 + random.randint(0, temp / 2)) / 1000.0
 
             self.getLogger().debug(
-                '[aws] Sleeping %.2f seconds on instance [%s]' % (
+                'Sleeping %.2f seconds on instance [%s]' % (
                     sleeptime, instance.id))
 
             # Wait before polling instance state
@@ -1392,7 +1435,7 @@ fqdn: %s
                 node_request['status'] = instance.state
 
                 self.getLogger().error(
-                    '[aws] Instance [%s] in unexpected state [%s]' % (
+                    'Instance [%s] in unexpected state [%s]' % (
                         instance.state))
 
                 raise OperationFailed(
@@ -1405,7 +1448,7 @@ fqdn: %s
         """
 
         self.getLogger().error(
-            '[aws] Cleaning up failed instance [{0}]'.format(
+            'Cleaning up failed instance [{0}]'.format(
                 node_request['instance'].id))
 
         node = node_request['node'] if 'node' in node_request else None
@@ -1426,7 +1469,7 @@ fqdn: %s
                 self.process_item(launch_request, node_request)
 
                 self.getLogger().info(
-                    '[aws] Instance [{0}] running'.format(
+                    'Instance [{0}] running'.format(
                         node_request['instance'].id))
 
                 # Instance launched successfully
@@ -1436,11 +1479,10 @@ fqdn: %s
                 # Instance launch failed
                 if isinstance(exc, AWSOperationTimeoutError):
                     logmsg = (
-                        '[aws] Launch operation failed: timeout waiting for'
+                        'Launch operation failed: timeout waiting for'
                         ' instance(s)')
                 else:
-                    logmsg = '[aws] Instance launch failed: {0}'.format(
-                        str(exc))
+                    logmsg = 'Instance launch failed: {0}'.format(str(exc))
 
                 self.getLogger().error(logmsg)
 
@@ -1460,7 +1502,7 @@ fqdn: %s
         """
 
         self.getLogger().info(
-            '[aws] Waiting for session [{0}] to complete...'.format(
+            'Waiting for session [{0}] to complete...'.format(
                 self.addHostSession))
 
         launch_requests = len(launch_request.node_request_queue)
@@ -1488,7 +1530,7 @@ fqdn: %s
 
         if 'node' not in node_request:
             self.getLogger().debug(
-                '[aws] Creating node record for instance [{0}]'.format(
+                'Creating node record for instance [{0}]'.format(
                     node_request['instance']))
 
             node_request['node'] = self.__initialize_node(
@@ -1514,13 +1556,13 @@ fqdn: %s
             ip)
 
         self.getLogger().debug(
-            '[aws] __post_launch_action(node=[{0}])'.format(node.name))
+            '__post_launch_action(node=[{0}])'.format(node.name))
 
         configDict = launch_request.configDict
 
         # Assign instance tags
         self.getLogger().debug(
-            '[aws] Assigning tags to instance [{0}]'.format(instance.id))
+            'Assigning tags to instance [{0}]'.format(instance.id))
 
         total_sleep = 0
 
@@ -1533,7 +1575,7 @@ fqdn: %s
                 break
             except boto.exception.EC2ResponseError as exc:
                 self.getLogger().debug(
-                    '[aws] Ignoring exception tagging instances: {0}'.format(
+                    'Ignoring exception tagging instances: {0}'.format(
                         str(exc)))
 
             gevent.sleep(3)
@@ -1547,7 +1589,7 @@ fqdn: %s
 
         if total_sleep:
             self.getLogger().debug(
-                '[aws] Waited %d seconds tagging instance %s' % (
+                'Waited %d seconds tagging instance %s' % (
                     total_sleep, instance.id))
 
         # This node is ready
@@ -1877,14 +1919,14 @@ fqdn: %s
                 conn.create_placement_group(configDict['placementgroup'])
 
                 self._logger.debug(
-                    '[aws] Created placement group [%s]' % (
+                    'Created placement group [%s]' % (
                         configDict['placementgroup']))
             except boto.exception.EC2ResponseError as ex:
                 # let this fail, group may already exist
 
                 extErrMsg = self.__parseEC2ResponseError(ex)
 
-                self._logger.warn(
+                self._logger.warning(
                     'Unable to create placement group [%s] (%s)' % (
                         configDict['placementgroup'],
                         extErrMsg or '<no reason provided>'))
@@ -1958,7 +2000,7 @@ fqdn: %s
         """
 
         self.getLogger().debug(
-            '[aws] __launchEC2(): nodeCount=[%s]' % (nodeCount))
+            '__launchEC2(): nodeCount=[%s]' % (nodeCount))
 
         ami = self._validate_ec2_launch_args(conn, configDict)
 
@@ -1968,7 +2010,7 @@ fqdn: %s
 
         runArgs['max_count'] = nodeCount
 
-        self.getLogger().info('[aws] Launching %d AWS %s' % (
+        self.getLogger().info('Launching %d AWS %s' % (
             nodeCount, 'instances' if nodeCount > 1 else 'instance'))
 
         try:
@@ -2020,7 +2062,7 @@ fqdn: %s
         if block_device_map:
             # Use block device mapping from adapter configuration
             self.getLogger().debug(
-                '[aws] Setting \'block_device_map\' argument to [%s]' % (
+                'Setting \'block_device_map\' argument to [%s]' % (
                     block_device_map))
 
             result = block_device_map
@@ -2048,12 +2090,12 @@ fqdn: %s
             # Mark root block device for deletion on termination
             result[root_block_device].delete_on_termination = True
         else:
-            self.getLogger().warn(
-                '[aws] Unable to determine root device name for'
+            self.getLogger().warning(
+                'Unable to determine root device name for'
                 ' AMI [%s]' % (ami.id))
 
-            self.getLogger().warn(
-                '[aws] Delete on termination flag cannot be set')
+            self.getLogger().warning(
+                'Delete on termination flag cannot be set')
 
         for device, bd in result.items():
             logmsg = 'BDM: device=[{0}], size=[{1}]'.format(
@@ -2069,7 +2111,7 @@ fqdn: %s
             if bd.volume_type:
                 logmsg += ', volume_type=[{0}]'.format(bd.volume_type)
 
-            self.getLogger().debug('[aws] {0}'.format(logmsg))
+            self.getLogger().debug(logmsg)
 
         return result
 
@@ -2086,9 +2128,8 @@ fqdn: %s
             return self.__instanceCacheGet(conn, node)
         except ResourceNotFound:
             # Node not found in instance cache
-            self.getLogger().warn(
-                '[aws] No associated AWS instance found for'
-                ' node [%s]' % (node.name))
+            self.getLogger().warning(
+                'No associated AWS instance found for node [%s]' % (node.name))
 
         return None
 
@@ -2096,7 +2137,7 @@ fqdn: %s
         """Change the given active node(s) to an idle node"""
 
         for node in dbNodes:
-            self.getLogger().info('[aws] Idling node [{0}]'.format(node.name))
+            self.getLogger().info('Idling node [{0}]'.format(node.name))
 
             configDict = self.getResourceAdapterConfig(
                 self.getResourceAdapterConfigProfileByNodeName(node.name))
@@ -2123,7 +2164,7 @@ fqdn: %s
     def activateIdleNode(self, node, softwareProfileName,
                          softwareProfileChanged):
         self.getLogger().debug(
-            '[aws] activateIdleNode(node=[%s],'
+            'activateIdleNode(node=[%s],'
             ' softwareProfileName=[%s], softwareProfileChanged=[%s])' % (
                 node.name, softwareProfileName, softwareProfileChanged))
 
@@ -2167,10 +2208,10 @@ fqdn: %s
         for node in dbNodes:
             self.__delete_node(node)
 
-        self.getLogger().info('[aws] %d node(s) deleted' % (len(dbNodes)))
+        self.getLogger().info('%d node(s) deleted' % (len(dbNodes)))
 
     def __delete_node(self, node):
-        self.getLogger().info('[aws] Deleting node [{0}]'.format(node.name))
+        self.getLogger().info('Deleting node [{0}]'.format(node.name))
 
         try:
             configDict = self.getResourceAdapterConfig(
@@ -2194,20 +2235,20 @@ fqdn: %s
             # Clean up instance cache
             self.instanceCacheDelete(node.name)
         except ResourceNotFound:
-            self.getLogger().warn(
-                '[aws] Unable to determine AWS instance associated with'
+            self.getLogger().warning(
+                'Unable to determine AWS instance associated with'
                 ' node [{0}]; instance may still be running!'.format(
                     node.name))
 
     def __node_cleanup(self, configDict, node):
         self.getLogger().debug(
-            '[aws] __node_cleanup(): node=[%s]' % (node.name))
+            '__node_cleanup(): node=[%s]' % (node.name))
 
     def __terminate_instance(self, instance):
         """Wrapper around AWS instance termination"""
 
         self.getLogger().info(
-            '[aws] Terminating instance [{0}]'.format(instance.id))
+            'Terminating instance [{0}]'.format(instance.id))
 
         try:
             instance.terminate()
@@ -2223,7 +2264,7 @@ fqdn: %s
         for node, oldSoftwareProfileName in nodeIdSoftwareProfileTuples:
             # Note call in log
             self.getLogger().debug(
-                '[aws] transferNode (node=[%s])' % (node.name))
+                'transferNode (node=[%s])' % (node.name))
 
             # simply idle and activate
             self.idleActiveNode([node])
@@ -2276,7 +2317,7 @@ fqdn: %s
 
                 if not reservations:
                     self.getLogger().info(
-                        '[aws] Unable to get instance (by instance id) for'
+                        'Unable to get instance (by instance id) for'
                         ' node [%s]' % (node.name))
             elif instance_cache.has_option(node.name, 'reservation_id'):
                 # Attempt to get reservation_id from instance cache
@@ -2291,7 +2332,7 @@ fqdn: %s
 
                 if not reservations:
                     self.getLogger().info(
-                        '[aws] Unable to get instance (by reservation id)'
+                        'Unable to get instance (by reservation id)'
                         ' for node [%s]' % (node.name))
             else:
                 raise NodeNotFound(
@@ -2307,7 +2348,7 @@ fqdn: %s
 
     def startupNode(self, nodes, remainingNodeList=None, tmpBootMethod='n'):
         self.getLogger().debug(
-            '[aws] startupNode(): dbNodes=[%s], remainingNodeList=[%s],'
+            'startupNode(): dbNodes=[%s], remainingNodeList=[%s],'
             ' tmpBootMethod=[%s]' % (
                 ' '.join([node.name for node in nodes]),
                 ' '.join(remainingNodeList or []), tmpBootMethod))
@@ -2323,8 +2364,8 @@ fqdn: %s
                 # Catch exception thrown if node's instance metadata is no
                 # longer available.
 
-                self.getLogger().warn(
-                    '[aws] startupNode(): node [%s] has no corresponding AWS'
+                self.getLogger().warning(
+                    'startupNode(): node [%s] has no corresponding AWS'
                     ' instance' % (node.name))
 
                 continue
@@ -2334,14 +2375,14 @@ fqdn: %s
                     instance.start()
 
                     self.getLogger().info(
-                        '[aws] Node [%s] (instance [%s]) started' % (
+                        'Node [%s] (instance [%s]) started' % (
                             node.name, instance.id))
             except boto.exception.EC2ResponseError as exc:
                 # Ignore any errors from EC2
                 msg = 'Error starting node [%s] (instance [%s]): %s (%s)' % (
                     node.name, instance.id, exc.message, exc.error_code)
 
-                self.getLogger().warn('[aws] {0}'.format(msg))
+                self.getLogger().warning(msg)
 
                 continue
 
@@ -2358,7 +2399,7 @@ fqdn: %s
     def rebootNode(self, nodes, bSoftReset=False): \
             # pylint: disable=unused-argument
         self.getLogger().debug(
-            '[aws] rebootNode(): nodes=[%s], soft=[%s]' % (
+            'rebootNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
 
         for node in nodes:
@@ -2372,14 +2413,14 @@ fqdn: %s
                 instance = self.__instanceCacheGet(conn, node)
             except ResourceNotFound:
                 # Unable to get instance_id for unknown node
-                self.getLogger().warn(
-                    '[aws] rebootNode(): node [%s] has no associated'
+                self.getLogger().warning(
+                    'rebootNode(): node [%s] has no associated'
                     ' instance' % (node.name))
 
                 continue
 
             self.getLogger().debug(
-                '[aws] rebootNode(): instance=[%s]' % (instance.id))
+                'rebootNode(): instance=[%s]' % (instance.id))
 
             try:
                 instance.reboot()
@@ -2388,17 +2429,17 @@ fqdn: %s
                 msg = 'Error rebooting node [%s] (instance [%s]): %s (%s)' % (
                     node.name, instance.id, exc.message, exc.error_code)
 
-                self.getLogger().warn('[aws] {0}'.format(msg))
+                self.getLogger().warning(msg)
 
                 continue
 
             self.getLogger().info(
-                '[aws] Node [%s] (instance [%s]) rebooted' % (
+                'Node [%s] (instance [%s]) rebooted' % (
                     node.name, instance.id))
 
     def shutdownNode(self, nodes, bSoftReset=False):
         self.getLogger().debug(
-            '[aws] shutdownNode(): nodes=[%s], soft=[%s]' % (
+            'shutdownNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
 
         for node in nodes:
@@ -2415,13 +2456,13 @@ fqdn: %s
                 continue
 
             self.getLogger().debug(
-                '[aws] shutdownNode(): instance=[%s]' % (instance.id))
+                'shutdownNode(): instance=[%s]' % (instance.id))
 
             try:
                 instance.stop(force=not bSoftReset)
 
                 self.getLogger().info(
-                    '[aws] Node [%s] (instance [%s]) shutdown' % (
+                    'Node [%s] (instance [%s]) shutdown' % (
                         node.name, instance.id))
             except boto.exception.EC2ResponseError as exc:
                 # Ignore any errors from EC2
@@ -2430,14 +2471,14 @@ fqdn: %s
                            node.name, instance.id, exc.message,
                            exc.error_code))
 
-                self.getLogger().warn('[aws] {0}'.format(msg))
+                self.getLogger().warning(msg)
 
                 continue
 
     def updateNode(self, session, node, updateNodeRequest): \
             # pylint: disable=unused-argument
         self.getLogger().debug(
-            '[aws] updateNode(): node=[{0}]'.format(node.name))
+            'updateNode(): node=[{0}]'.format(node.name))
 
         instance_cache = self.instanceCacheGet(node.name)
 
@@ -2455,7 +2496,7 @@ fqdn: %s
             # Node state transitioning from 'Allocated'
 
             self.getLogger().debug(
-                '[aws] updateNode(): node [{0}] transitioning from [{1}]'
+                'updateNode(): node [{0}] transitioning from [{1}]'
                 ' to [{2}]'.format(
                     node.name, node.state, updateNodeRequest['state']))
 
@@ -2471,7 +2512,7 @@ fqdn: %s
 
             if prov_nic:
                 self.getLogger().debug(
-                    '[aws] updateNode(): node=[{0}] updating'
+                    'updateNode(): node=[{0}] updating'
                     ' network'.format(node.name))
 
                 self._pre_add_host(
@@ -2537,8 +2578,7 @@ fqdn: %s
         vcpus = 1
 
         self.getLogger().debug(
-            '[aws] get_instance_size_mapping(instancetype=[{0}])'.format(
-                value))
+            'get_instance_size_mapping(instancetype=[{0}])'.format(value))
 
         with open(
                 os.path.join(
@@ -2554,7 +2594,7 @@ fqdn: %s
                     continue
 
                 self.getLogger().debug(
-                    '[aws] get_instance_size_mapping() cache hit')
+                    'get_instance_size_mapping() cache hit')
 
                 # Found matching entry
                 vcpus = entry['vCPUs'].split(' ', 1)[0]
@@ -2562,6 +2602,6 @@ fqdn: %s
                 break
             else:
                 self.getLogger().debug(
-                    '[aws] get_instance_size_mapping() cache miss')
+                    'get_instance_size_mapping() cache miss')
 
         return vcpus
