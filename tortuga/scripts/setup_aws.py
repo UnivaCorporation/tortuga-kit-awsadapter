@@ -408,7 +408,7 @@ def main(verbose, debug, ignore_iam, unattended, profile):
         break
 
     adapter_cfg = {
-        'allocate_public_ip': 'true',
+        'associate_public_ip_address': 'true',
         'cloud_init_script_template': 'aws_cloud_init.yaml.j2',
     }
 
