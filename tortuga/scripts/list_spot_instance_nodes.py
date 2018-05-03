@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import configparser
+
 from tortuga.db.dbManager import DbManager
 from tortuga.db.nodesDbHandler import NodesDbHandler
 
@@ -30,13 +31,9 @@ def main():
         except configparser.NoOptionError:
             pass
 
-    with DbManager.session() as session:
+    with DbManager().session() as session:
         for node in NodesDbHandler().getNodeList(session):
             if node.hardwareprofile.resourceadapter and \
-                node.hardwareprofile.resourceadapter.name == 'aws':
-                    if node.name in spot_instances:
-                        print(node.name)
-
-
-if __name__ == '__main__':
-    main()
+                    node.hardwareprofile.resourceadapter.name == 'aws':
+                if node.name in spot_instances:
+                    print(node.name)

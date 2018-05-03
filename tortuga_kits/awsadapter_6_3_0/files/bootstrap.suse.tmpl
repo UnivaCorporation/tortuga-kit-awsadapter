@@ -47,7 +47,7 @@ def main():
 
     # Install Puppetlabs' repository
     if not is_pkg_installed('puppetlabs-release-pc1'):
-        install_pkg('http://yum.puppetlabs.com/puppetlabs-release-pc1-sles-12.noarch.rpm')
+        install_pkg('http://yum.puppetlabs.com/puppet5/puppet-release-sles-12.noarch.rpm')
 
     if not is_pkg_installed('puppet-agent'):
         install_pkg('puppet-agent')

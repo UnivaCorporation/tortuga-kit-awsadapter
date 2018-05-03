@@ -33,13 +33,19 @@ setup(
         'boto3',
         'gevent',
         'awscli',
+        'click',
+        'colorama',
         'daemonize',
     ],
-    scripts=[
-        'bin/cancel-spot-instance-requests',
-        'bin/list-spot-instance-requests',
-        'bin/request-spot-instances',
-        'bin/get-current-spot-instance-price',
-        'bin/awsspotd',
-    ]
+    entry_points={
+        'console_scripts': [
+            'awsspotd=tortuga.scripts.awsspotd:main',
+            'cancel-spot-instance-requests=tortuga.scripts.cancel_spot_instance_requests:main',
+            'get-current-spot-instance-price=tortuga.scripts.get_current_spot_instanc_price:main',
+            'list-spot-instance-nodes=tortuga.scripts.list_spot_instance_nodes:main',
+            'list-spot-instance-requests=tortuga.scripts.list_spot_instance_requests:main',
+            'request-spot-instances=tortuga.scripts.request_spot_instances:main',
+            'setup-aws=tortuga.scripts.setup_aws:main',
+        ]
+    }
 )
