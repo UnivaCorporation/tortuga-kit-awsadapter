@@ -53,21 +53,14 @@ def _installPackage(pkgList, yumopts=None, retries=10):
         raise Exception('Error installing package [%s]' % (pkgList))
 
 
-def installEPEL(vers):
-    epelbaseurl = ('http://dl.fedoraproject.org/pub/epel'
-                   '/epel-release-latest-%s.noarch.rpm' % (vers))
-
-    runCommand('rpm -ivh %s' % (epelbaseurl))
-
-
 def _isPackageInstalled(pkgName):
     return runCommand('rpm -q --quiet %s' % (pkgName)) == 0
 
 
 def installPuppet(vers):
-    pkgname = 'puppetlabs-release-pc1'
+    pkgname = 'puppet5-release'
 
-    url = 'http://yum.puppetlabs.com/%s-el-%s.noarch.rpm' % (pkgname, vers)
+    url = 'http://yum.puppetlabs.com/puppet5/%s-el-%s.noarch.rpm' % (pkgname, vers)
 
     bRepoInstalled = _isPackageInstalled(pkgname)
 
@@ -170,10 +163,6 @@ def main():
     vals = platform.dist()
 
     vers = vals[1].split('.')[0]
-
-    # Install EPEL repository, if necessary
-    if not _isPackageInstalled('epel-release'):
-        installEPEL(vers)
 
     with open('/etc/hosts', 'a+') as fp:
         fp.write('%s\t%s\n' % (installerIpAddress, installerHostName))
