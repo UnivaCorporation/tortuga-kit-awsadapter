@@ -1531,7 +1531,7 @@ fqdn: %s
         if 'node' not in node_request:
             self.getLogger().debug(
                 'Creating node record for instance [{0}]'.format(
-                    node_request['instance']))
+                    node_request['instance'].id))
 
             node_request['node'] = self.__initialize_node(
                 launch_request.hardwareprofile,
