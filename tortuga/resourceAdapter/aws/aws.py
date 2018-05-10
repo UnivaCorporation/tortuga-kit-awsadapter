@@ -21,15 +21,15 @@ import os
 import random
 import shlex
 import sys
-import uuid
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import gevent
 import gevent.queue
 import zmq
+from sqlalchemy.orm.session import Session
 
 import boto
 import boto.ec2
@@ -39,8 +39,10 @@ from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.dbManager import DbManager
+from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
+from tortuga.db.models.softwareProfile import SoftwareProfile
 from tortuga.exceptions.commandFailed import CommandFailed
 from tortuga.exceptions.configurationError import ConfigurationError
 from tortuga.exceptions.invalidArgument import InvalidArgument
@@ -396,7 +398,7 @@ class Aws(ResourceAdapter):
         # hosted on EC2.
         config['use_instance_hostname'] = \
             configDict['use_instance_hostname'].lower() == 'true' \
-                if 'use_instance_hostname' in configDict else self.runningOnEc2()
+                if 'use_instance_hostname' in configDict else True
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -905,7 +907,6 @@ class Aws(ResourceAdapter):
                 nodes = self.__createNodes(addNodesRequest['count'],
                                            dbHardwareProfile,
                                            dbSoftwareProfile,
-                                           generate_ip=False,
                                            initial_state='Allocated')
 
                 for node in nodes:
@@ -1045,8 +1046,6 @@ class Aws(ResourceAdapter):
         dbSoftwareProfile = launch_request.softwareprofile
         configDict = launch_request.configDict
 
-        bValidateIp = not self.runningOnEc2()
-
         nodeCount = addNodesRequest['count']
 
         nodes = []
@@ -1070,7 +1069,7 @@ class Aws(ResourceAdapter):
             # Create the node
             node = self.nodeApi.createNewNode(
                 session, addNodeRequest, dbHardwareProfile,
-                dbSoftwareProfile, validateIp=bValidateIp)
+                dbSoftwareProfile, validateIp=False)
 
             session.add(node)
 
@@ -1248,9 +1247,7 @@ fqdn: %s
                 count))
 
         nodes = self.__createNodes(
-            addNodesRequest['count'], dbHardwareProfile, dbSoftwareProfile,
-            True and not self.runningOnEc2(),
-            False)
+            addNodesRequest['count'], dbHardwareProfile, dbSoftwareProfile)
 
         dbSession.add_all(nodes)
         dbSession.commit()
@@ -1520,8 +1517,10 @@ fqdn: %s
         # Process queue
         self.__launch_wait_queue.join()
 
-    def __post_launch_action(self, dbSession, launch_request, node_request):
-        """Perform tasks after instance has been launched successfully
+    def __post_launch_action(self, dbSession: Session, launch_request: dict,
+                             node_request: LaunchRequest):
+        """
+        Perform tasks after instance has been launched successfully
 
         Raises:
             AWSOperationTimeoutError
@@ -1535,8 +1534,7 @@ fqdn: %s
 
             node_request['node'] = self.__initialize_node(
                 launch_request.hardwareprofile,
-                launch_request.softwareprofile,
-                default_hostname=False)
+                launch_request.softwareprofile)
 
             dbSession.add(node_request['node'])
 
@@ -1544,19 +1542,23 @@ fqdn: %s
 
         instance = node_request['instance']
 
-        name, ip = self._set_node_name_and_ip(node, launch_request, instance)
+        primary_nic = get_primary_nic(node.nics)
+
+        # Set IP for node
+        primary_nic.ip = instance.private_ip_address
+
+        if launch_request.configDict['use_instance_hostname']:
+            # Update node name based on instance name assigned by AWS
+            node.name = self.__get_node_name(launch_request, instance)
 
         # Commit node record changes (incl. host name and/or IP address)
         dbSession.commit()
 
         self._pre_add_host(
-            name,
+            node.name,
             node.hardwareprofile.name,
             node.softwareprofile.name,
-            ip)
-
-        self.getLogger().debug(
-            '__post_launch_action(node=[{0}])'.format(node.name))
+            primary_nic.ip)
 
         configDict = launch_request.configDict
 
@@ -1595,15 +1597,7 @@ fqdn: %s
         # This node is ready
         node_request['status'] = 'running'
 
-        # Mark node as provisioned
-        if node.softwareprofile.type == 'compute-cloud_init':
-            # Immediately mark any instances launched using 'cloud-init' as
-            # installed since we cannot know when they're actually ready.
-            # cloud-init doesn't guarantee a call to 'update-node-status'
-            # to toggle node state.
-            node.state = 'Installed'
-        else:
-            node.state = 'Provisioned'
+        node.state = 'Provisioned'
 
     def __assign_tags(self, configDict, conn, node, instance):
         if not configDict['use_tags']:
@@ -1644,48 +1638,6 @@ fqdn: %s
 
         session.delete(node)
 
-    def __replace_temporary_node_name(self, temporary_name, instance,
-                                      launch_request):
-        config = self.instanceCacheRefresh()
-
-        # Once instance is launched, replace 'temporary' host name
-        # with actual instance host name
-        new_name = instance.private_dns_name
-
-        # Copy metadata from existing node entry
-        metadata = {}
-        for key, value in config.items(temporary_name):
-            if key == 'instance':
-                continue
-
-            metadata[key] = value
-
-        # Write instance cache entry for 'new' host name
-        self.instanceCacheSet(
-            new_name,
-            launch_request.addNodesRequest,
-            instance_id=instance.id,
-            metadata=metadata)
-
-        # Remove entry for 'temporary' host name
-        self.instanceCacheDelete(temporary_name)
-
-        return new_name
-
-    def __get_node_ip(self, node, instance):
-        if not self.runningOnEc2():
-            if node.hardwareprofile.location != 'remote-vpn':
-                # Assign AWS 'public' IP address to 'external' interface
-                ip = instance.ip_address
-            else:
-                ip = instance.private_ip_address
-        else:
-            # Running on EC2; use private IP address and Tortuga assigned
-            # host name
-            ip = instance.private_ip_address
-
-        return ip
-
     def __get_node_name(self, launch_request, instance):
         if launch_request.configDict['override_dns_domain']:
             hostname, _ = instance.private_dns_name.split('.', 1)
@@ -1704,50 +1656,16 @@ fqdn: %s
 
         return fqdn
 
-    def _set_node_name_and_ip(self, node, launch_request, instance):
-        """Update node name and IP address based on settings.
+    def _set_node_name_and_ip(self, node: Node, launch_request: dict, instance) -> Tuple[str, str]:
+        """
+        Update node name and IP address based on settings.
 
-        Returns tuple of (name, ip)
         """
 
-        configDict = launch_request.configDict
 
-        # Set IP for node
-        ip = self.__get_node_ip(node, instance)
-
-        if not self.runningOnEc2():
-            if node.hardwareprofile.location != 'remote-vpn':
-                external_nics = [nic for nic in node.nics if not nic.boot]
-
-                external_nics[0].ip = ip
-            else:
-                if not node.nics:
-                    internal_nics = [Nic(boot=True)]
-
-                    node.nics = internal_nics
-                else:
-                    internal_nics = [nic for nic in node.nics if nic.boot]
-
-                internal_nics[0].ip = ip
-        else:
-            internal_nics = [nic for nic in node.nics if nic.boot]
-            internal_nics[0].ip = ip
-
-        if configDict['use_instance_hostname']:
-            # Update node name based on instance name assigned by AWS
-            if not self.runningOnEc2():
-                name = self.__replace_temporary_node_name(
-                    node.name, instance, launch_request)
-            else:
-                name = self.__get_node_name(launch_request, instance)
-
-            node.name = name
-
-        return node.name, ip
-
-    def __createNodes(self, count, hardwareprofile, softwareprofile,
-                      create_external_nic=False, generate_ip=False,
-                      default_hostname=False, initial_state='Launching'):
+    def __createNodes(self, count: int, hardwareprofile: HardwareProfile,
+                      softwareprofile: SoftwareProfile,
+                      initial_state: Optional[str] = 'Launching'):
         """
         Bulk node creation
 
@@ -1755,26 +1673,13 @@ fqdn: %s
             NetworkNotFound
         """
 
-        nodes = []
+        return [self.__initialize_node(
+            hardwareprofile, softwareprofile, initial_state=initial_state)
+            for _ in range(count)]
 
-        for _ in range(count):
-            node = self.__initialize_node(
-                hardwareprofile,
-                softwareprofile,
-                create_external_nic=create_external_nic,
-                generate_ip=generate_ip,
-                default_hostname=default_hostname,
-                initial_state=initial_state)
-
-            nodes.append(node)
-
-        return nodes
-
-    def __initialize_node(self, hardwareprofile, softwareprofile,
-                          create_external_nic=False,
-                          generate_ip=False,
-                          default_hostname=True,
-                          initial_state='Launching'):
+    def __initialize_node(self, hardwareprofile: HardwareProfile,
+                          softwareprofile: SoftwareProfile,
+                          initial_state: Optional[str] = 'Launching'):
         node = Node()
 
         # Generate the 'internal' host name
@@ -1783,9 +1688,6 @@ fqdn: %s
             node.name = self.addHostApi.generate_node_name(
                 hardwareprofile.nameFormat,
                 dns_zone=self.private_dns_zone)
-        elif default_hostname:
-            # Generate a placeholder node name
-            node.name = str(uuid.uuid4())
 
         node.state = initial_state
         node.isIdle = False
@@ -1793,36 +1695,8 @@ fqdn: %s
         node.softwareprofile = softwareprofile
         node.addHostSession = self.addHostSession
 
-        nics = []
-
-        if create_external_nic:
-            # Create external interface
-            external_nic = Nic()
-
-            nics.append(external_nic)
-
-        # Create internal (default) network interface
-        internal_nic = Nic(boot=True)
-
-        if generate_ip:
-            # Get provisioning/private network
-            hwprofile_network = \
-                get_provisioning_hwprofilenetwork(hardwareprofile)
-
-            internal_nic.networkId = hwprofile_network.network.id
-            internal_nic.network = hwprofile_network.network
-            internal_nic.networkDeviceId = \
-                hwprofile_network.networkdevice.id
-            internal_nic.networkdevice = hwprofile_network.networkdevice
-
-            # IP address assigned on Tortuga provisioning network
-            internal_nic.ip = \
-                self.addHostApi.generate_provisioning_ip_address(
-                    internal_nic.network)
-
-        nics.append(internal_nic)
-
-        node.nics = nics
+        # Create primary network interface
+        node.nics.append(Nic(boot=True))
 
         return node
 
@@ -2605,3 +2479,12 @@ fqdn: %s
                     'get_instance_size_mapping() cache miss')
 
         return vcpus
+
+
+def get_primary_nic(nics: List[Nic]):
+    result = [nic for nic in nics if nic.boot]
+
+    if not result:
+        raise NicNotFound('Provisioning nic not found')
+
+    return result[0]
