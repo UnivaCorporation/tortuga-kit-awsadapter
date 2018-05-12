@@ -287,7 +287,7 @@ class Aws(ResourceAdapter):
                     'dns_nameservers',
                     'dns_options',
                     'iam_instance_profile_name',
-                    ]:  # noqa
+                   ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
         if 'awsaccesskey' in configDict:
@@ -331,14 +331,13 @@ class Aws(ResourceAdapter):
 
         config['monitoring_enabled'] = \
             configDict['monitoring_enabled'] \
-                if 'monitoring_enabled' in configDict and \
-                   configDict[
-                       'monitoring_enabled'].lower() == 'true' else False
+            if 'monitoring_enabled' in configDict and \
+            configDict['monitoring_enabled'].lower() == 'true' else False
 
         config['ebs_optimized'] = \
             configDict['ebs_optimized'] \
-                if 'ebs_optimized' in configDict and \
-                   configDict['ebs_optimized'].lower() == 'true' else False
+            if 'ebs_optimized' in configDict and \
+            configDict['ebs_optimized'].lower() == 'true' else False
 
         if 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template'] and \
@@ -398,7 +397,7 @@ class Aws(ResourceAdapter):
         # hosted on EC2.
         config['use_instance_hostname'] = \
             configDict['use_instance_hostname'].lower() == 'true' \
-                if 'use_instance_hostname' in configDict else True
+            if 'use_instance_hostname' in configDict else True
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -419,7 +418,7 @@ class Aws(ResourceAdapter):
         # Convert 'associate_public_ip_address' to bool
         config['associate_public_ip_address'] = \
             config['associate_public_ip_address'].lower() == 'true' \
-                if config['associate_public_ip_address'] is not None else None
+            if config['associate_public_ip_address'] is not None else None
 
         if 'use_custom_dns_domain' in config and \
                 config['use_custom_dns_domain']:
@@ -462,7 +461,7 @@ class Aws(ResourceAdapter):
 
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
         if config['subnet_id'] and config['override_dns_domain'] and not \
-        config['dns_domain']:
+                config['dns_domain']:
             # Attempt to look up default DNS domain from DHCP options set
             domain = self.__get_vpc_default_domain(config)
             if domain:
@@ -485,7 +484,8 @@ class Aws(ResourceAdapter):
 
         return config
 
-    def __get_vpc_default_domain(self, config):
+    def __get_vpc_default_domain(self, config): \
+            # pylint: disable=no-self-use
         """Returns custom DNS domain associated with DHCP option set,
         otherwise returns None
 
@@ -530,7 +530,8 @@ class Aws(ResourceAdapter):
         except boto.exception.EC2ResponseError as exc:
             raise ConfigurationError('AWS error: {0}'.format(exc.message))
 
-    def __convert_to_bool(self, value, default=None):
+    def __convert_to_bool(self, value, default=None): \
+            # pylint: disable=no-self-use
         return value.lower().startswith('t') \
             if value is not None else default
 
@@ -608,10 +609,8 @@ class Aws(ResourceAdapter):
 
                 # Determine value of 'encrypted' flag (either undefined or the
                 # string 'encrypted')
-                if (arglen > 4 and elements[4] and
-                    bdt.volume_type != 'io1') or \
-                        (arglen > 5 and bdt.volume_type == 'io1' and
-                         elements[5]):
+                if (arglen > 4 and elements[4] and bdt.volume_type != 'io1') or \
+                        (arglen > 5 and bdt.volume_type == 'io1' and elements[5]):
                     encrypted_str = elements[5].lower() \
                         if bdt.volume_type == 'io1' else elements[4].lower()
 
@@ -664,7 +663,8 @@ class Aws(ResourceAdapter):
 
         return instance
 
-    def __get_instance_by_instance_id(self, conn, instance_id):
+    def __get_instance_by_instance_id(self, conn, instance_id): \
+            # pylint: disable=no-self-use
         # Find the instance itself
         reservations = [r for r in conn.get_all_reservations(
             filters={'instance-id': instance_id})]
@@ -1045,7 +1045,6 @@ class Aws(ResourceAdapter):
         addNodesRequest = launch_request.addNodesRequest
         dbHardwareProfile = launch_request.hardwareprofile
         dbSoftwareProfile = launch_request.softwareprofile
-        configDict = launch_request.configDict
 
         nodeCount = addNodesRequest['count']
 
@@ -1103,13 +1102,13 @@ class Aws(ResourceAdapter):
         settings_dict = {
             'installerHostName': self.installer_public_hostname,
             'installerIp': '\'{0}\''.format(installerIp)
-            if installerIp else 'None',
+                           if installerIp else 'None',
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
             'override_dns_domain': str(configDict['override_dns_domain']),
             'dns_options': '\'{0}\''.format(configDict['dns_options'])
-            if configDict['dns_options'] else None,
+                           if configDict['dns_options'] else None,
             'dns_domain': dns_domain_value,
             'dns_nameservers': _get_encoded_list(
                 configDict['dns_nameservers']),
@@ -1117,7 +1116,8 @@ class Aws(ResourceAdapter):
 
         return settings_dict
 
-    def __get_common_user_data_content(self, settings_dict):
+    def __get_common_user_data_content(self, settings_dict): \
+            # pylint: disable=no-self-use
         result = """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
@@ -1309,7 +1309,8 @@ fqdn: %s
             self.getLogger().exception(
                 'Exception while launching instances')
 
-    def __delete_failed_nodes(self, dbSession, launch_request):
+    def __delete_failed_nodes(self, dbSession, launch_request): \
+            # pylint: disable=no-self-use
         for node_request in launch_request.node_request_queue:
             node = node_request['node']
 
@@ -1323,7 +1324,6 @@ fqdn: %s
         Returns list of Node objects
         """
 
-        configDict = launch_request.configDict
         count = launch_request.addNodesRequest['count']
         node_request_queue = launch_request.node_request_queue
 
@@ -1662,7 +1662,7 @@ fqdn: %s
 
         return [self.__initialize_node(
             hardwareprofile, softwareprofile, initial_state=initial_state)
-            for _ in range(count)]
+                for _ in range(count)]
 
     def __initialize_node(self, hardwareprofile: HardwareProfile,
                           softwareprofile: SoftwareProfile,
@@ -1687,8 +1687,11 @@ fqdn: %s
 
         return node
 
-    def __parseEC2ResponseError(self, ex):
-        """Helper method for parsing failed AWS API call"""
+    def __parseEC2ResponseError(self, ex): \
+            # pylint: disable=no-self-use
+        """
+        Helper method for parsing failed AWS API call
+        """
 
         if ex.body:
             xmlDom = ET.fromstring(ex.body)
@@ -1713,7 +1716,8 @@ fqdn: %s
         if resource_ids and 'tags' in configDict and configDict['tags']:
             self.__addTags(conn, resource_ids, configDict['tags'])
 
-    def __get_security_group_by_name(self, conn, groupname):
+    def __get_security_group_by_name(self, conn, groupname): \
+            # pylint: disable=no-self-use
         # For reasons unknown to me, Amazon will reject the request for
         # retrieving a VPC security group by name. This is why we iterate
         # over the list of all security groups to find the matching name.
@@ -2438,9 +2442,8 @@ fqdn: %s
         self.getLogger().debug(
             'get_instance_size_mapping(instancetype=[{0}])'.format(value))
 
-        with open(
-                os.path.join(
-                    self._cm.getKitConfigBase(), 'aws-instances.csv')) as fp:
+        with open(os.path.join(self._cm.getKitConfigBase(),
+                               'aws-instances.csv')) as fp:
             dr = csv.DictReader(fp)
 
             for entry in dr:
