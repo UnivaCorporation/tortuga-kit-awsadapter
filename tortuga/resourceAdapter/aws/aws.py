@@ -1526,7 +1526,7 @@ fqdn: %s
                 self.__launch_wait_queue.task_done()
 
     def __wait_for_instances(self, dbSession: Session,
-                             launch_request: LaunchRequest):
+                             launch_request: LaunchRequest) -> NoReturn:
         """
         Raises:
             ConfigurationError
@@ -1633,7 +1633,8 @@ fqdn: %s
 
         node.state = 'Provisioned'
 
-    def __assign_tags(self, configDict, conn, node, instance):
+    def __assign_tags(self, configDict: dict, conn: EC2Connection,
+                      node: Node, instance):
         if not configDict['use_tags']:
             return
 
