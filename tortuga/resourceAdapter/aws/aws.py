@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# pylint: disable=no-member
+# pylint: disable=no-member,logging-not-lazy,logging-format-interpolation
 
 import csv
 import itertools
