@@ -751,7 +751,8 @@ class Aws(ResourceAdapter):
     def __insert_nodes(self, session: Session,
                        launch_request: LaunchRequest): \
             # pylint: disable=unused-argument
-        """Directly insert nodes with pre-existing AWS instances
+        """
+        Directly insert nodes with pre-existing AWS instances
 
         This is primarily used for supporting spot instances where an
         AWS instance exists before the Tortuga associated node record.
@@ -863,7 +864,8 @@ class Aws(ResourceAdapter):
                                dbSession: Session,
                                dbHardwareProfile: HardwareProfile,
                                dbSoftwareProfile: SoftwareProfile) -> List[Node]:
-        """Make request for EC2 spot instances. Spot instance arguments are
+        """
+        Make request for EC2 spot instances. Spot instance arguments are
         passed through 'addNodesRequest' in the dictionary
         'spot_instance_request.
 
@@ -1025,7 +1027,8 @@ class Aws(ResourceAdapter):
                                  dbSoftwareProfile: SoftwareProfile) -> NoReturn: \
             # pylint: disable=unused-argument
 
-        """Ensure arguments to start() instances are valid
+        """
+        Ensure arguments to start() instances are valid
 
         Raises:
             InvalidArgument
@@ -2017,8 +2020,9 @@ fqdn: %s
         return result
 
     def stop(self, hardwareProfileName, deviceName):
-        """Stops addhost daemon from creating additional nodes"""
-        pass
+        """
+        Stops addhost daemon from creating additional nodes
+        """
 
     def suspendActiveNode(self, node: Node) -> bool: \
             # pylint: disable=unused-argument
@@ -2036,8 +2040,6 @@ fqdn: %s
         return None
 
     def idleActiveNode(self, nodes: List[Node]) -> str:
-        """Change the given active node(s) to an idle node"""
-
         for node in dbNodes:
             self.getLogger().info('Idling node [{0}]'.format(node.name))
 
@@ -2145,7 +2147,9 @@ fqdn: %s
                     node.name))
 
     def __terminate_instance(self, instance):
-        """Wrapper around AWS instance termination"""
+        """
+        Wrapper around AWS instance termination
+        """
 
         self.getLogger().info(
             'Terminating instance [{0}]'.format(instance.id))
@@ -2182,7 +2186,9 @@ fqdn: %s
         raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
-        """Determines if this node is running on EC2"""
+        """
+        Determines if this node is running on EC2
+        """
 
         if self.__runningOnEc2 is None:
             try:
