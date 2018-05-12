@@ -1656,13 +1656,6 @@ fqdn: %s
 
         return fqdn
 
-    def _set_node_name_and_ip(self, node: Node, launch_request: dict, instance) -> Tuple[str, str]:
-        """
-        Update node name and IP address based on settings.
-
-        """
-
-
     def __createNodes(self, count: int, hardwareprofile: HardwareProfile,
                       softwareprofile: SoftwareProfile,
                       initial_state: Optional[str] = 'Launching'):
