@@ -2060,12 +2060,8 @@ fqdn: %s
                 added=[('instance', node_request['instance'].id)])
 
         # Wait for activated instance(s) to start
-        session = DbManager().openSession()
-
-        try:
+        with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
-        finally:
-            DbManager().closeSession()
 
     def deleteNode(self, dbNodes):
         for node in dbNodes:
