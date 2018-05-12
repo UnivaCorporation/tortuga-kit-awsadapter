@@ -728,9 +728,10 @@ class Aws(ResourceAdapter):
             nodes = self.__add_idle_nodes(dbSession, launch_request)
         else:
             # Add (active) nodes
-            if configDict['use_instance_hostname'] and \
-                    dbSoftwareProfile.type != 'compute-cloud_init':
-                # Create instances before node records
+            if configDict['use_instance_hostname']:
+                # Create instances before node records. We need to the
+                # instance to exist to get the host name for the node
+                # record.
                 self.__prelaunch_instances(dbSession, launch_request)
             else:
                 # Create node records before instances
