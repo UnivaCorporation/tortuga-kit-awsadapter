@@ -24,7 +24,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Union
 
 import gevent
 import gevent.queue
@@ -54,7 +54,6 @@ from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
-from tortuga.resourceAdapter.utility import get_provisioning_hwprofilenetwork
 
 from .awsHelpers import get_ec2_region
 from .exceptions import AWSOperationTimeoutError
