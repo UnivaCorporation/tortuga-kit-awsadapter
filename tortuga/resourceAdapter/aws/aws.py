@@ -1311,10 +1311,11 @@ fqdn: %s
 
     def __delete_failed_nodes(self, dbSession, launch_request):
         for node_request in launch_request.node_request_queue:
-            self.__node_cleanup(
-                launch_request.configDict, node_request['node'])
+            node = node_request['node']
 
-            self.__db_delete_node(dbSession, node_request['node'])
+            self.__node_cleanup(launch_request.configDict, node)
+
+            dbSession.delete(node)
 
     def __process_node_request_queue(self, dbSession, launch_request):
         """Iterate over all instances/nodes that have been started
@@ -1339,16 +1340,21 @@ fqdn: %s
 
                 continue
 
-            if 'node' in node_request:
-                # Clean up node-related data
-                self.__node_cleanup(configDict, node_request['node'])
+            # clean up failed launches
+            node = node_request.get('node')
 
-                # Delete node record from database
-                self.__db_delete_node(dbSession, node_request['node'])
+            if not node:
+                # instance launched, but no node record created
+                continue
 
-                # Ensure session node cache entry is removed for failed
-                # launch
-                AddHostServerLocal.clear_session_node(node_request['node'])
+            # Clean up node-related data
+            self.__node_cleanup(configDict, node)
+
+            # Ensure session node cache entry removed for failed launch
+            AddHostServerLocal.clear_session_node(node)
+
+            # finally, delete node record from database
+            dbSession.delete(node)
 
         # Commit database transaction
         dbSession.commit()
@@ -1632,12 +1638,6 @@ fqdn: %s
         # Volumes are tagged with user-defined tags only (not instance
         # specific resources)
         self.__tag_ebs_volumes(conn, configDict, instance)
-
-    def __db_delete_node(self, session, node):
-        for nic in node.nics:
-            session.delete(nic)
-
-        session.delete(node)
 
     def __get_node_name(self, launch_request, instance):
         if launch_request.configDict['override_dns_domain']:
