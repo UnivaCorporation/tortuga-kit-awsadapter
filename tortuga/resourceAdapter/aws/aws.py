@@ -1313,8 +1313,6 @@ fqdn: %s
         for node_request in launch_request.node_request_queue:
             node = node_request['node']
 
-            self.__node_cleanup(launch_request.configDict, node)
-
             dbSession.delete(node)
 
     def __process_node_request_queue(self, dbSession, launch_request):
@@ -1346,9 +1344,6 @@ fqdn: %s
             if not node:
                 # instance launched, but no node record created
                 continue
-
-            # Clean up node-related data
-            self.__node_cleanup(configDict, node)
 
             # Ensure session node cache entry removed for failed launch
             AddHostServerLocal.clear_session_node(node)
@@ -2085,8 +2080,6 @@ fqdn: %s
             configDict = self.getResourceAdapterConfig(
                 self.getResourceAdapterConfigProfileByNodeName(node.name))
 
-            self.__node_cleanup(configDict, node)
-
             # Remove Puppet certificate
             bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
             bhm.deleteNodeCleanup(node)
@@ -2107,10 +2100,6 @@ fqdn: %s
                 'Unable to determine AWS instance associated with'
                 ' node [{0}]; instance may still be running!'.format(
                     node.name))
-
-    def __node_cleanup(self, configDict, node):
-        self.getLogger().debug(
-            '__node_cleanup(): node=[%s]' % (node.name))
 
     def __terminate_instance(self, instance):
         """Wrapper around AWS instance termination"""
