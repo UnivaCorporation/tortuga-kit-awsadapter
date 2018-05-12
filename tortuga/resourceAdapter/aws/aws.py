@@ -1563,8 +1563,6 @@ fqdn: %s
             node.softwareprofile.name,
             primary_nic.ip)
 
-        configDict = launch_request.configDict
-
         # Assign instance tags
         self.getLogger().debug(
             'Assigning tags to instance [{0}]'.format(instance.id))
