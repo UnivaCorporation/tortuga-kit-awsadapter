@@ -725,7 +725,7 @@ class Aws(ResourceAdapter):
 
         if dbSoftwareProfile is None or dbSoftwareProfile.isIdle:
             # Add idle nodes
-            return self.__add_idle_nodes(dbSession, launch_request)
+            nodes = self.__add_idle_nodes(dbSession, launch_request)
         else:
             # Add (active) nodes
             if configDict['use_instance_hostname'] and \
