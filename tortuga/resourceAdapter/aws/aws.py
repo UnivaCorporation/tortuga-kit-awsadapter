@@ -2020,6 +2020,13 @@ fqdn: %s
         return 'Discovered'
 
     def __addTags(self, conn, resource_ids, keyvaluepairs):
+        """
+        Create tags for resources
+        """
+
+        self.getLogger().debug('Adding tags to resources: {}'.format(
+            ' '.join(resource_ids)))
+
         conn.create_tags(resource_ids, keyvaluepairs)
 
     def activateIdleNode(self, node, softwareProfileName,
