@@ -2041,7 +2041,7 @@ fqdn: %s
         return None
 
     def idleActiveNode(self, nodes: List[Node]) -> str:
-        for node in dbNodes:
+        for node in nodes:
             self.getLogger().info('Idling node [{0}]'.format(node.name))
 
             configDict = self.getResourceAdapterConfig(
