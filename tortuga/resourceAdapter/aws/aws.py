@@ -474,12 +474,13 @@ class Aws(ResourceAdapter):
                 raise ConfigurationError(
                     'Invalid/malformed value for \'vcpus\'')
 
-        self.getLogger().debug(
-            'Using DNS domain {0} for compute nodes'.format(
-                config['dns_domain']))
-
         if config['override_dns_domain'] is None:
             config['override_dns_domain'] = False
+
+        if config['override_dns_domain']:
+            self.getLogger().debug(
+                'Using DNS domain {0} for compute nodes'.format(
+                    config['dns_domain']))
 
         return config
 
