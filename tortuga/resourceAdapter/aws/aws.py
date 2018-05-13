@@ -916,10 +916,10 @@ class Aws(ResourceAdapter):
                                                       dbSoftwareProfile,
                                                       cfgname)
             else:
-                nodes = self.__createNodes(addNodesRequest['count'],
-                                           dbHardwareProfile,
-                                           dbSoftwareProfile,
-                                           initial_state='Allocated')
+                nodes = self.__create_nodes(dbHardwareProfile,
+                                            dbSoftwareProfile,
+                                            count=addNodesRequest['count'],
+                                            initial_state='Allocated')
 
                 for node in nodes:
                     args = self.__get_request_spot_instance_args(
@@ -1275,8 +1275,9 @@ fqdn: %s
             'Preallocating %d node(s) for mapping to AWS instances' % (
                 count))
 
-        nodes = self.__createNodes(
-            addNodesRequest['count'], dbHardwareProfile, dbSoftwareProfile)
+        nodes = self.__create_nodes(dbHardwareProfile,
+                                    dbSoftwareProfile,
+                                    count=addNodesRequest['count'])
 
         dbSession.add_all(nodes)
         dbSession.commit()
@@ -1564,20 +1565,24 @@ fqdn: %s
             ConfigurationError
         """
 
+        instance = node_request['instance']
+
         if 'node' not in node_request:
+            # create node record for instance
+
             self.getLogger().debug(
                 'Creating node record for instance [{0}]'.format(
-                    node_request['instance'].id))
+                    instance.id))
 
-            node_request['node'] = self.__initialize_node(
-                launch_request.hardwareprofile,
-                launch_request.softwareprofile)
+            # create Node record
+            node = self.__create_nodes(launch_request.hardwareprofile,
+                                       launch_request.softwareprofile)[0]
 
-            dbSession.add(node_request['node'])
+            dbSession.add(node)
 
-        node = node_request['node']
-
-        instance = node_request['instance']
+            node_request['node'] = node
+        else:
+            node = node_request['node']
 
         primary_nic = get_primary_nic(node.nics)
 
@@ -1686,42 +1691,41 @@ fqdn: %s
 
         return fqdn
 
-    def __createNodes(self, count: int, hardwareprofile: HardwareProfile,
-                      softwareprofile: SoftwareProfile,
-                      initial_state: Optional[str] = 'Launching'):
+    def __create_nodes(self, hardwareprofile: HardwareProfile,
+                       softwareprofile: SoftwareProfile,
+                       count: Optional[int] = 1,
+                       initial_state: Optional[str] = 'Launching') -> List[Node]:
         """
-        Bulk node creation
+        Creates new node object(s) with corresponding primary nic
 
         Raises:
             NetworkNotFound
         """
 
-        return [self.__initialize_node(
-            hardwareprofile, softwareprofile, initial_state=initial_state)
-                for _ in range(count)]
+        nodes = []
 
-    def __initialize_node(self, hardwareprofile: HardwareProfile,
-                          softwareprofile: SoftwareProfile,
-                          initial_state: Optional[str] = 'Launching'):
-        node = Node()
+        for _ in range(count):
+            node = Node()
 
-        # Generate the 'internal' host name
-        if hardwareprofile.nameFormat != '*':
-            # Generate node name
-            node.name = self.addHostApi.generate_node_name(
-                hardwareprofile.nameFormat,
-                dns_zone=self.private_dns_zone)
+            # Generate the 'internal' host name
+            if hardwareprofile.nameFormat != '*':
+                # Generate node name
+                node.name = self.addHostApi.generate_node_name(
+                    hardwareprofile.nameFormat,
+                    dns_zone=self.private_dns_zone)
 
-        node.state = initial_state
-        node.isIdle = False
-        node.hardwareprofile = hardwareprofile
-        node.softwareprofile = softwareprofile
-        node.addHostSession = self.addHostSession
+            node.state = initial_state
+            node.isIdle = False
+            node.hardwareprofile = hardwareprofile
+            node.softwareprofile = softwareprofile
+            node.addHostSession = self.addHostSession
 
-        # Create primary network interface
-        node.nics.append(Nic(boot=True))
+            # Create primary network interface
+            node.nics.append(Nic(boot=True))
 
-        return node
+            nodes.append(node)
+
+        return nodes
 
     def __parseEC2ResponseError(self, ex): \
             # pylint: disable=no-self-use
