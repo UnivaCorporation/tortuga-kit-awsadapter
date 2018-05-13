@@ -1,10 +1,5 @@
 #!/usr/bin/env python
 
-import pprint
-import unittest
-from tortuga.resourceAdapter.aws import Aws
-from tortuga.exceptions.invalidArgument import InvalidArgument
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +13,11 @@ from tortuga.exceptions.invalidArgument import InvalidArgument
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import pprint
+import unittest
+from tortuga.resourceAdapter.aws import Aws
+from tortuga.exceptions.invalidArgument import InvalidArgument
 
 
 class AwsAdapterTestSuite(unittest.TestCase):
@@ -36,7 +36,7 @@ class AwsAdapterTestSuite(unittest.TestCase):
 
         self.assertTrue('/dev/sda' in bdm)
 
-        self.assertEqual(int(bdm['/dev/sda'].size), sda_size) 
+        self.assertEqual(int(bdm['/dev/sda'].size), sda_size)
 
     def test_ephemeral_block_device_mapping(self):
         ephemeral_name = 'ephemeral0'
@@ -59,7 +59,7 @@ class AwsAdapterTestSuite(unittest.TestCase):
 
         self.assertTrue('/dev/sda' in bdm and '/dev/sdb' in bdm)
 
-        self.assertEqual(int(bdm['/dev/sda'].size), sda_size) 
+        self.assertEqual(int(bdm['/dev/sda'].size), sda_size)
         self.assertEqual(bdm['/dev/sdb'].ephemeral_name, ephemeral_name)
 
     def test_failed_block_device_mapping(self):
