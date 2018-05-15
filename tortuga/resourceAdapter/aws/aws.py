@@ -168,6 +168,10 @@ class Aws(ResourceAdapter):
         'vcpus': settings.IntegerSetting(
             description='The of virtual CPUs for the resource adapter '
                         'configuration profile'
+        ),
+        'launch_timeout': settings.IntegerSetting(
+            description='Timeout (in seconds) of the launch request',
+            default=300
         )
     }
 
@@ -325,6 +329,9 @@ class Aws(ResourceAdapter):
         # Special handling for configuration options which aren't strings
         config['createtimeout'] = int(configDict['createtimeout']) \
             if 'createtimeout' in configDict else self.DEFAULT_CREATE_TIMEOUT
+
+        config['launch_timeout'] = int(configDict['launch_timeout']) \
+            if 'launch_timeout' in configDict else 300
 
         config['sleeptime'] = int(configDict['sleeptime']) \
             if 'sleeptime' in configDict else self.DEFAULT_SLEEP_TIME
@@ -1459,22 +1466,27 @@ fqdn: %s
     def __wait_for_instance_coroutine(self, launch_request, dbSession):
         """Process one node request from queue"""
 
+        configDict = launch_request.configDict
+
         while True:
             node_request = self.__launch_wait_queue.get()
 
             try:
-                self.process_item(launch_request, node_request)
+                with gevent.Timeout(
+                        configDict['launch_timeout'], TimeoutError):
+                    self.process_item(launch_request, node_request)
 
-                self.getLogger().info(
-                    'Instance [{0}] running'.format(
-                        node_request['instance'].id))
+                    self.getLogger().info(
+                        'Instance [{0}] running'.format(
+                            node_request['instance'].id))
 
-                # Instance launched successfully
-                self.__post_launch_action(
-                    dbSession, launch_request, node_request)
-            except (AWSOperationTimeoutError, Exception) as exc:
+                    # Instance launched successfully
+                    self.__post_launch_action(
+                        dbSession, launch_request, node_request)
+            except Exception as exc:
                 # Instance launch failed
-                if isinstance(exc, AWSOperationTimeoutError):
+                if isinstance(exc, AWSOperationTimeoutError) or \
+                        isinstance(exc, TimeoutError):
                     logmsg = (
                         'Launch operation failed: timeout waiting for'
                         ' instance(s)')
