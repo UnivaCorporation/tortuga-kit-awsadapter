@@ -33,11 +33,6 @@ class tortuga_kit_awsadapter::management::package {
         require => Package['gcc'],
       }
     }
-
-    # Package in EPEL recently renamed from 'python-boto' to 'python2-boto'
-    $pkgs = ['python2-boto']
-
-    ensure_packages($pkgs, {'ensure' => 'installed'})
   }
 }
 
