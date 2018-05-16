@@ -15,26 +15,29 @@
 # limitations under the License.
 
 import sys
+import itertools
 import subprocess
+import random
 import platform
 import time
 
 ### SETTINGS
 
 
-def runCommand(cmd, retries=1):
-    for nRetry in range(retries):
-        p = subprocess.Popen(cmd, shell=True)
+def tryCommand(command, good_return_values=(0,), retry_limit=0,
+               time_limit=0, max_sleep_time=15000, sleep_interval=2000):
+    total_sleep_time = 0
+    for retries in itertools.count(0):
+        returned = subprocess.Popen(command, shell=True).wait()
+        if returned in good_return_values or \
+                retries >= retry_limit or total_sleep_time >= time_limit:
+            return returned
 
-        retval = p.wait()
-        if retval == 0:
-            break
+        seed = min(max_sleep_time, sleep_interval * 2 ** retries)
+        sleep_for = (seed / 2 + random.randint(0, seed / 2)) / 1000.0
+        total_sleep_time += sleep_for
 
-        time.sleep(5 + 2 ** (nRetry * 0.75))
-    else:
-        return -1
-
-    return retval
+        time.sleep(sleep_for)
 
 
 def _installPackage(ostype, pkgList, yumopts=None, retries=10):
@@ -48,13 +51,13 @@ def _installPackage(ostype, pkgList, yumopts=None, retries=10):
 
     cmd += ' -y install %s' % (pkgList)
 
-    retval = runCommand(cmd, retries)
+    retval = tryCommand(cmd, retry_limit=retries)
     if retval != 0:
         raise Exception('Error installing package [%s]' % (pkgList))
 
 
 def _isPackageInstalled(pkgName):
-    return (runCommand('rpm -q --quiet %s' % (pkgName)) == 0)
+    return tryCommand('rpm -q --quiet %s' % pkgName) == 0
 
 
 def installPuppet(ostype, vers):
@@ -70,7 +73,7 @@ def installPuppet(ostype, vers):
     bRepoInstalled = _isPackageInstalled(pkgname)
 
     if not bRepoInstalled:
-        retval = runCommand('rpm -ivh %s' % (url), 5)
+        retval = tryCommand('rpm -ivh %s' % url, 5)
         if retval != 0:
             sys.stderr.write(
                 'Error: unable to install package \"{0}\"\n'.format(pkgname))
@@ -85,9 +88,9 @@ def installPuppet(ostype, vers):
 def bootstrapPuppet():
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
-           ' --onetime --server %s --waitforcert 120' % (installerHostName))
+           ' --onetime --server %s --waitforcert 120' % installerHostName)
 
-    runCommand(cmd)
+    tryCommand(cmd, good_return_values=(0, 2), time_limit=10 * 60)
 
 
 def main():
@@ -96,15 +99,15 @@ def main():
             fp.write('# Created by Tortuga\n')
 
             if dns_search is not None:
-                fp.write('search %s\n' % (dns_search))
+                fp.write('search %s\n' % dns_search)
 
             if dns_options is not None:
-                fp.write('options %s\n' % (dns_options))
+                fp.write('options %s\n' % dns_options)
 
             for dns_nameserver in dns_nameservers:
-                fp.write('nameserver %s\n' % (dns_nameserver))
+                fp.write('nameserver %s\n' % dns_nameserver)
 
-    runCommand('setenforce permissive')
+    tryCommand('setenforce permissive')
 
     vals = platform.dist()
 

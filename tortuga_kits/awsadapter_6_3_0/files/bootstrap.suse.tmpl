@@ -15,35 +15,44 @@
 # limitations under the License.
 
 from __future__ import print_function
+import itertools
+import random
+import time
 import sys
 import subprocess
 
 ### SETTINGS
 
 
+def try_command(command, good_return_values=(0,), retry_limit=0,
+               time_limit=0, max_sleep_time=15000, sleep_interval=2000):
+    total_sleep_time = 0
+    for retries in itertools.count(0):
+        returned = subprocess.Popen(command, shell=True).wait()
+        if returned in good_return_values or \
+                retries >= retry_limit or total_sleep_time >= time_limit:
+            return returned
+
+        seed = min(max_sleep_time, sleep_interval * 2 ** retries)
+        sleep_for = (seed / 2 + random.randint(0, seed / 2)) / 1000.0
+        total_sleep_time += sleep_for
+
+        time.sleep(sleep_for)
+
+
 def is_pkg_installed(name):
-    retval = subprocess.call(['zypper', 'search', '--installed-only', '--match-words', name])
-    return retval == 0
+    return try_command(['zypper', 'search', '--installed-only', '--match-words', name])
 
 
 def install_pkg(name):
-    retval = subprocess.call(['zypper', '--non-interactive', 'install', name])
-
-    return retval
+    return try_command(['zypper', '--non-interactive', 'install', name])
 
 
 def main():
     sys.stdout.write('Installing Puppetlabs RPM GPG key... ')
     sys.stdout.flush()
 
-    retval = subprocess.call(['rpmkeys', '--import', 'http://yum.puppetlabs.com/RPM-GPG-KEY-puppet'])
-    if retval != 0:
-        sys.stdout.write('failed.\n')
-        sys.stderr.write('Error: unable to install Puppet RPM GPG key\n')
-        sys.stderr.flush()
-        sys.exit(1)
-
-    sys.stdout.write('done.\n')
+    try_command(['rpmkeys', '--import', 'http://yum.puppetlabs.com/RPM-GPG-KEY-puppet'])
 
     # Install Puppetlabs' repository
     if not is_pkg_installed('puppetlabs-release-pc1'):
@@ -52,18 +61,10 @@ def main():
     if not is_pkg_installed('puppet-agent'):
         install_pkg('puppet-agent')
 
-    p = subprocess.Popen(['/opt/puppetlabs/bin/puppet', 'agent', '--verbose', '--onetime', '--no-daemonize', '--logdest', '/tmp/puppet_bootstrap.log', '--color', 'false', '--waitforcert', '120', '--server', installerHostName], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    while True:
-        buf = p.stdout.readline()
-        if not buf:
-            break
-
-        print(buf.rstrip())
-
-    retval = p.wait()
-    if retval not in (0, 2):
-        sys.stderr.write('Error: unable to bootstrap Puppet (retval=%d)\n' % (retval))
-        sys.exit(1)
+    try_command(['/opt/puppetlabs/bin/puppet','agent', '--verbose', '--onetime',
+                 '--no-daemonize', '--logdest', '/tmp/puppet_bootstrap.log',
+                 '--color', 'false', '--waitforcert', '120', '--server',
+                 installerHostName], good_return_values=(0, 2), time_limit=10*60)
 
 
 if __name__ == '__main__':
