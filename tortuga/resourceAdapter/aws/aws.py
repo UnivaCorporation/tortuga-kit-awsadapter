@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# pylint: disable=no-member
+# pylint: disable=no-member,logging-not-lazy,logging-format-interpolation
 
 import csv
 import itertools
@@ -24,7 +24,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Optional, Tuple, Union
+from typing import List, NoReturn, Optional, Tuple, Union
 
 import gevent
 import gevent.queue
@@ -46,6 +46,7 @@ from tortuga.db.models.softwareProfile import SoftwareProfile
 from tortuga.exceptions.commandFailed import CommandFailed
 from tortuga.exceptions.configurationError import ConfigurationError
 from tortuga.exceptions.invalidArgument import InvalidArgument
+from tortuga.exceptions.nicNotFound import NicNotFound
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
@@ -53,7 +54,6 @@ from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
-from tortuga.resourceAdapter.utility import get_provisioning_hwprofilenetwork
 
 from .awsHelpers import get_ec2_region
 from .exceptions import AWSOperationTimeoutError
@@ -186,7 +186,7 @@ class Aws(ResourceAdapter):
     # avoid thrashing
     DEFAULT_SLEEP_TIME = 5
 
-    def __init__(self, addHostSession=None):
+    def __init__(self, addHostSession: Optional[str] = None):
         super(Aws, self).__init__(addHostSession=addHostSession)
 
         # Initialize internal flags
@@ -195,7 +195,7 @@ class Aws(ResourceAdapter):
 
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
-    def getEC2Connection(self, configDict):
+    def getEC2Connection(self, configDict: dict) -> EC2Connection:
         connectionArgs = dict(
             aws_access_key_id=configDict['awsaccesskey'],
             aws_secret_access_key=configDict['awssecretkey'],
@@ -218,8 +218,7 @@ class Aws(ResourceAdapter):
         # Initialize EC2 connection
         return EC2Connection(**connectionArgs)
 
-    def getResourceAdapterConfig(
-            self, sectionName: Optional[Union[str, None]] = None):
+    def getResourceAdapterConfig(self, sectionName: Optional[str] = None):
         """
         Raises:
             ConfigurationError
@@ -291,7 +290,7 @@ class Aws(ResourceAdapter):
                     'dns_nameservers',
                     'dns_options',
                     'iam_instance_profile_name',
-                    ]:  # noqa
+                   ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
         if 'awsaccesskey' in configDict:
@@ -338,14 +337,13 @@ class Aws(ResourceAdapter):
 
         config['monitoring_enabled'] = \
             configDict['monitoring_enabled'] \
-                if 'monitoring_enabled' in configDict and \
-                   configDict[
-                       'monitoring_enabled'].lower() == 'true' else False
+            if 'monitoring_enabled' in configDict and \
+            configDict['monitoring_enabled'].lower() == 'true' else False
 
         config['ebs_optimized'] = \
             configDict['ebs_optimized'] \
-                if 'ebs_optimized' in configDict and \
-                   configDict['ebs_optimized'].lower() == 'true' else False
+            if 'ebs_optimized' in configDict and \
+            configDict['ebs_optimized'].lower() == 'true' else False
 
         if 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template'] and \
@@ -405,7 +403,7 @@ class Aws(ResourceAdapter):
         # hosted on EC2.
         config['use_instance_hostname'] = \
             configDict['use_instance_hostname'].lower() == 'true' \
-                if 'use_instance_hostname' in configDict else True
+            if 'use_instance_hostname' in configDict else True
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -426,7 +424,7 @@ class Aws(ResourceAdapter):
         # Convert 'associate_public_ip_address' to bool
         config['associate_public_ip_address'] = \
             config['associate_public_ip_address'].lower() == 'true' \
-                if config['associate_public_ip_address'] is not None else None
+            if config['associate_public_ip_address'] is not None else None
 
         if 'use_custom_dns_domain' in config and \
                 config['use_custom_dns_domain']:
@@ -469,7 +467,7 @@ class Aws(ResourceAdapter):
 
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
         if config['subnet_id'] and config['override_dns_domain'] and not \
-        config['dns_domain']:
+                config['dns_domain']:
             # Attempt to look up default DNS domain from DHCP options set
             domain = self.__get_vpc_default_domain(config)
             if domain:
@@ -483,16 +481,18 @@ class Aws(ResourceAdapter):
                 raise ConfigurationError(
                     'Invalid/malformed value for \'vcpus\'')
 
-        self.getLogger().debug(
-            'Using DNS domain {0} for compute nodes'.format(
-                config['dns_domain']))
-
         if config['override_dns_domain'] is None:
             config['override_dns_domain'] = False
 
+        if config['override_dns_domain']:
+            self.getLogger().debug(
+                'Using DNS domain {0} for compute nodes'.format(
+                    config['dns_domain']))
+
         return config
 
-    def __get_vpc_default_domain(self, config):
+    def __get_vpc_default_domain(self, config: dict) -> str: \
+            # pylint: disable=no-self-use
         """Returns custom DNS domain associated with DHCP option set,
         otherwise returns None
 
@@ -537,11 +537,13 @@ class Aws(ResourceAdapter):
         except boto.exception.EC2ResponseError as exc:
             raise ConfigurationError('AWS error: {0}'.format(exc.message))
 
-    def __convert_to_bool(self, value, default=None):
+    def __convert_to_bool(self, value: str,
+                          default: Optional[Union[bool, None]] = None) -> bool: \
+            # pylint: disable=no-self-use
         return value.lower().startswith('t') \
             if value is not None else default
 
-    def __process_block_device_map(self, cfg_block_device_map):
+    def __process_block_device_map(self, cfg_block_device_map: str) -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
         """
         Raises:
             ConfigurationError
@@ -615,10 +617,8 @@ class Aws(ResourceAdapter):
 
                 # Determine value of 'encrypted' flag (either undefined or the
                 # string 'encrypted')
-                if (arglen > 4 and elements[4] and
-                    bdt.volume_type != 'io1') or \
-                        (arglen > 5 and bdt.volume_type == 'io1' and
-                         elements[5]):
+                if (arglen > 4 and elements[4] and bdt.volume_type != 'io1') or \
+                        (arglen > 5 and bdt.volume_type == 'io1' and elements[5]):
                     encrypted_str = elements[5].lower() \
                         if bdt.volume_type == 'io1' else elements[4].lower()
 
@@ -638,7 +638,7 @@ class Aws(ResourceAdapter):
 
         return bdm
 
-    def __instanceCacheGet(self, conn, node):
+    def __instanceCacheGet(self, conn: EC2Connection, node: Node):
         """
         Retrieves the instance associated with a node out of
         the cache
@@ -671,7 +671,9 @@ class Aws(ResourceAdapter):
 
         return instance
 
-    def __get_instance_by_instance_id(self, conn, instance_id):
+    def __get_instance_by_instance_id(self, conn: EC2Connection,
+                                      instance_id: str): \
+            # pylint: disable=no-self-use
         # Find the instance itself
         reservations = [r for r in conn.get_all_reservations(
             filters={'instance-id': instance_id})]
@@ -681,10 +683,11 @@ class Aws(ResourceAdapter):
 
         return reservations[0].instances[0]
 
-    def start(self, addNodesRequest, dbSession, dbHardwareProfile,
-              dbSoftwareProfile=None):
-
-        """Create one or more nodes
+    def start(self, addNodesRequest: dict, dbSession: Session,
+              dbHardwareProfile: HardwareProfile,
+              dbSoftwareProfile: Optional[Union[SoftwareProfile, None]] = None) -> List[Node]:
+        """
+        Create one or more nodes
 
         Raises:
             InvalidArgument
@@ -732,12 +735,13 @@ class Aws(ResourceAdapter):
 
         if dbSoftwareProfile is None or dbSoftwareProfile.isIdle:
             # Add idle nodes
-            return self.__add_idle_nodes(dbSession, launch_request)
+            nodes = self.__add_idle_nodes(dbSession, launch_request)
         else:
             # Add (active) nodes
-            if configDict['use_instance_hostname'] and \
-                    dbSoftwareProfile.type != 'compute-cloud_init':
-                # Create instances before node records
+            if configDict['use_instance_hostname']:
+                # Create instances before node records. We need to the
+                # instance to exist to get the host name for the node
+                # record.
                 self.__prelaunch_instances(dbSession, launch_request)
             else:
                 # Create node records before instances
@@ -752,9 +756,11 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def __insert_nodes(self, session, launch_request): \
+    def __insert_nodes(self, session: Session,
+                       launch_request: LaunchRequest): \
             # pylint: disable=unused-argument
-        """Directly insert nodes with pre-existing AWS instances
+        """
+        Directly insert nodes with pre-existing AWS instances
 
         This is primarily used for supporting spot instances where an
         AWS instance exists before the Tortuga associated node record.
@@ -835,9 +841,11 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def instanceCacheSet(self, name, addNodesRequest, instance_id=None,
-                         metadata=None):
-        """Overriden AWS-specific instance cache update implementation
+    def instanceCacheSet(self, name: str, addNodesRequest: dict,
+                         instance_id: Optional[Union[str, None]] = None,
+                         metadata: Optional[Union[dict, None]] = None):
+        """
+        Overriden AWS-specific instance cache update implementation
 
         'instance_id' may be None when adding idle nodes.
 
@@ -860,9 +868,12 @@ class Aws(ResourceAdapter):
 
         super(Aws, self).instanceCacheSet(name, metadata=new_metadata)
 
-    def request_spot_instances(self, addNodesRequest, dbSession,
-                               dbHardwareProfile, dbSoftwareProfile):
-        """Make request for EC2 spot instances. Spot instance arguments are
+    def request_spot_instances(self, addNodesRequest: dict,
+                               dbSession: Session,
+                               dbHardwareProfile: HardwareProfile,
+                               dbSoftwareProfile: SoftwareProfile) -> List[Node]:
+        """
+        Make request for EC2 spot instances. Spot instance arguments are
         passed through 'addNodesRequest' in the dictionary
         'spot_instance_request.
 
@@ -890,7 +901,8 @@ class Aws(ResourceAdapter):
 
         ami = self._validate_ec2_launch_args(conn, configDict)
 
-        security_group_ids = self.__get_security_group_ids(configDict, conn)
+        security_group_ids: Union[List[str], None] = \
+            self.__get_security_group_ids(configDict, conn)
 
         try:
             if configDict['use_instance_hostname']:
@@ -911,10 +923,10 @@ class Aws(ResourceAdapter):
                                                       dbSoftwareProfile,
                                                       cfgname)
             else:
-                nodes = self.__createNodes(addNodesRequest['count'],
-                                           dbHardwareProfile,
-                                           dbSoftwareProfile,
-                                           initial_state='Allocated')
+                nodes = self.__create_nodes(dbHardwareProfile,
+                                            dbSoftwareProfile,
+                                            count=addNodesRequest['count'],
+                                            initial_state='Allocated')
 
                 for node in nodes:
                     args = self.__get_request_spot_instance_args(
@@ -954,10 +966,14 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def __get_request_spot_instance_args(self, addNodesRequest, configDict,
-                                         ami, security_group_ids,
-                                         node=None):
-        """Create dict of args for boto request_spot_instances() API"""
+    def __get_request_spot_instance_args(self, addNodesRequest: dict,
+                                         configDict: dict,
+                                         ami: str,
+                                         security_group_ids: List[str],
+                                         node: Optional[Union[Node, None]] = None):
+        """
+        Create dict of args for boto request_spot_instances() API
+        """
 
         user_data = self.__get_user_data(configDict, node=node)
 
@@ -975,8 +991,10 @@ class Aws(ResourceAdapter):
 
         return args
 
-    def __post_add_spot_instance_request(self, resv, dbHardwareProfile,
-                                         dbSoftwareProfile, cfgname=None):
+    def __post_add_spot_instance_request(self, resv,
+                                         dbHardwareProfile: HardwareProfile,
+                                         dbSoftwareProfile: SoftwareProfile,
+                                         cfgname: Optional[str] = None) -> NoReturn:
         # Send message to awsspotd (using zeromq)
         context = zmq.Context()
 
@@ -1012,11 +1030,13 @@ class Aws(ResourceAdapter):
     def cancel_spot_instance_requests(self):
         """TODO"""
 
-    def validate_start_arguments(self, addNodesRequest, dbHardwareProfile,
-                                 dbSoftwareProfile): \
+    def validate_start_arguments(self, addNodesRequest: dict,
+                                 dbHardwareProfile: HardwareProfile,
+                                 dbSoftwareProfile: SoftwareProfile) -> NoReturn: \
             # pylint: disable=unused-argument
 
-        """Ensure arguments to start() instances are valid
+        """
+        Ensure arguments to start() instances are valid
 
         Raises:
             InvalidArgument
@@ -1045,13 +1065,15 @@ class Aws(ResourceAdapter):
                     '\'use_instance_hostname\' is disabled, but hardware'
                     ' profile does not have a name format defined')
 
-    def __add_idle_nodes(self, session, launch_request):
-        """Create nodes in idle state"""
+    def __add_idle_nodes(self, session: Session,
+                         launch_request: LaunchRequest) -> List[Node]:
+        """
+        Create nodes in idle state
+        """
 
         addNodesRequest = launch_request.addNodesRequest
         dbHardwareProfile = launch_request.hardwareprofile
         dbSoftwareProfile = launch_request.softwareprofile
-        configDict = launch_request.configDict
 
         nodeCount = addNodesRequest['count']
 
@@ -1090,7 +1112,7 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def _get_installer_ip(self, hardwareprofile=None):
+    def _get_installer_ip(self, hardwareprofile: Optional[Union[HardwareProfile, None]] = None) -> str:
         if self.__installer_ip is None:
             if hardwareprofile and hardwareprofile.nics:
                 self.__installer_ip = hardwareprofile.nics[0].ip
@@ -1099,7 +1121,8 @@ class Aws(ResourceAdapter):
 
         return self.__installer_ip
 
-    def __get_common_user_data_settings(self, configDict, node=None):
+    def __get_common_user_data_settings(self, configDict: dict,
+                                        node: Optional[Union[Node, None]] = None):
         installerIp = self._get_installer_ip(
             hardwareprofile=node.hardwareprofile if node else None)
 
@@ -1109,13 +1132,13 @@ class Aws(ResourceAdapter):
         settings_dict = {
             'installerHostName': self.installer_public_hostname,
             'installerIp': '\'{0}\''.format(installerIp)
-            if installerIp else 'None',
+                           if installerIp else 'None',
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
             'override_dns_domain': str(configDict['override_dns_domain']),
             'dns_options': '\'{0}\''.format(configDict['dns_options'])
-            if configDict['dns_options'] else None,
+                           if configDict['dns_options'] else None,
             'dns_domain': dns_domain_value,
             'dns_nameservers': _get_encoded_list(
                 configDict['dns_nameservers']),
@@ -1123,7 +1146,8 @@ class Aws(ResourceAdapter):
 
         return settings_dict
 
-    def __get_common_user_data_content(self, settings_dict):
+    def __get_common_user_data_content(self, settings_dict: dict) -> str: \
+            # pylint: disable=no-self-use
         result = """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
@@ -1153,12 +1177,14 @@ dns_nameservers = %(dns_nameservers)s
         # as YAML cloud-init configuration data
         return self.expand_cloud_init_user_data_template(configDict, node=node)
 
-    def __get_user_data_script(self, configDict, node=None):
+    def __get_user_data_script(self, configDict: dict,
+                               node: Optional[Union[Node, None]] = None):
         self.getLogger().info(
             'Using user-data script template [%s]' % (
                 configDict['user_data_script_template']))
 
-        settings_dict = self.__get_common_user_data_settings(configDict, node)
+        settings_dict = \
+            self.__get_common_user_data_settings(configDict, node)
 
         with open(configDict['user_data_script_template']) as fp:
             result = ''
@@ -1200,8 +1226,10 @@ fqdn: %s
         # Fallback to default behaviour
         return result
 
-    def __prelaunch_instances(self, dbSession, launch_request):
-        """Launch EC2 instances prior to creating node records
+    def __prelaunch_instances(self, dbSession: Session,
+                              launch_request: LaunchRequest):
+        """
+        Launch EC2 instances prior to creating node records
 
         This method can only be used when the user metadata is same for
         all instances.
@@ -1209,8 +1237,9 @@ fqdn: %s
 
         user_data = self.__get_user_data(launch_request.configDict)
 
-        security_group_ids = self.__get_security_group_ids(
-            launch_request.configDict, launch_request.conn)
+        security_group_ids: Union[List[str], None] = \
+            self.__get_security_group_ids(
+                launch_request.configDict, launch_request.conn)
 
         try:
             reservation = self.__launchEC2(
@@ -1231,14 +1260,14 @@ fqdn: %s
         # Wait for instances to reach 'running' state
         self.__wait_for_instances(dbSession, launch_request)
 
-    def __add_hosts(self, dbSession, launch_request): \
-            # pylint: disable=raising-bad-type
-        """The "normal" add hosts workflow: create node records, launch one
-        AWS instance for each node record, and map them.
+    def __add_hosts(self, dbSession: Session,
+                    launch_request: LaunchRequest):
+        """
+        The "normal" add hosts workflow: create node records,
+        launch one AWS instance for each node record, and map them.
 
         Raises:
             NetworkNotFound
-            et al.
         """
 
         conn = launch_request.conn
@@ -1253,8 +1282,9 @@ fqdn: %s
             'Preallocating %d node(s) for mapping to AWS instances' % (
                 count))
 
-        nodes = self.__createNodes(
-            addNodesRequest['count'], dbHardwareProfile, dbSoftwareProfile)
+        nodes = self.__create_nodes(dbHardwareProfile,
+                                    dbSoftwareProfile,
+                                    count=addNodesRequest['count'])
 
         dbSession.add_all(nodes)
         dbSession.commit()
@@ -1264,7 +1294,7 @@ fqdn: %s
         instances_launched = 0
         launch_exception = None
 
-        security_group_ids = \
+        security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(configDict, conn)
 
         try:
@@ -1315,22 +1345,22 @@ fqdn: %s
             self.getLogger().exception(
                 'Exception while launching instances')
 
-    def __delete_failed_nodes(self, dbSession, launch_request):
+    def __delete_failed_nodes(self, dbSession: Session,
+                              launch_request: LaunchRequest): \
+            # pylint: disable=no-self-use
         for node_request in launch_request.node_request_queue:
-            self.__node_cleanup(
-                launch_request.configDict, node_request['node'])
+            node = node_request['node']
 
-            self.__db_delete_node(dbSession, node_request['node'])
+            dbSession.delete(node)
 
-    def __process_node_request_queue(self, dbSession, launch_request):
-        """Iterate over all instances/nodes that have been started
+    def __process_node_request_queue(self, dbSession: Session,
+                                     launch_request: LaunchRequest) -> List[Node]:
+        """
+        Iterate over all instances/nodes that have been started
         successfully. Clean up those that didn't start or timed out before
         reaching 'running' state.
-
-        Returns list of Node objects
         """
 
-        configDict = launch_request.configDict
         count = launch_request.addNodesRequest['count']
         node_request_queue = launch_request.node_request_queue
 
@@ -1345,16 +1375,18 @@ fqdn: %s
 
                 continue
 
-            if 'node' in node_request:
-                # Clean up node-related data
-                self.__node_cleanup(configDict, node_request['node'])
+            # clean up failed launches
+            node = node_request.get('node')
 
-                # Delete node record from database
-                self.__db_delete_node(dbSession, node_request['node'])
+            if not node:
+                # instance launched, but no node record created
+                continue
 
-                # Ensure session node cache entry is removed for failed
-                # launch
-                AddHostServerLocal.clear_session_node(node_request['node'])
+            # Ensure session node cache entry removed for failed launch
+            AddHostServerLocal.clear_session_node(node)
+
+            # finally, delete node record from database
+            dbSession.delete(node)
 
         # Commit database transaction
         dbSession.commit()
@@ -1391,7 +1423,7 @@ fqdn: %s
 
         return instance.state
 
-    def process_item(self, launch_request, node_request):
+    def process_item(self, launch_request: LaunchRequest, node_request: dict):
         """
         Raises:
             OperationFailed
@@ -1446,8 +1478,9 @@ fqdn: %s
                     'Error launching instance: state=[{0}]'.format(
                         instance.state))
 
-    def __failed_launch_cleanup_handler(self, node_request):
-        """Clean up routine Run when instance does not reach running state
+    def __failed_launch_cleanup_handler(self, node_request: dict) -> NoReturn:
+        """
+        Clean up routine Run when instance does not reach running state
         within create timeout period or reaches unexpected state.
         """
 
@@ -1463,8 +1496,11 @@ fqdn: %s
             # Clean up instance cache
             self.instanceCacheDelete(node.name)
 
-    def __wait_for_instance_coroutine(self, launch_request, dbSession):
-        """Process one node request from queue"""
+    def __wait_for_instance_coroutine(self, launch_request: LaunchRequest,
+                                      dbSession: Session):
+        """
+        Process one node request from queue
+        """
 
         configDict = launch_request.configDict
 
@@ -1503,7 +1539,8 @@ fqdn: %s
             finally:
                 self.__launch_wait_queue.task_done()
 
-    def __wait_for_instances(self, dbSession, launch_request):
+    def __wait_for_instances(self, dbSession: Session,
+                             launch_request: LaunchRequest) -> NoReturn:
         """
         Raises:
             ConfigurationError
@@ -1529,8 +1566,9 @@ fqdn: %s
         # Process queue
         self.__launch_wait_queue.join()
 
-    def __post_launch_action(self, dbSession: Session, launch_request: dict,
-                             node_request: LaunchRequest):
+    def __post_launch_action(self, dbSession: Session,
+                             launch_request: dict,
+                             node_request: LaunchRequest) -> NoReturn:
         """
         Perform tasks after instance has been launched successfully
 
@@ -1539,20 +1577,24 @@ fqdn: %s
             ConfigurationError
         """
 
+        instance = node_request['instance']
+
         if 'node' not in node_request:
+            # create node record for instance
+
             self.getLogger().debug(
                 'Creating node record for instance [{0}]'.format(
-                    node_request['instance'].id))
+                    instance.id))
 
-            node_request['node'] = self.__initialize_node(
-                launch_request.hardwareprofile,
-                launch_request.softwareprofile)
+            # create Node record
+            node = self.__create_nodes(launch_request.hardwareprofile,
+                                       launch_request.softwareprofile)[0]
 
-            dbSession.add(node_request['node'])
+            dbSession.add(node)
 
-        node = node_request['node']
-
-        instance = node_request['instance']
+            node_request['node'] = node
+        else:
+            node = node_request['node']
 
         primary_nic = get_primary_nic(node.nics)
 
@@ -1571,8 +1613,6 @@ fqdn: %s
             node.hardwareprofile.name,
             node.softwareprofile.name,
             primary_nic.ip)
-
-        configDict = launch_request.configDict
 
         # Assign instance tags
         self.getLogger().debug(
@@ -1611,7 +1651,8 @@ fqdn: %s
 
         node.state = 'Provisioned'
 
-    def __assign_tags(self, configDict, conn, node, instance):
+    def __assign_tags(self, configDict: dict, conn: EC2Connection,
+                      node: Node, instance):
         if not configDict['use_tags']:
             return
 
@@ -1644,12 +1685,6 @@ fqdn: %s
         # specific resources)
         self.__tag_ebs_volumes(conn, configDict, instance)
 
-    def __db_delete_node(self, session, node):
-        for nic in node.nics:
-            session.delete(nic)
-
-        session.delete(node)
-
     def __get_node_name(self, launch_request, instance):
         if launch_request.configDict['override_dns_domain']:
             hostname, _ = instance.private_dns_name.split('.', 1)
@@ -1668,52 +1703,47 @@ fqdn: %s
 
         return fqdn
 
-    def _set_node_name_and_ip(self, node: Node, launch_request: dict, instance) -> Tuple[str, str]:
+    def __create_nodes(self, hardwareprofile: HardwareProfile,
+                       softwareprofile: SoftwareProfile,
+                       count: Optional[int] = 1,
+                       initial_state: Optional[str] = 'Launching') -> List[Node]:
         """
-        Update node name and IP address based on settings.
-
-        """
-
-
-    def __createNodes(self, count: int, hardwareprofile: HardwareProfile,
-                      softwareprofile: SoftwareProfile,
-                      initial_state: Optional[str] = 'Launching'):
-        """
-        Bulk node creation
+        Creates new node object(s) with corresponding primary nic
 
         Raises:
             NetworkNotFound
         """
 
-        return [self.__initialize_node(
-            hardwareprofile, softwareprofile, initial_state=initial_state)
-            for _ in range(count)]
+        nodes = []
 
-    def __initialize_node(self, hardwareprofile: HardwareProfile,
-                          softwareprofile: SoftwareProfile,
-                          initial_state: Optional[str] = 'Launching'):
-        node = Node()
+        for _ in range(count):
+            node = Node()
 
-        # Generate the 'internal' host name
-        if hardwareprofile.nameFormat != '*':
-            # Generate node name
-            node.name = self.addHostApi.generate_node_name(
-                hardwareprofile.nameFormat,
-                dns_zone=self.private_dns_zone)
+            # Generate the 'internal' host name
+            if hardwareprofile.nameFormat != '*':
+                # Generate node name
+                node.name = self.addHostApi.generate_node_name(
+                    hardwareprofile.nameFormat,
+                    dns_zone=self.private_dns_zone)
 
-        node.state = initial_state
-        node.isIdle = False
-        node.hardwareprofile = hardwareprofile
-        node.softwareprofile = softwareprofile
-        node.addHostSession = self.addHostSession
+            node.state = initial_state
+            node.isIdle = False
+            node.hardwareprofile = hardwareprofile
+            node.softwareprofile = softwareprofile
+            node.addHostSession = self.addHostSession
 
-        # Create primary network interface
-        node.nics.append(Nic(boot=True))
+            # Create primary network interface
+            node.nics.append(Nic(boot=True))
 
-        return node
+            nodes.append(node)
 
-    def __parseEC2ResponseError(self, ex):
-        """Helper method for parsing failed AWS API call"""
+        return nodes
+
+    def __parseEC2ResponseError(self, ex): \
+            # pylint: disable=no-self-use
+        """
+        Helper method for parsing failed AWS API call
+        """
 
         if ex.body:
             xmlDom = ET.fromstring(ex.body)
@@ -1738,7 +1768,8 @@ fqdn: %s
         if resource_ids and 'tags' in configDict and configDict['tags']:
             self.__addTags(conn, resource_ids, configDict['tags'])
 
-    def __get_security_group_by_name(self, conn, groupname):
+    def __get_security_group_by_name(self, conn, groupname): \
+            # pylint: disable=no-self-use
         # For reasons unknown to me, Amazon will reject the request for
         # retrieving a VPC security group by name. This is why we iterate
         # over the list of all security groups to find the matching name.
@@ -1753,7 +1784,8 @@ fqdn: %s
 
         return security_group
 
-    def _validate_ec2_launch_args(self, conn, configDict):
+    def _validate_ec2_launch_args(self, conn: EC2Connection,
+                                  configDict: dict):
         # Get the image
         try:
             imageList = conn.get_all_images(configDict['ami'])
@@ -1877,9 +1909,11 @@ fqdn: %s
 
         return args
 
-    def __launchEC2(self, conn, configDict, nodeCount=1,
+    def __launchEC2(self, conn: EC2Connection, configDict: dict,
+                    nodeCount: Optional[int] = 1,
                     security_group_ids=None, userData=None):
-        """Launch one or more EC2 instances
+        """
+        Launch one or more EC2 instances
 
         Raises:
             CommandFailed
@@ -1908,15 +1942,17 @@ fqdn: %s
             # aesthetic purposes
             raise CommandFailed('AWS error: %s' % (extErrMsg))
 
-    def __get_security_group_ids(self, configDict, conn):
-        """Convert list of security group names into list of security
+    def __get_security_group_ids(self, configDict: dict,
+                                 conn: EC2Connection) -> Union[List[str], None]:
+        """
+        Convert list of security group names into list of security
         group ids. Returns None if VPC not being used.
         """
 
         if 'subnet_id' not in configDict or not configDict['subnet_id']:
             return None
 
-        security_group_ids = []
+        security_group_ids: List[str] = []
 
         if 'securitygroup' not in configDict or \
                 not configDict['securitygroup']:
@@ -2002,10 +2038,12 @@ fqdn: %s
         return result
 
     def stop(self, hardwareProfileName, deviceName):
-        """Stops addhost daemon from creating additional nodes"""
-        pass
+        """
+        Stops addhost daemon from creating additional nodes
+        """
 
-    def suspendActiveNode(self, dbNode):  # pylint: disable=unused-argument
+    def suspendActiveNode(self, node: Node) -> bool: \
+            # pylint: disable=unused-argument
         return False
 
     def __simple_get_instance_by_node(self, conn, node):
@@ -2019,10 +2057,8 @@ fqdn: %s
 
         return None
 
-    def idleActiveNode(self, dbNodes):
-        """Change the given active node(s) to an idle node"""
-
-        for node in dbNodes:
+    def idleActiveNode(self, nodes: List[Node]) -> str:
+        for node in nodes:
             self.getLogger().info('Idling node [{0}]'.format(node.name))
 
             configDict = self.getResourceAdapterConfig(
@@ -2045,10 +2081,17 @@ fqdn: %s
         return 'Discovered'
 
     def __addTags(self, conn, resource_ids, keyvaluepairs):
+        """
+        Create tags for resources
+        """
+
+        self.getLogger().debug('Adding tags to resources: {}'.format(
+            ' '.join(resource_ids)))
+
         conn.create_tags(resource_ids, keyvaluepairs)
 
-    def activateIdleNode(self, node, softwareProfileName,
-                         softwareProfileChanged):
+    def activateIdleNode(self, node: Node, softwareProfileName: str,
+                         softwareProfileChanged: bool):
         self.getLogger().debug(
             'activateIdleNode(node=[%s],'
             ' softwareProfileName=[%s], softwareProfileChanged=[%s])' % (
@@ -2066,8 +2109,9 @@ fqdn: %s
 
         launch_request.node_request_queue = init_node_request_queue([node])
 
-        security_group_ids = self.__get_security_group_ids(
-            launch_request.configDict, launch_request.conn)
+        security_group_ids: Union[List[str], None] = \
+            self.__get_security_group_ids(
+                launch_request.configDict, launch_request.conn)
 
         for node_request in launch_request.node_request_queue:
             # We now have the data needed to launch the instance
@@ -2083,27 +2127,21 @@ fqdn: %s
                 added=[('instance', node_request['instance'].id)])
 
         # Wait for activated instance(s) to start
-        session = DbManager().openSession()
-
-        try:
+        with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
-        finally:
-            DbManager().closeSession()
 
-    def deleteNode(self, dbNodes):
-        for node in dbNodes:
+    def deleteNode(self, nodes: List[Node]) -> NoReturn:
+        for node in nodes:
             self.__delete_node(node)
 
-        self.getLogger().info('%d node(s) deleted' % (len(dbNodes)))
+        self.getLogger().info('%d node(s) deleted' % (len(nodes)))
 
-    def __delete_node(self, node):
+    def __delete_node(self, node: Node) -> NoReturn:
         self.getLogger().info('Deleting node [{0}]'.format(node.name))
 
         try:
             configDict = self.getResourceAdapterConfig(
                 self.getResourceAdapterConfigProfileByNodeName(node.name))
-
-            self.__node_cleanup(configDict, node)
 
             # Remove Puppet certificate
             bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
@@ -2126,12 +2164,10 @@ fqdn: %s
                 ' node [{0}]; instance may still be running!'.format(
                     node.name))
 
-    def __node_cleanup(self, configDict, node):
-        self.getLogger().debug(
-            '__node_cleanup(): node=[%s]' % (node.name))
-
     def __terminate_instance(self, instance):
-        """Wrapper around AWS instance termination"""
+        """
+        Wrapper around AWS instance termination
+        """
 
         self.getLogger().info(
             'Terminating instance [{0}]'.format(instance.id))
@@ -2143,9 +2179,11 @@ fqdn: %s
                 'Error while terminating instance [{0}]: {1}'.format(
                     instance.id, exc.message))
 
-    def transferNode(self, nodeIdSoftwareProfileTuples,
-                     newSoftwareProfileName):
-        """Transfer the given idle node"""
+    def transferNode(self, nodeIdSoftwareProfileTuples: Tuple[Node, str],
+                     newSoftwareProfileName: str) -> NoReturn:
+        """
+        Transfer the given idle node
+        """
 
         for node, oldSoftwareProfileName in nodeIdSoftwareProfileTuples:
             # Note call in log
@@ -2160,15 +2198,15 @@ fqdn: %s
                 newSoftwareProfileName,
                 (newSoftwareProfileName != oldSoftwareProfileName))
 
-    def migrateNode(self, node, remainingNodeList, liveMigrate=True): \
+    def migrateNode(self, node: Node, remainingNodeList: List[str],
+                    liveMigrate: bool): \
             # pylint: disable=unused-argument
-        """Migrate the given node"""
-
-        # Not supported for EC2 nodes
         raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
-        """Determines if this node is running on EC2"""
+        """
+        Determines if this node is running on EC2
+        """
 
         if self.__runningOnEc2 is None:
             try:
@@ -2232,7 +2270,13 @@ fqdn: %s
             'Unable to determine associated AWS instance for node [%s]' % (
                 node.name))
 
-    def startupNode(self, nodes, remainingNodeList=None, tmpBootMethod='n'):
+    def startupNode(self, nodes: List[Node],
+                    remainingNodeList: Optional[Union[List[str], None]] = None,
+                    tmpBootMethod: Optional[str] = 'n'):
+        """
+        Start previously stopped instances
+        """
+
         self.getLogger().debug(
             'startupNode(): dbNodes=[%s], remainingNodeList=[%s],'
             ' tmpBootMethod=[%s]' % (
@@ -2275,15 +2319,16 @@ fqdn: %s
             self.instanceCacheUpdate(
                 node.name, added=[('instance', instance.id)])
 
-    def getOptions(self, dbSoftwareProfile, dbHardwareProfile): \
+    def getOptions(self, dbSoftwareProfile: SoftwareProfile,
+                   dbHardwareProfile: HardwareProfile) -> dict: \
             # pylint: disable=unused-argument
         """
         Get settings for specified hardware profile
         """
         return {}
 
-    def rebootNode(self, nodes, bSoftReset=False): \
-            # pylint: disable=unused-argument
+    def rebootNode(self, nodes: List[Node],
+                   bSoftReset: Optional[bool] = False) -> NoReturn:
         self.getLogger().debug(
             'rebootNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
@@ -2323,7 +2368,8 @@ fqdn: %s
                 'Node [%s] (instance [%s]) rebooted' % (
                     node.name, instance.id))
 
-    def shutdownNode(self, nodes, bSoftReset=False):
+    def shutdownNode(self, nodes: List[Node],
+                     bSoftReset: Optional[bool] = False) -> NoReturn:
         self.getLogger().debug(
             'shutdownNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
@@ -2361,7 +2407,8 @@ fqdn: %s
 
                 continue
 
-    def updateNode(self, session, node, updateNodeRequest): \
+    def updateNode(self, session: Session, node: Node,
+                   updateNodeRequest: dict) -> NoReturn: \
             # pylint: disable=unused-argument
         self.getLogger().debug(
             'updateNode(): node=[{0}]'.format(node.name))
@@ -2423,7 +2470,7 @@ fqdn: %s
                               addNodesRequest,
                               instance_id=instance_id)
 
-    def get_node_vcpus(self, name):
+    def get_node_vcpus(self, name: str) -> int:
         """
         Return number of vcpus for node. Value of 'vcpus' configured
         in resource adapter configuration takes precedence over file
@@ -2452,7 +2499,7 @@ fqdn: %s
 
         return self.get_instance_size_mapping(configDict['instancetype'])
 
-    def get_instance_size_mapping(self, value):
+    def get_instance_size_mapping(self, value: str) -> int:
         """
         Use csv.DictReader() to parse CSV file from
         EC2Instances.info. The file "aws-instances.csv" is expected to be
@@ -2466,9 +2513,8 @@ fqdn: %s
         self.getLogger().debug(
             'get_instance_size_mapping(instancetype=[{0}])'.format(value))
 
-        with open(
-                os.path.join(
-                    self._cm.getKitConfigBase(), 'aws-instances.csv')) as fp:
+        with open(os.path.join(self._cm.getKitConfigBase(),
+                               'aws-instances.csv')) as fp:
             dr = csv.DictReader(fp)
 
             for entry in dr:
@@ -2493,7 +2539,7 @@ fqdn: %s
         return vcpus
 
 
-def get_primary_nic(nics: List[Nic]):
+def get_primary_nic(nics: List[Nic]) -> Nic:
     result = [nic for nic in nics if nic.boot]
 
     if not result:

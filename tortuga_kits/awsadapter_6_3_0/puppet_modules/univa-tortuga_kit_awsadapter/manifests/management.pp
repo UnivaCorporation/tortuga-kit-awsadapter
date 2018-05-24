@@ -21,8 +21,7 @@ class tortuga_kit_awsadapter::management::package {
   ensure_packages(['unzip'], {'ensure' => 'installed'})
 
   if $::osfamily == 'RedHat' {
-    if versioncmp($::operatingsystemmajrelease, '5') > 0 and
-        versioncmp($::operatingsystemmajrelease, '7') < 0 {
+    if versioncmp($facts['os']['release']['major'], '7') < 0 {
       # gcc is required only on RHEL/CentOS 6 to compile gevent
       ensure_packages(['gcc'], {'ensure' => 'installed'})
 
@@ -33,11 +32,6 @@ class tortuga_kit_awsadapter::management::package {
         require => Package['gcc'],
       }
     }
-
-    # Package in EPEL recently renamed from 'python-boto' to 'python2-boto'
-    $pkgs = ['python2-boto']
-
-    ensure_packages($pkgs, {'ensure' => 'installed'})
   }
 }
 
