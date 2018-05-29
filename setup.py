@@ -31,7 +31,7 @@ setup(
     install_requires=[
         'boto',
         'boto3',
-        'gevent',
+        'gevent<1.3.2',
         'awscli',
         'click',
         'colorama',
