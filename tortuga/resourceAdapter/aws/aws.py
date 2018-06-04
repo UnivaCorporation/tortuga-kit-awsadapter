@@ -384,7 +384,7 @@ class Aws(ResourceAdapter):
                 config['cloud_init'] = True
             except ConfigurationError as exc:
                 raise ConfigurationError(
-                    'Invalid \'cloud_init_script_template\''
+                    'Invalid \'cloud_init_script_template\' '
                     'setting: {0}'.format(exc)
                 )
         else:
