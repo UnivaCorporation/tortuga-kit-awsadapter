@@ -69,7 +69,7 @@ def installPuppet(vers):
     bRepoInstalled = _isPackageInstalled(pkgname)
 
     if not bRepoInstalled:
-        retval = tryCommand('rpm -ivh %s' % (url), 5)
+        retval = tryCommand('rpm -ivh %s' % (url), retry_limit=5)
         if retval != 0:
             sys.stderr.write(
                 'Error: unable to install package \"{0}\"\n'.format(pkgname))
