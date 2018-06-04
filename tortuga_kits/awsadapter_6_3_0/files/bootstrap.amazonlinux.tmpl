@@ -26,7 +26,6 @@ import json
 ### SETTINGS
 
 
-
 def tryCommand(command, good_return_values=(0,), retry_limit=0,
                time_limit=0, max_sleep_time=15000, sleep_interval=2000):
     total_sleep_time = 0
@@ -41,6 +40,7 @@ def tryCommand(command, good_return_values=(0,), retry_limit=0,
         total_sleep_time += sleep_for
 
         time.sleep(sleep_for)
+
 
 def _installPackage(pkgList, yumopts=None, retries=10):
     cmd = 'yum'
