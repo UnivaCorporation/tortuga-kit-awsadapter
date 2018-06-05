@@ -44,6 +44,8 @@ class tortuga_kit_awsadapter::management::post_install {
     kitdescr  => $tortuga_kit_awsadapter::config::kitdescr,
     compdescr => $tortuga_kit_awsadapter::management::compdescr,
   }
+  ~> Service['tortugawsd']
+  ~> Service['celery']
 }
 
 class tortuga_kit_awsadapter::management::config {

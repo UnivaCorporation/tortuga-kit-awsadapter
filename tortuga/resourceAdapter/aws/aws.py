@@ -1,5 +1,5 @@
-# Copyright 2008-2018 Univa Corporation
 #
+# Copyright 2008-2018 Univa Corporation
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -24,25 +24,27 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, NoReturn, Optional, Tuple, Union
-
-import gevent
-import gevent.queue
-import zmq
-from sqlalchemy.orm.session import Session
+from typing import List, NoReturn, Optional, Tuple, Union, Dict, Any
 
 import boto
 import boto.ec2
 import boto.vpc
+import gevent
+import gevent.queue
+import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
+from sqlalchemy.orm.session import Session
+
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.dbManager import DbManager
 from tortuga.db.models.hardwareProfile import HardwareProfile
+from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
 from tortuga.db.models.softwareProfile import SoftwareProfile
+from tortuga.db.nodesDbHandler import NodesDbHandler
 from tortuga.exceptions.commandFailed import CommandFailed
 from tortuga.exceptions.configurationError import ConfigurationError
 from tortuga.exceptions.invalidArgument import InvalidArgument
@@ -175,9 +177,6 @@ class Aws(ResourceAdapter):
         )
     }
 
-    # Location of instance cache file
-    DEFAULT_INSTANCE_CACHE_CONFIG_FILE = 'aws-instance.conf'
-
     # Default time in seconds before creates will return even if not
     # completed
     DEFAULT_CREATE_TIMEOUT = 900
@@ -218,7 +217,7 @@ class Aws(ResourceAdapter):
         # Initialize EC2 connection
         return EC2Connection(**connectionArgs)
 
-    def getResourceAdapterConfig(self, sectionName: Optional[str] = None):
+    def getResourceAdapterConfig(self, sectionName: Union[str, None] = None):
         """
         Raises:
             ConfigurationError
@@ -244,6 +243,10 @@ class Aws(ResourceAdapter):
 
             configDict.update(overrideConfigDict)
 
+        return self._normalize_resource_adapter_config(configDict)
+
+    def _normalize_resource_adapter_config(
+            self, configDict: Dict[str, Any]) -> dict:
         config = {}
 
         if 'ami' in configDict:
@@ -638,39 +641,6 @@ class Aws(ResourceAdapter):
 
         return bdm
 
-    def __instanceCacheGet(self, conn: EC2Connection, node: Node):
-        """
-        Retrieves the instance associated with a node out of
-        the cache
-
-        Raises:
-            ResourceNotFound
-        """
-
-        config = self.instanceCacheGet(node.name)
-
-        if 'instance' not in config:
-            self.getLogger().debug(
-                'Cache miss: node [%s], no instance' % (node.name))
-
-            return None
-
-        instance_id = config['instance']
-
-        self.getLogger().debug(
-            'Cache hit: node [%s], instance [%s]' % (
-                node.name, instance_id))
-
-        instance = self.__get_instance_by_instance_id(conn, instance_id)
-
-        if not instance:
-            # We couldn't find the instance we wanted
-            self.getLogger().error(
-                'Cache error: node [%s], instance [%s], not found'
-                ' in EC2' % (node.name, instance_id))
-
-        return instance
-
     def __get_instance_by_instance_id(self, conn: EC2Connection,
                                       instance_id: str): \
             # pylint: disable=no-self-use
@@ -825,10 +795,9 @@ class Aws(ResourceAdapter):
 
             if instance:
                 # Update instance cache
-                self.instanceCacheSet(
-                    node.name,
-                    launch_request.addNodesRequest,
-                    instance_id=nodedetail['metadata']['ec2_instance_id'])
+                node.instance = InstanceMapping(
+                    instance=nodedetail['metadata']['ec2_instance_id']
+                )
 
                 # Add tags
                 self.getLogger().debug(
@@ -840,33 +809,6 @@ class Aws(ResourceAdapter):
                     instance)
 
         return nodes
-
-    def instanceCacheSet(self, name: str, addNodesRequest: dict,
-                         instance_id: Optional[Union[str, None]] = None,
-                         metadata: Optional[Union[dict, None]] = None):
-        """
-        Overriden AWS-specific instance cache update implementation
-
-        'instance_id' may be None when adding idle nodes.
-
-        'metadata' allows merging existing metadata into the instance cache.
-        """
-
-        new_metadata = dict(list(metadata.items())) if metadata else {}
-
-        if instance_id:
-            new_metadata['instance'] = instance_id
-
-        if 'resource_adapter_configuration' in addNodesRequest and \
-                addNodesRequest['resource_adapter_configuration'] != \
-                'default':
-            # So we don't write a file full of "defaults", do not write
-            # adapter configuration profile 'default'
-
-            new_metadata['resource_adapter_configuration'] = \
-                addNodesRequest['resource_adapter_configuration']
-
-        super(Aws, self).instanceCacheSet(name, metadata=new_metadata)
 
     def request_spot_instances(self, addNodesRequest: dict,
                                dbSession: Session,
@@ -928,34 +870,37 @@ class Aws(ResourceAdapter):
                                             count=addNodesRequest['count'],
                                             initial_state='Allocated')
 
-                for node in nodes:
-                    args = self.__get_request_spot_instance_args(
-                        addNodesRequest,
-                        configDict,
-                        ami,
-                        security_group_ids,
-                        node=node)
+                with DbManager().session() as session:
+                    for node in nodes:
+                        args = self.__get_request_spot_instance_args(
+                            addNodesRequest,
+                            configDict,
+                            ami,
+                            security_group_ids,
+                            node=node)
 
-                    resv = conn.request_spot_instances(
-                        addNodesRequest['spot_instance_request']['price'],
-                        configDict['ami'], **args)
+                        resv = conn.request_spot_instances(
+                            addNodesRequest['spot_instance_request']['price'],
+                            configDict['ami'], **args)
 
-                    # Update instance cache
-                    metadata = {
-                        'spot_instance_request': resv[0].id,
-                    }
+                        # Update instance cache
+                        metadata = {
+                            'spot_instance_request': resv[0].id,
+                        }
 
-                    if cfgname:
-                        metadata['resource_adapter_configuration'] = cfgname
+                        node.instance = InstanceMapping(
+                            metadata=metadata,
+                            resource_adapter_configuration=self.load_resource_adapter_config(
+                                session, cfgname
+                            )
+                        )
 
-                    self.instanceCacheSet(
-                        node.name, addNodesRequest, metadata=metadata)
-
-                    # Post 'add' message onto message queue
-                    self.__post_add_spot_instance_request(resv,
-                                                          dbHardwareProfile,
-                                                          dbSoftwareProfile,
-                                                          cfgname)
+                        # Post 'add' message onto message queue
+                        self.__post_add_spot_instance_request(resv,
+                                                              dbHardwareProfile,
+                                                              dbSoftwareProfile,
+                                                              cfgname)
+                    # TODO: session.commit()
         except boto.exception.EC2ResponseError as exc:
             raise OperationFailed(
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
@@ -970,7 +915,7 @@ class Aws(ResourceAdapter):
                                          configDict: dict,
                                          ami: str,
                                          security_group_ids: List[str],
-                                         node: Optional[Union[Node, None]] = None):
+                                         node: Union[Node, None] = None):
         """
         Create dict of args for boto request_spot_instances() API
         """
@@ -994,7 +939,8 @@ class Aws(ResourceAdapter):
     def __post_add_spot_instance_request(self, resv,
                                          dbHardwareProfile: HardwareProfile,
                                          dbSoftwareProfile: SoftwareProfile,
-                                         cfgname: Optional[str] = None) -> NoReturn:
+                                         cfgname: Union[str, None] = None) \
+            -> NoReturn:
         # Send message to awsspotd (using zeromq)
         context = zmq.Context()
 
@@ -1103,7 +1049,11 @@ class Aws(ResourceAdapter):
             session.add(node)
 
             # Update instance cache
-            self.instanceCacheSet(node.name, addNodesRequest)
+            node.instance = InstanceMapping(
+                resource_adapter_configuration=self.load_resource_adapter_config(
+                    session, addNodesRequest.get('resource_adapter_configuration')
+                )
+            )
 
             nodes.append(node)
 
@@ -1297,6 +1247,11 @@ fqdn: %s
         security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(configDict, conn)
 
+        resource_adapter_config = self.load_resource_adapter_config(
+            dbSession,
+            addNodesRequest.get('resource_adapter_configuration')
+        )
+
         try:
             for node_request in launch_request.node_request_queue:
                 userData = self.__get_user_data(
@@ -1312,10 +1267,11 @@ fqdn: %s
                     node_request['status'] = 'launched'
 
                     # Update instance cache as soon as instance launched
-                    self.instanceCacheSet(
-                        node_request['node'].name,
-                        addNodesRequest,
-                        instance_id=node_request['instance'].id)
+
+                    node_request['node'].instance = InstanceMapping(
+                        instance=node_request['instance'].id,
+                        resource_adapter_configuration=resource_adapter_config
+                    )
 
                     # Increment launched instances counter
                     instances_launched += 1
@@ -1478,7 +1434,8 @@ fqdn: %s
                     'Error launching instance: state=[{0}]'.format(
                         instance.state))
 
-    def __failed_launch_cleanup_handler(self, node_request: dict) -> NoReturn:
+    def __failed_launch_cleanup_handler(self, session: Session,
+                                        node_request: dict) -> None:
         """
         Clean up routine Run when instance does not reach running state
         within create timeout period or reaches unexpected state.
@@ -1494,7 +1451,7 @@ fqdn: %s
 
         if node:
             # Clean up instance cache
-            self.instanceCacheDelete(node.name)
+            session.delete(node.instance)
 
     def __wait_for_instance_coroutine(self, launch_request: LaunchRequest,
                                       dbSession: Session):
@@ -1535,7 +1492,7 @@ fqdn: %s
                 node_request['status'] = 'error'
 
                 # Terminate instance
-                self.__failed_launch_cleanup_handler(node_request)
+                self.__failed_launch_cleanup_handler(dbSession, node_request)
             finally:
                 self.__launch_wait_queue.task_done()
 
@@ -1604,6 +1561,16 @@ fqdn: %s
         if launch_request.configDict['use_instance_hostname']:
             # Update node name based on instance name assigned by AWS
             node.name = self.__get_node_name(launch_request, instance)
+
+            resource_adapter_configuration = self.load_resource_adapter_config(
+                dbSession,
+                launch_request.addNodesRequest.get('resource_adapter_configuration')
+            )
+
+            node.instance = InstanceMapping(
+                instance=instance.id,
+                resource_adapter_configuration=resource_adapter_configuration,
+            )
 
         # Commit node record changes (incl. host name and/or IP address)
         dbSession.commit()
@@ -1694,12 +1661,6 @@ fqdn: %s
                 hostname, launch_request.configDict['dns_domain'])
         else:
             fqdn = instance.private_dns_name
-
-        # Update instance cache
-        self.instanceCacheSet(
-            fqdn,
-            launch_request.addNodesRequest,
-            instance_id=instance.id)
 
         return fqdn
 
@@ -1910,8 +1871,9 @@ fqdn: %s
         return args
 
     def __launchEC2(self, conn: EC2Connection, configDict: dict,
-                    nodeCount: Optional[int] = 1,
-                    security_group_ids=None, userData=None):
+                    nodeCount: int = 1,
+                    security_group_ids: List[str] = None,
+                    userData: str = None):
         """
         Launch one or more EC2 instances
 
@@ -1943,7 +1905,7 @@ fqdn: %s
             raise CommandFailed('AWS error: %s' % (extErrMsg))
 
     def __get_security_group_ids(self, configDict: dict,
-                                 conn: EC2Connection) -> Union[List[str], None]:
+                                 conn: EC2Connection) -> List[str]:
         """
         Convert list of security group names into list of security
         group ids. Returns None if VPC not being used.
@@ -2046,37 +2008,30 @@ fqdn: %s
             # pylint: disable=unused-argument
         return False
 
-    def __simple_get_instance_by_node(self, conn, node):
-        # Get EC2 instance and terminate it
-        try:
-            return self.__instanceCacheGet(conn, node)
-        except ResourceNotFound:
-            # Node not found in instance cache
-            self.getLogger().warning(
-                'No associated AWS instance found for node [%s]' % (node.name))
-
-        return None
-
     def idleActiveNode(self, nodes: List[Node]) -> str:
-        for node in nodes:
-            self.getLogger().info('Idling node [{0}]'.format(node.name))
+        with DbManager().session() as session:
+            for node in nodes:
+                self.getLogger().info('Idling node [{0}]'.format(node.name))
 
-            configDict = self.getResourceAdapterConfig(
-                self.getResourceAdapterConfigProfileByNodeName(node.name))
+                cfg = node.instance.resource_adapter_configuration
 
-            if node.state != 'Discovered':
-                # Terminate instance
-                instance = self.__simple_get_instance_by_node(
-                    self.getEC2Connection(configDict), node)
+                configDict = self.get_node_resource_adapter_config(node)
 
-                if instance:
-                    self.__terminate_instance(instance)
+                if node.state != 'Discovered':
+                    # Terminate instance
+                    instance = self.__get_instance_by_instance_id(
+                        self.getEC2Connection(configDict),
+                        node.instance.instance
+                    )
 
-                    # Remove instance id from cache
-                    self.instanceCacheUpdate(node.name, deleted=['instance'])
+                    if instance:
+                        self.__terminate_instance(instance)
 
-            # Unset IP address for node
-            node.nics[0].ip = None
+                        # Remove instance id from cache
+                        session.delete(node.instance)
+
+                # Unset IP address for node
+                node.nics[0].ip = None
 
         return 'Discovered'
 
@@ -2099,9 +2054,7 @@ fqdn: %s
 
         launch_request = LaunchRequest()
 
-        launch_request.configDict = \
-            self.getResourceAdapterConfig(
-                self.getResourceAdapterConfigProfileByNodeName(node.name))
+        launch_request.configDict = self.get_node_resource_adapter_config(node)
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
@@ -2122,43 +2075,48 @@ fqdn: %s
 
             node_request['status'] = 'launched'
 
-            self.instanceCacheUpdate(
-                node_request['node'].name,
-                added=[('instance', node_request['instance'].id)])
+            if not node.instance:
+                node.instance = InstanceMapping()
+
+            node.instance.instance = node_request['instance'].id
 
         # Wait for activated instance(s) to start
         with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
 
     def deleteNode(self, nodes: List[Node]) -> NoReturn:
-        for node in nodes:
-            self.__delete_node(node)
+        with DbManager().session() as session:
+            for node in nodes:
+                self.__delete_node(session, node)
+
+            # TODO: session.commit()
 
         self.getLogger().info('%d node(s) deleted' % (len(nodes)))
 
-    def __delete_node(self, node: Node) -> NoReturn:
+    def __delete_node(self, session: Session, node: Node) -> None:
         self.getLogger().info('Deleting node [{0}]'.format(node.name))
 
-        try:
-            configDict = self.getResourceAdapterConfig(
-                self.getResourceAdapterConfigProfileByNodeName(node.name))
+        configDict = self.get_node_resource_adapter_config(node)
 
-            # Remove Puppet certificate
-            bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
-            bhm.deleteNodeCleanup(node)
+        # Remove Puppet certificate
+        bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
+        bhm.deleteNodeCleanup(node)
 
-            conn = self.getEC2Connection(configDict)
+        conn = self.getEC2Connection(configDict)
 
-            if not node.isIdle:
-                # Get EC2 instance and terminate it
-                instance = self.__instanceCacheGet(conn, node)
+        if node.isIdle:
+            return
 
-                if instance:
-                    self.__terminate_instance(instance)
+        # Get EC2 instance and terminate it
+        if node.instance and node.instance.instance:
+            instance = self.__get_instance_by_instance_id(
+                conn,
+                node.instance.instance
+            )
 
-            # Clean up instance cache
-            self.instanceCacheDelete(node.name)
-        except ResourceNotFound:
+            if instance:
+                self.__terminate_instance(instance)
+        else:
             self.getLogger().warning(
                 'Unable to determine AWS instance associated with'
                 ' node [{0}]; instance may still be running!'.format(
@@ -2219,57 +2177,6 @@ fqdn: %s
 
         return self.__runningOnEc2
 
-    def __get_instance_by_node(self, node, instance_cache):
-        """
-        Raises:
-            NodeNotFound
-        """
-
-        configDict = self.getResourceAdapterConfig(
-            self.getResourceAdapterConfigProfileByNodeName(node.name))
-
-        conn = self.getEC2Connection(configDict)
-
-        if instance_cache.has_section(node.name):
-            # Attempt to get node by cached instance id
-            if instance_cache.has_option(node.name, 'instance'):
-                instance_id = instance_cache.get(node.name, 'instance')
-
-                reservations = conn.get_all_reservations(filters={
-                    'instance_id': instance_id,
-                })
-
-                if not reservations:
-                    self.getLogger().info(
-                        'Unable to get instance (by instance id) for'
-                        ' node [%s]' % (node.name))
-            elif instance_cache.has_option(node.name, 'reservation_id'):
-                # Attempt to get reservation_id from instance cache
-
-                reservation_id = instance_cache.get(
-                    node.name, 'reservation_id')
-
-                reservations = conn.get_all_reservations(filters={
-                    'tag:Name': node.name,
-                    'reservation-id': reservation_id,
-                })
-
-                if not reservations:
-                    self.getLogger().info(
-                        'Unable to get instance (by reservation id)'
-                        ' for node [%s]' % (node.name))
-            else:
-                raise NodeNotFound(
-                    'Unable to determine associated AWS instance for'
-                    ' node [%s]' % (node.name))
-
-            if reservations:
-                return reservations[0].instances[0]
-
-        raise NodeNotFound(
-            'Unable to determine associated AWS instance for node [%s]' % (
-                node.name))
-
     def startupNode(self, nodes: List[Node],
                     remainingNodeList: Optional[Union[List[str], None]] = None,
                     tmpBootMethod: Optional[str] = 'n'):
@@ -2283,13 +2190,17 @@ fqdn: %s
                 ' '.join([node.name for node in nodes]),
                 ' '.join(remainingNodeList or []), tmpBootMethod))
 
-        # Get instance cache
-        instance_cache = self.instanceCacheRefresh()
-
         # Iterate over specified nodes
         for node in nodes:
             try:
-                instance = self.__get_instance_by_node(node, instance_cache)
+                configDict = self.get_node_resource_adapter_config(node)
+
+                conn = self.getEC2Connection(configDict)
+
+                instance = self.__get_instance_by_instance_id(
+                    conn,
+                    node.instance.instance
+                )
             except NodeNotFound:
                 # Catch exception thrown if node's instance metadata is no
                 # longer available.
@@ -2316,8 +2227,7 @@ fqdn: %s
 
                 continue
 
-            self.instanceCacheUpdate(
-                node.name, added=[('instance', instance.id)])
+            node.instance.instance = instance.id
 
     def getOptions(self, dbSoftwareProfile: SoftwareProfile,
                    dbHardwareProfile: HardwareProfile) -> dict: \
@@ -2334,14 +2244,16 @@ fqdn: %s
                 ' '.join([node.name for node in nodes]), bSoftReset))
 
         for node in nodes:
-            configDict = self.getResourceAdapterConfig(
-                self.getResourceAdapterConfigProfileByNodeName(node.name))
+            configDict = self.get_node_resource_adapter_config(node)
 
             conn = self.getEC2Connection(configDict)
 
             # Get EC2 instance
             try:
-                instance = self.__instanceCacheGet(conn, node)
+                instance = self.__get_instance_by_instance_id(
+                    conn,
+                    node.instance.instance
+                )
             except ResourceNotFound:
                 # Unable to get instance_id for unknown node
                 self.getLogger().warning(
@@ -2375,14 +2287,16 @@ fqdn: %s
                 ' '.join([node.name for node in nodes]), bSoftReset))
 
         for node in nodes:
-            configDict = self.getResourceAdapterConfig(
-                self.getResourceAdapterConfigProfileByNodeName(node.name))
+            configDict = self.get_node_resource_adapter_config(node)
 
             conn = self.getEC2Connection(configDict)
 
             # Get EC2 instance
             try:
-                instance = self.__instanceCacheGet(conn, node)
+                instance = self.__get_instance_by_instance_id(
+                    conn,
+                    node.instance.instance
+                )
             except ResourceNotFound:
                 # Unable to find instance for node
                 continue
@@ -2413,15 +2327,10 @@ fqdn: %s
         self.getLogger().debug(
             'updateNode(): node=[{0}]'.format(node.name))
 
-        instance_cache = self.instanceCacheGet(node.name)
-
         addNodesRequest = {}
 
-        if 'resource_adapter_configuration' not in instance_cache:
-            addNodesRequest['resource_adapter_configuration'] = 'default'
-        else:
-            addNodesRequest['resource_adapter_configuration'] = \
-                instance_cache['resource_adapter_configuration']
+        addNodesRequest['resource_adapter_configuration'] = \
+            node.instance.resource_adapter_configuration.name
 
         if node.state == 'Allocated' and \
                 'state' in updateNodeRequest and \
@@ -2466,9 +2375,11 @@ fqdn: %s
 
         self.__assign_tags(configDict, conn, node, instance)
 
-        self.instanceCacheSet(node.name,
-                              addNodesRequest,
-                              instance_id=instance_id)
+        node.instance = InstanceMapping(
+            instance=instance_id,
+            resource_adapter_configuration=self.load_resource_adapter_config(
+                addNodesRequest.get('resource_adapter_configuration'))
+        )
 
     def get_node_vcpus(self, name: str) -> int:
         """
@@ -2477,6 +2388,7 @@ fqdn: %s
         lookup.
 
         Raises:
+            NodeNotFound
             ResourceNotFound
 
         :param name: node name
@@ -2484,15 +2396,10 @@ fqdn: %s
         :returntype: int
         """
 
-        try:
-            instance_cache = self.instanceCacheGet(name)
-        except ResourceNotFound:
-            return 1
-
-        configDict = self.getResourceAdapterConfig(
-            sectionName=instance_cache['resource_adapter_configuration']
-            if 'resource_adapter_configuration' in instance_cache else
-            None)
+        with DbManager().session() as session:
+            configDict = self.get_node_resource_adapter_config(
+                NodesDbHandler().getNode(session, name)
+            )
 
         if 'vcpus' in configDict:
             return configDict['vcpus']
