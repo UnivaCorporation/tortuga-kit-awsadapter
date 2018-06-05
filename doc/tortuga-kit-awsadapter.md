@@ -506,7 +506,7 @@ before it is capable of requesting and monitoring spot instance requests.
 #### Configuration
 
 For example, to change the AWS region to `us-west-2`, add the following line to
-`/etc/sysconfig/awsspotd` as follows:
+`/etc/puppetlabs/code/environments/production/modules/tortuga_kit_awsadapter/files/awsspotd.sysconfig` as follows:
 
 ~~~
 AWSSPOTD_OPTIONS="--region us-west-2"
