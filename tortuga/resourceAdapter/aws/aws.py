@@ -791,6 +791,8 @@ class Aws(ResourceAdapter):
 
             node.nics = [Nic(ip=ip, boot=True)]
 
+            self.fire_provisioned_event(node)
+
             nodes.append(node)
 
             if instance:
@@ -1617,6 +1619,8 @@ fqdn: %s
         node_request['status'] = 'running'
 
         node.state = 'Provisioned'
+
+        self.fire_provisioned_event(node)
 
     def __assign_tags(self, configDict: dict, conn: EC2Connection,
                       node: Node, instance):
