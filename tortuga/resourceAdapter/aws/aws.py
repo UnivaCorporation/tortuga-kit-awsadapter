@@ -746,6 +746,7 @@ class Aws(ResourceAdapter):
             if launch_request.hardwareprofile.nameFormat != '*':
                 # Generate host name for spot instance
                 fqdn = self.addHostApi.generate_node_name(
+                    session,
                     launch_request.hardwareprofile.nameFormat,
                     dns_zone=self.private_dns_zone)
             else:
@@ -867,7 +868,8 @@ class Aws(ResourceAdapter):
                                                       dbSoftwareProfile,
                                                       cfgname)
             else:
-                nodes = self.__create_nodes(dbHardwareProfile,
+                nodes = self.__create_nodes(dbSession,
+                                            dbHardwareProfile,
                                             dbSoftwareProfile,
                                             count=addNodesRequest['count'],
                                             initial_state='Allocated')
@@ -1234,7 +1236,8 @@ fqdn: %s
             'Preallocating %d node(s) for mapping to AWS instances' % (
                 count))
 
-        nodes = self.__create_nodes(dbHardwareProfile,
+        nodes = self.__create_nodes(dbSession,
+                                    dbHardwareProfile,
                                     dbSoftwareProfile,
                                     count=addNodesRequest['count'])
 
@@ -1546,7 +1549,8 @@ fqdn: %s
                     instance.id))
 
             # create Node record
-            node = self.__create_nodes(launch_request.hardwareprofile,
+            node = self.__create_nodes(dbSession,
+                                       launch_request.hardwareprofile,
                                        launch_request.softwareprofile)[0]
 
             dbSession.add(node)
@@ -1668,10 +1672,12 @@ fqdn: %s
 
         return fqdn
 
-    def __create_nodes(self, hardwareprofile: HardwareProfile,
+    def __create_nodes(self, session: Session,
+                       hardwareprofile: HardwareProfile,
                        softwareprofile: SoftwareProfile,
-                       count: Optional[int] = 1,
-                       initial_state: Optional[str] = 'Launching') -> List[Node]:
+                       count: int = 1,
+                       initial_state: Optional[str] = 'Launching') \
+            -> List[Node]:
         """
         Creates new node object(s) with corresponding primary nic
 
@@ -1688,6 +1694,7 @@ fqdn: %s
             if hardwareprofile.nameFormat != '*':
                 # Generate node name
                 node.name = self.addHostApi.generate_node_name(
+                    session,
                     hardwareprofile.nameFormat,
                     dns_zone=self.private_dns_zone)
 
