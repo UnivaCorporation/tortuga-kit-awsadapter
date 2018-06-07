@@ -24,7 +24,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, NoReturn, Optional, Tuple, Union, Dict, Any
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
 
 import boto
 import boto.ec2
@@ -141,6 +141,9 @@ class Aws(ResourceAdapter):
                         'a space-separated list of IP addresses',
             requires=['override_dns_domain']
         ),
+        'use_domain_from_dhcp_option_set': settings.BooleanSetting(
+            description='use domain specified in DHCP option set',
+        ),
         'region': settings.StringSetting(
             description='AWS region',
             default='us-east-1'
@@ -185,12 +188,12 @@ class Aws(ResourceAdapter):
     # avoid thrashing
     DEFAULT_SLEEP_TIME = 5
 
-    def __init__(self, addHostSession: Optional[str] = None):
+    def __init__(self, addHostSession: Optional[str] = None) -> None:
         super(Aws, self).__init__(addHostSession=addHostSession)
 
         # Initialize internal flags
         self.__runningOnEc2 = None
-        self.__installer_ip = None
+        self.__installer_ip: Union[str, None] = None
 
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
@@ -293,6 +296,8 @@ class Aws(ResourceAdapter):
                     'dns_nameservers',
                     'dns_options',
                     'iam_instance_profile_name',
+                    'use_domain_from_dhcp_option_set',
+                    'installer_ip',
                    ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
@@ -404,9 +409,9 @@ class Aws(ResourceAdapter):
 
         # 'use_instance_hostname' is enabled by default when Tortuga is
         # hosted on EC2.
-        config['use_instance_hostname'] = \
-            configDict['use_instance_hostname'].lower() == 'true' \
-            if 'use_instance_hostname' in configDict else True
+        config['use_instance_hostname'] = self.__convert_to_bool(
+            str(configDict.get('use_instance_hostname')), default=True
+        )
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -453,9 +458,9 @@ class Aws(ResourceAdapter):
                 # Map deprecated 'dns_search' setting to 'dns_domain'
                 config['dns_domain'] = config['dns_search']
             else:
-                config['dns_domain'] = config['dns_domain'] \
-                    if 'dns_domain' in config and config['dns_domain'] else \
-                    self.private_dns_zone
+                # ensure 'dns_domain' is set
+                if not config['dns_domain']:
+                    config['dns_domain'] = self.private_dns_zone
 
             config['dns_nameservers'] = config['dns_nameservers'].split(' ') \
                 if config['dns_nameservers'] else []
@@ -464,16 +469,25 @@ class Aws(ResourceAdapter):
                 # Ensure 'dns_nameservers' defaults to the Tortuga installer
                 # as the DNS nameserver
                 config['dns_nameservers'].append(
+                    config['installer_ip']
+                    if config['installer_ip'] else
                     self.installer_public_ipaddress)
 
         del config['dns_search']
 
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
-        if config['subnet_id'] and config['override_dns_domain'] and not \
-                config['dns_domain']:
+        config['use_domain_from_dhcp_option_set'] = self.__convert_to_bool(
+            config['use_domain_from_dhcp_option_set'], default=False,
+        )
+        if config['subnet_id'] and config['use_domain_from_dhcp_option_set']:
             # Attempt to look up default DNS domain from DHCP options set
             domain = self.__get_vpc_default_domain(config)
             if domain:
+                self.getLogger().info(
+                    '[aws] Using default domain [%s] from DHCP option set',
+                    domain
+                )
+
                 config['dns_domain'] = domain
                 config['override_dns_domain'] = True
 
@@ -541,7 +555,7 @@ class Aws(ResourceAdapter):
             raise ConfigurationError('AWS error: {0}'.format(exc.message))
 
     def __convert_to_bool(self, value: str,
-                          default: Optional[Union[bool, None]] = None) -> bool: \
+                          default: Optional[bool] = None) -> bool: \
             # pylint: disable=no-self-use
         return value.lower().startswith('t') \
             if value is not None else default
@@ -655,7 +669,8 @@ class Aws(ResourceAdapter):
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
-              dbSoftwareProfile: Optional[Union[SoftwareProfile, None]] = None) -> List[Node]:
+              dbSoftwareProfile: Optional[SoftwareProfile] = None) \
+            -> List[Node]:
         """
         Create one or more nodes
 
@@ -748,7 +763,7 @@ class Aws(ResourceAdapter):
                 fqdn = self.addHostApi.generate_node_name(
                     session,
                     launch_request.hardwareprofile.nameFormat,
-                    dns_zone=self.private_dns_zone)
+                    dns_zone=launch_request.configDict['dns_domain'])
             else:
                 fqdn = nodedetail['name']
 
@@ -851,7 +866,7 @@ class Aws(ResourceAdapter):
 
         try:
             if configDict['use_instance_hostname']:
-                nodes = []
+                nodes: List[Node] = []
 
                 args = self.__get_request_spot_instance_args(
                     addNodesRequest,
@@ -869,6 +884,7 @@ class Aws(ResourceAdapter):
                                                       cfgname)
             else:
                 nodes = self.__create_nodes(dbSession,
+                                            configDict,
                                             dbHardwareProfile,
                                             dbSoftwareProfile,
                                             count=addNodesRequest['count'],
@@ -1066,7 +1082,7 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def _get_installer_ip(self, hardwareprofile: Optional[Union[HardwareProfile, None]] = None) -> str:
+    def _get_installer_ip(self, hardwareprofile: Optional[HardwareProfile] = None) -> str:
         if self.__installer_ip is None:
             if hardwareprofile and hardwareprofile.nics:
                 self.__installer_ip = hardwareprofile.nics[0].ip
@@ -1076,12 +1092,14 @@ class Aws(ResourceAdapter):
         return self.__installer_ip
 
     def __get_common_user_data_settings(self, configDict: dict,
-                                        node: Optional[Union[Node, None]] = None):
-        installerIp = self._get_installer_ip(
-            hardwareprofile=node.hardwareprofile if node else None)
+                                        node: Optional[Node] = None):
+        if configDict['installer_ip']:
+            installerIp = configDict['installer_ip']
+        else:
+            installerIp = self._get_installer_ip(
+                hardwareprofile=node.hardwareprofile if node else None)
 
-        dns_domain_value = '\'{0}\''.format(configDict['dns_domain']) \
-            if configDict['dns_domain'] else None
+        dns_domain_value = '\'{0}\''.format(configDict['dns_domain'])
 
         settings_dict = {
             'installerHostName': self.installer_public_hostname,
@@ -1120,7 +1138,7 @@ dns_nameservers = %(dns_nameservers)s
         return result
 
     def __get_user_data(self, configDict: dict,
-                        node: Optional[Union[Node, None]] = None):
+                        node: Optional[Node] = None):
         if not configDict['cloud_init']:
             return None
 
@@ -1132,7 +1150,7 @@ dns_nameservers = %(dns_nameservers)s
         return self.expand_cloud_init_user_data_template(configDict, node=node)
 
     def __get_user_data_script(self, configDict: dict,
-                               node: Optional[Union[Node, None]] = None):
+                               node: Optional[Node] = None):
         self.getLogger().info(
             'Using user-data script template [%s]' % (
                 configDict['user_data_script_template']))
@@ -1215,7 +1233,7 @@ fqdn: %s
         self.__wait_for_instances(dbSession, launch_request)
 
     def __add_hosts(self, dbSession: Session,
-                    launch_request: LaunchRequest):
+                    launch_request: LaunchRequest) -> None:
         """
         The "normal" add hosts workflow: create node records,
         launch one AWS instance for each node record, and map them.
@@ -1233,13 +1251,13 @@ fqdn: %s
         count = addNodesRequest['count']
 
         self.getLogger().info(
-            'Preallocating %d node(s) for mapping to AWS instances' % (
-                count))
+            f'Preallocating {count} node(s) for mapping to AWS instances')
 
         nodes = self.__create_nodes(dbSession,
+                                    configDict,
                                     dbHardwareProfile,
                                     dbSoftwareProfile,
-                                    count=addNodesRequest['count'])
+                                    count=count)
 
         dbSession.add_all(nodes)
         dbSession.commit()
@@ -1529,8 +1547,8 @@ fqdn: %s
         self.__launch_wait_queue.join()
 
     def __post_launch_action(self, dbSession: Session,
-                             launch_request: dict,
-                             node_request: LaunchRequest) -> NoReturn:
+                             launch_request: LaunchRequest,
+                             node_request: dict) -> NoReturn:
         """
         Perform tasks after instance has been launched successfully
 
@@ -1550,6 +1568,7 @@ fqdn: %s
 
             # create Node record
             node = self.__create_nodes(dbSession,
+                                       launch_request.configDict,
                                        launch_request.hardwareprofile,
                                        launch_request.softwareprofile)[0]
 
@@ -1639,6 +1658,8 @@ fqdn: %s
             'tortuga:installer_hostname':
                 self.installer_public_hostname,
             'tortuga:installer_ipaddress':
+                configDict['installer_ip']
+                if configDict['installer_ip'] else
                 self.installer_public_ipaddress,
         }
 
@@ -1673,6 +1694,7 @@ fqdn: %s
         return fqdn
 
     def __create_nodes(self, session: Session,
+                       configDict: Dict[str, Any],
                        hardwareprofile: HardwareProfile,
                        softwareprofile: SoftwareProfile,
                        count: int = 1,
@@ -1696,7 +1718,7 @@ fqdn: %s
                 node.name = self.addHostApi.generate_node_name(
                     session,
                     hardwareprofile.nameFormat,
-                    dns_zone=self.private_dns_zone)
+                    dns_zone=configDict['dns_domain'])
 
             node.state = initial_state
             node.isIdle = False
@@ -2189,7 +2211,7 @@ fqdn: %s
         return self.__runningOnEc2
 
     def startupNode(self, nodes: List[Node],
-                    remainingNodeList: Optional[Union[List[str], None]] = None,
+                    remainingNodeList: Optional[List[str]] = None,
                     tmpBootMethod: Optional[str] = 'n'):
         """
         Start previously stopped instances
