@@ -24,7 +24,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, NoReturn, Optional, Tuple, Union, Dict, Any
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
 
 import boto
 import boto.ec2
@@ -188,12 +188,12 @@ class Aws(ResourceAdapter):
     # avoid thrashing
     DEFAULT_SLEEP_TIME = 5
 
-    def __init__(self, addHostSession: Optional[str] = None):
+    def __init__(self, addHostSession: Optional[str] = None) -> None:
         super(Aws, self).__init__(addHostSession=addHostSession)
 
         # Initialize internal flags
         self.__runningOnEc2 = None
-        self.__installer_ip = None
+        self.__installer_ip: Union[str, None] = None
 
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
@@ -1678,8 +1678,9 @@ fqdn: %s
 
     def __create_nodes(self, hardwareprofile: HardwareProfile,
                        softwareprofile: SoftwareProfile,
-                       count: Optional[int] = 1,
-                       initial_state: Optional[str] = 'Launching') -> List[Node]:
+                       count: int = 1,
+                       initial_state: Optional[str] = 'Launching') \
+            -> List[Node]:
         """
         Creates new node object(s) with corresponding primary nic
 
