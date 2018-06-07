@@ -141,6 +141,9 @@ class Aws(ResourceAdapter):
                         'a space-separated list of IP addresses',
             requires=['override_dns_domain']
         ),
+        'use_domain_from_dhcp_option_set': settings.BooleanSetting(
+            description='use domain specified in DHCP option set',
+        ),
         'region': settings.StringSetting(
             description='AWS region',
             default='us-east-1'
@@ -293,6 +296,7 @@ class Aws(ResourceAdapter):
                     'dns_nameservers',
                     'dns_options',
                     'iam_instance_profile_name',
+                    'use_domain_from_dhcp_option_set',
                    ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
@@ -469,11 +473,18 @@ class Aws(ResourceAdapter):
         del config['dns_search']
 
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
-        if config['subnet_id'] and config['override_dns_domain'] and not \
-                config['dns_domain']:
+        config['use_domain_from_dhcp_option_set'] = self.__convert_to_bool(
+            config['use_domain_from_dhcp_option_set'], default=False,
+        )
+        if config['subnet_id'] and config['use_domain_from_dhcp_option_set']:
             # Attempt to look up default DNS domain from DHCP options set
             domain = self.__get_vpc_default_domain(config)
             if domain:
+                self.getLogger().info(
+                    '[aws] Using default domain [%s] from DHCP option set',
+                    domain
+                )
+
                 config['dns_domain'] = domain
                 config['override_dns_domain'] = True
 
