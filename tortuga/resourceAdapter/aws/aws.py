@@ -297,6 +297,7 @@ class Aws(ResourceAdapter):
                     'dns_options',
                     'iam_instance_profile_name',
                     'use_domain_from_dhcp_option_set',
+                    'installer_ip',
                    ]:  # noqa
             config[key] = configDict[key] if key in configDict else None
 
@@ -468,6 +469,8 @@ class Aws(ResourceAdapter):
                 # Ensure 'dns_nameservers' defaults to the Tortuga installer
                 # as the DNS nameserver
                 config['dns_nameservers'].append(
+                    config['installer_ip']
+                    if config['installer_ip'] else
                     self.installer_public_ipaddress)
 
         del config['dns_search']
@@ -1085,8 +1088,11 @@ class Aws(ResourceAdapter):
 
     def __get_common_user_data_settings(self, configDict: dict,
                                         node: Optional[Node] = None):
-        installerIp = self._get_installer_ip(
-            hardwareprofile=node.hardwareprofile if node else None)
+        if configDict['installer_ip']:
+            installerIp = configDict['installer_ip']
+        else:
+            installerIp = self._get_installer_ip(
+                hardwareprofile=node.hardwareprofile if node else None)
 
         dns_domain_value = '\'{0}\''.format(configDict['dns_domain']) \
             if configDict['dns_domain'] else None
@@ -1643,6 +1649,8 @@ fqdn: %s
             'tortuga:installer_hostname':
                 self.installer_public_hostname,
             'tortuga:installer_ipaddress':
+                configDict['installer_ip']
+                if configDict['installer_ip'] else
                 self.installer_public_ipaddress,
         }
 
