@@ -67,7 +67,7 @@ function mask2cdr()
 readonly vpn_network_addr=$(echo $vpn_network_cidr | cut -f1 -d/)
 readonly vpn_network_netmask=$(cidr2mask $(echo $vpn_network_cidr | cut -f2 -d/))
 
-TEMP=$(getopt -o v,f,y --long verbose,force,key-name:,local-networks:,region:,ami: -- "$@")
+TEMP=$(getopt -o v,f,y --long verbose,force,key-name:,local-networks:,region:,ami:,securitygroup: -- "$@")
 [[ $? -eq 0 ]] || {
     echo "Terminating..." >&2
     exit 1
@@ -105,6 +105,10 @@ while true; do
             ami=$2
             shift 2
             ;;
+        --securitygroup)
+            securitygroup=$2
+            shift 2
+            ;;
         --)
             shift
             break
@@ -137,16 +141,16 @@ common_args=
 
 echo -n "Determining VPC ID for VPC [${vpc_name}]... "
 
-vpc_id=$(aws ec2 describe-vpcs $common_args --filter "Name=tag:Name,Values=${vpc_name}" --output text | grep ^VPCS | cut -f7)
+eval vpc_id=$(aws ec2 describe-vpcs --filter Name=tag:Name,Values=${vpc_name} --output json --query "Vpcs[0].VpcId")
 
-if [[ -z $vpc_id ]]; then
+if [[ -z $vpc_id ]] || [[ ${vpc_id} == null ]] ; then
     echo "not found."
     exit 1
 fi
 
 echo "$vpc_id"
 
-readonly remote_network_cidr=$(aws ec2 describe-vpcs $common_args --output=text --vpc-ids $vpc_id | grep ^VPCS | cut -f2)
+eval remote_network_cidr=$(aws ec2 describe-vpcs --filter Name=tag:Name,Values=${vpc_name} --output json --query "Vpcs[0].CidrBlock")
 
 if [[ $? -ne 0 ]] || [[ -z $remote_network_cidr ]]; then
     echo "Error: unable to query VPC [${vpc_id}]" >&2
@@ -183,22 +187,36 @@ if [[ $unattended -ne 1 ]]; then
 fi
 
 if [[ -z $1 ]]; then
-    echo -n "Getting security group... "
+    [[ -z ${securitygroup} ]] && {
+        # check number of security groups
+        eval total_security_groups=$(aws ec2 describe-security-groups ${common_args} --filter "Name=vpc-id,Values=${vpc_id}" --output json --query "length(SecurityGroups)")
 
-    security_group_id=$(aws ec2 describe-security-groups $common_args --filter "Name=vpc-id,Values=${vpc_id}" --output text | grep ^SECURITYGROUPS | cut -f3)
+        [[ ${total_security_groups} -gt 1 ]] && {
+            # found more than one security group
+            echo "Error: use --securitygroup to specify security group" >&2
 
-    if [[ -z $security_group_id ]]; then
-        echo "not found."
+            exit 1
+        }
 
-        echo "Error: unable to determine security group for VPC ${vpc_id}" >&2
+        echo -n "Getting security group... "
 
-        exit 1
-    fi
+        eval security_group_id=$(aws ec2 describe-security-groups --filter "Name=vpc-id,Values=${vpc_id}" --output json --query "SecurityGroups[0].GroupId")
 
-    echo $security_group_id
+        if [[ -z $security_group_id ]] || [[ ${security_group_id} == null ]]; then
+            echo "not found."
+
+            echo "Error: unable to determine security group for VPC ${vpc_id}" >&2
+
+            exit 1
+        fi
+
+        echo $security_group_id
+    } || {
+        security_group_id=${securitygroup}
+    }
 
     echo -n "Getting subnet ID... "
-    subnet_id=$(aws ec2 describe-subnets --filter "Name=vpc-id,Values=${vpc_id}" --query "Subnets[0].SubnetId" | tr -d \")
+    eval subnet_id=$(aws ec2 describe-subnets --output json --filter "Name=vpc-id,Values=${vpc_id}" --query "Subnets[0].SubnetId")
 
     if [[ ${subnet_id} == null ]] || [[ -z $subnet_id ]]; then
         echo "failed."
@@ -303,11 +321,11 @@ if [[ -z $1 ]]; then
 
     [[ -n $keyname ]] && args+=" --key-name $keyname"
 
-    launch_cmd="aws ec2 run-instances $common_args --output text --user-data file://startup-script.ec2.sh --image-id $default_ami $args --security-group-ids $security_group_id --instance-type $default_instance_type --subnet $subnet_id --associate-public-ip-address"
+    launch_cmd="aws ec2 run-instances $common_args --output json --user-data file://startup-script.ec2.sh --image-id $default_ami $args --security-group-ids ${security_group_id} --instance-type $default_instance_type --subnet $subnet_id --associate-public-ip-address --query Instances[0].InstanceId"
 
     [[ -n $ami ]] && launch_cmd+=" --image-id $ami"
 
-    result=$($launch_cmd)
+    eval instance_id=$($launch_cmd)
 
     [[ $? -eq 0 ]] || {
         echo "failed."
@@ -315,32 +333,24 @@ if [[ -z $1 ]]; then
         exit 1
     }
 
-    readonly oldifs="$IFS"
-    IFS=
-
-    instance_id=$(echo $result | grep "^INSTANCES" | cut -f8)
-    [[ -z $instance_id ]] && {
+    [[ -z $instance_id ]] || [[ ${instance_id} == null ]] && {
         echo "Error: unable to determine instance ID. Unable to proceed!" >&2
         exit 1
     }
-else
-    instance_id=$1
 
     echo -n "Using instance ID argument... "
 fi
 
-IFS="$oldifs"
-
 echo "$instance_id"
 
-route_table_id=$(aws ec2 describe-route-tables $common_args --filter "Name=vpc-id,Values=${vpc_id}" --output text | grep ^ROUTETABLES | cut -f 2)
+eval route_table_id=$(aws ec2 describe-route-tables --filter "Name=vpc-id,Values=${vpc_id}" --output json --query "RouteTables[0].RouteTableId")
 
 # Wait for instance to reach running state
 echo -n "Waiting for instance to reach running state... "
 for ((i=0; i<40; i++)); do
-    result=$(aws ec2 describe-instances $common_args --filter "Name=instance-state-name,Values=running" --instance-id $instance_id --output text)
+    eval result=$(aws ec2 describe-instances ${common_args} --filter "Name=instance-state-name,Values=running" --instance-id ${instance_id} --output json --query "Reservations[0].Instances[0].State.Name")
 
-    if [[ -n $result ]]; then break; fi
+    if [[ ${result} != null ]]; then break; fi
 
     sleep 3
 done
@@ -406,7 +416,13 @@ aws ec2 create-route $common_args --route-table-id $route_table_id \
 
 echo "done."
 
-readonly remote_ip=$(aws ec2 describe-instances $common_args --output text --query "Reservations[0].Instances[0].PublicIpAddress" --instance-id $instance_id)
+eval remote_ip=$(aws ec2 describe-instances $common_args --output json --query "Reservations[0].Instances[0].PublicIpAddress" --instance-id $instance_id)
+
+[[ ${remote_ip} != null ]] || {
+    echo "Error determining public IP for instance ${instance_id}" >&2
+
+    exit 1
+}
 
 echo "Determining VPN instance IP... $remote_ip"
 
