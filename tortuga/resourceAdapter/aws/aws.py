@@ -541,7 +541,7 @@ class Aws(ResourceAdapter):
             raise ConfigurationError('AWS error: {0}'.format(exc.message))
 
     def __convert_to_bool(self, value: str,
-                          default: Optional[Union[bool, None]] = None) -> bool: \
+                          default: Optional[bool] = None) -> bool: \
             # pylint: disable=no-self-use
         return value.lower().startswith('t') \
             if value is not None else default
@@ -655,7 +655,8 @@ class Aws(ResourceAdapter):
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
-              dbSoftwareProfile: Optional[Union[SoftwareProfile, None]] = None) -> List[Node]:
+              dbSoftwareProfile: Optional[SoftwareProfile] = None) \
+            -> List[Node]:
         """
         Create one or more nodes
 
@@ -848,7 +849,7 @@ class Aws(ResourceAdapter):
 
         try:
             if configDict['use_instance_hostname']:
-                nodes = []
+                nodes: List[Node] = []
 
                 args = self.__get_request_spot_instance_args(
                     addNodesRequest,
@@ -1062,7 +1063,7 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def _get_installer_ip(self, hardwareprofile: Optional[Union[HardwareProfile, None]] = None) -> str:
+    def _get_installer_ip(self, hardwareprofile: Optional[HardwareProfile] = None) -> str:
         if self.__installer_ip is None:
             if hardwareprofile and hardwareprofile.nics:
                 self.__installer_ip = hardwareprofile.nics[0].ip
@@ -1072,7 +1073,7 @@ class Aws(ResourceAdapter):
         return self.__installer_ip
 
     def __get_common_user_data_settings(self, configDict: dict,
-                                        node: Optional[Union[Node, None]] = None):
+                                        node: Optional[Node] = None):
         installerIp = self._get_installer_ip(
             hardwareprofile=node.hardwareprofile if node else None)
 
@@ -1116,7 +1117,7 @@ dns_nameservers = %(dns_nameservers)s
         return result
 
     def __get_user_data(self, configDict: dict,
-                        node: Optional[Union[Node, None]] = None):
+                        node: Optional[Node] = None):
         if not configDict['cloud_init']:
             return None
 
@@ -1128,7 +1129,7 @@ dns_nameservers = %(dns_nameservers)s
         return self.expand_cloud_init_user_data_template(configDict, node=node)
 
     def __get_user_data_script(self, configDict: dict,
-                               node: Optional[Union[Node, None]] = None):
+                               node: Optional[Node] = None):
         self.getLogger().info(
             'Using user-data script template [%s]' % (
                 configDict['user_data_script_template']))
@@ -1211,7 +1212,7 @@ fqdn: %s
         self.__wait_for_instances(dbSession, launch_request)
 
     def __add_hosts(self, dbSession: Session,
-                    launch_request: LaunchRequest):
+                    launch_request: LaunchRequest) -> None:
         """
         The "normal" add hosts workflow: create node records,
         launch one AWS instance for each node record, and map them.
@@ -1524,8 +1525,8 @@ fqdn: %s
         self.__launch_wait_queue.join()
 
     def __post_launch_action(self, dbSession: Session,
-                             launch_request: dict,
-                             node_request: LaunchRequest) -> NoReturn:
+                             launch_request: LaunchRequest,
+                             node_request: dict) -> NoReturn:
         """
         Perform tasks after instance has been launched successfully
 
@@ -2178,7 +2179,7 @@ fqdn: %s
         return self.__runningOnEc2
 
     def startupNode(self, nodes: List[Node],
-                    remainingNodeList: Optional[Union[List[str], None]] = None,
+                    remainingNodeList: Optional[List[str]] = None,
                     tmpBootMethod: Optional[str] = 'n'):
         """
         Start previously stopped instances
