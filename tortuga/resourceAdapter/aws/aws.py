@@ -458,9 +458,9 @@ class Aws(ResourceAdapter):
                 # Map deprecated 'dns_search' setting to 'dns_domain'
                 config['dns_domain'] = config['dns_search']
             else:
-                config['dns_domain'] = config['dns_domain'] \
-                    if 'dns_domain' in config and config['dns_domain'] else \
-                    self.private_dns_zone
+                # ensure 'dns_domain' is set
+                if not config['dns_domain']:
+                    config['dns_domain'] = self.private_dns_zone
 
             config['dns_nameservers'] = config['dns_nameservers'].split(' ') \
                 if config['dns_nameservers'] else []
@@ -761,8 +761,9 @@ class Aws(ResourceAdapter):
             if launch_request.hardwareprofile.nameFormat != '*':
                 # Generate host name for spot instance
                 fqdn = self.addHostApi.generate_node_name(
+                    session,
                     launch_request.hardwareprofile.nameFormat,
-                    dns_zone=self.private_dns_zone)
+                    dns_zone=launch_request.configDict['dns_domain'])
             else:
                 fqdn = nodedetail['name']
 
@@ -880,7 +881,9 @@ class Aws(ResourceAdapter):
                                                       dbSoftwareProfile,
                                                       cfgname)
             else:
-                nodes = self.__create_nodes(dbHardwareProfile,
+                nodes = self.__create_nodes(dbSession,
+                                            configDict,
+                                            dbHardwareProfile,
                                             dbSoftwareProfile,
                                             count=addNodesRequest['count'],
                                             initial_state='Allocated')
@@ -1094,8 +1097,7 @@ class Aws(ResourceAdapter):
             installerIp = self._get_installer_ip(
                 hardwareprofile=node.hardwareprofile if node else None)
 
-        dns_domain_value = '\'{0}\''.format(configDict['dns_domain']) \
-            if configDict['dns_domain'] else None
+        dns_domain_value = '\'{0}\''.format(configDict['dns_domain'])
 
         settings_dict = {
             'installerHostName': self.installer_public_hostname,
@@ -1247,12 +1249,13 @@ fqdn: %s
         count = addNodesRequest['count']
 
         self.getLogger().info(
-            'Preallocating %d node(s) for mapping to AWS instances' % (
-                count))
+            f'Preallocating {count} node(s) for mapping to AWS instances')
 
-        nodes = self.__create_nodes(dbHardwareProfile,
+        nodes = self.__create_nodes(dbSession,
+                                    configDict,
+                                    dbHardwareProfile,
                                     dbSoftwareProfile,
-                                    count=addNodesRequest['count'])
+                                    count=count)
 
         dbSession.add_all(nodes)
         dbSession.commit()
@@ -1562,7 +1565,9 @@ fqdn: %s
                     instance.id))
 
             # create Node record
-            node = self.__create_nodes(launch_request.hardwareprofile,
+            node = self.__create_nodes(dbSession,
+                                       launch_request.configDict,
+                                       launch_request.hardwareprofile,
                                        launch_request.softwareprofile)[0]
 
             dbSession.add(node)
@@ -1684,7 +1689,9 @@ fqdn: %s
 
         return fqdn
 
-    def __create_nodes(self, hardwareprofile: HardwareProfile,
+    def __create_nodes(self, session: Session,
+                       configDict: Dict[str, Any],
+                       hardwareprofile: HardwareProfile,
                        softwareprofile: SoftwareProfile,
                        count: int = 1,
                        initial_state: Optional[str] = 'Launching') \
@@ -1705,8 +1712,9 @@ fqdn: %s
             if hardwareprofile.nameFormat != '*':
                 # Generate node name
                 node.name = self.addHostApi.generate_node_name(
+                    session,
                     hardwareprofile.nameFormat,
-                    dns_zone=self.private_dns_zone)
+                    dns_zone=configDict['dns_domain'])
 
             node.state = initial_state
             node.isIdle = False
