@@ -1256,14 +1256,14 @@ fqdn: %s
         all instances.
         """
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         user_data = self.__get_user_data(launch_request.configDict)
 
         security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
-
-        # log information about request
-        self.__common_prelaunch(launch_request)
 
         try:
             reservation = self.__launchEC2(
@@ -1319,9 +1319,6 @@ fqdn: %s
         instances_launched = 0
         launch_exception = None
 
-        security_group_ids: Union[List[str], None] = \
-            self.__get_security_group_ids(configDict, conn)
-
         resource_adapter_config = self.load_resource_adapter_config(
             dbSession,
             addNodesRequest.get('resource_adapter_configuration')
@@ -1329,6 +1326,9 @@ fqdn: %s
 
         # log information about request
         self.__common_prelaunch(launch_request)
+
+        security_group_ids: Union[List[str], None] = \
+            self.__get_security_group_ids(configDict, conn)
 
         try:
             for node_request in launch_request.node_request_queue:
@@ -2015,7 +2015,8 @@ fqdn: %s
             raise CommandFailed('AWS error: %s' % (extErrMsg))
 
     def __get_security_group_ids(self, configDict: dict,
-                                 conn: EC2Connection) -> List[str]:
+                                 conn: EC2Connection) \
+            -> Union[List[str], None]:
         """
         Convert list of security group names into list of security
         group ids. Returns None if VPC not being used.
@@ -2026,13 +2027,7 @@ fqdn: %s
 
         security_group_ids: List[str] = []
 
-        if 'securitygroup' not in configDict or \
-                not configDict['securitygroup']:
-            raise CommandFailed(
-                'AWS security group not defined. Check AWS'
-                ' configuration.')
-
-        for groupname in configDict['securitygroup']:
+        for groupname in configDict['securitygroup'] or []:
             if groupname.startswith('sg-'):
                 security_group_ids.append(groupname)
 
@@ -2168,12 +2163,12 @@ fqdn: %s
 
         launch_request.node_request_queue = init_node_request_queue([node])
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
-
-        # log information about request
-        self.__common_prelaunch(launch_request)
 
         for node_request in launch_request.node_request_queue:
             # We now have the data needed to launch the instance
@@ -2213,6 +2208,13 @@ fqdn: %s
             self.getLogger().info(
                 'Using cloud-init script template [%s]' % (
                     launch_request.configDict['cloud_init_script_template']))
+
+        if 'securitygroup' not in launch_request.configDict or\
+                not launch_request.configDict['securitygroup']:
+            self.getLogger().warning(
+                '\'securitygroup\' not configured. Default security group'
+                ' will be used, which may not be desired behaviour'
+            )
 
     def deleteNode(self, nodes: List[Node]) -> None:
         with DbManager().session() as session:
