@@ -143,6 +143,8 @@ def bootstrapPuppet():
 def main():
     domainName = dns_search
 
+    global dns_nameservers
+
     if override_dns_domain:
         with open('/etc/resolv.conf', 'w') as fp:
             fp.write('# Created by Tortuga\n')
