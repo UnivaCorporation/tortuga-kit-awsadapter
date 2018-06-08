@@ -520,7 +520,7 @@ class Aws(ResourceAdapter):
             domain = self.__get_vpc_default_domain(config)
             if domain:
                 self.getLogger().info(
-                    '[aws] Using default domain [%s] from DHCP option set',
+                    'Using default domain [%s] from DHCP option set',
                     domain
                 )
 
