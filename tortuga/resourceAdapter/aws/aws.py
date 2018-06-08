@@ -418,7 +418,7 @@ class Aws(ResourceAdapter):
         # 'use_instance_hostname' is enabled by default when Tortuga is
         # hosted on EC2.
         config['use_instance_hostname'] = self.__convert_to_bool(
-            str(configDict.get('use_instance_hostname')), default=True
+            configDict.get('use_instance_hostname'), default=True
         )
 
         # Parse out user-defined tags
