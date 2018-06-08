@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,8 +14,9 @@
 
 import pprint
 import unittest
-from tortuga.resourceAdapter.aws import Aws
+
 from tortuga.exceptions.invalidArgument import InvalidArgument
+from tortuga.resourceAdapter.aws import Aws
 
 
 class AwsAdapterTestSuite(unittest.TestCase):
