@@ -20,6 +20,7 @@ import json
 import os
 import random
 import shlex
+import socket
 import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
@@ -36,7 +37,6 @@ from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from sqlalchemy.orm.session import Session
-
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.dbManager import DbManager
 from tortuga.db.models.hardwareProfile import HardwareProfile
@@ -56,6 +56,8 @@ from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+from tortuga.resourceAdapter.utility import get_provisioning_hwprofilenetwork
+from tortuga.utility.helper import str2bool
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import _get_encoded_list, ec2_get_root_block_devices
@@ -306,6 +308,7 @@ class Aws(ResourceAdapter):
             'installer_ip',
             'tags',
             'use_tags',
+            'use_reverse_dns_hostname',
         ]
 
         for key in optional_settings:
@@ -334,7 +337,9 @@ class Aws(ResourceAdapter):
         unknown_settings = current_settings_keys - all_valid_settings
         if unknown_settings:
             raise ConfigurationError(
-                'Unknown setting(s): {}'.format(' '.join(unknown_settings))
+                'Unsupported AWS resource adapter setting{}: {}'.format(
+                    's' if len(unknown_settings) > 1 else '',
+                    ' '.join(unknown_settings))
             )
 
         if 'awsaccesskey' in configDict:
@@ -441,6 +446,16 @@ class Aws(ResourceAdapter):
         # Support for instance tagging is enabled by default
         config['use_tags'] = self.__convert_to_bool(
             config['use_tags'], default=True)
+
+        config['use_reverse_dns_hostname'] = \
+            str2bool(configDict['use_reverse_dns_hostname']) \
+            if 'use_reverse_dns_hostname' in configDict else False
+
+        # if 'use_reverse_dns_hostname' is set, ensure 'use_instance_hostname'
+        # is also set
+        if config['use_reverse_dns_hostname'] and \
+            not config['use_instance_hostname']:
+                config['use_instance_hostname'] = True
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -1052,14 +1067,19 @@ class Aws(ResourceAdapter):
         if 'count' not in addNodesRequest or addNodesRequest['count'] < 1:
             raise InvalidArgument('Invalid node count')
 
-        if configDict['use_instance_hostname']:
-            if dbHardwareProfile.nameFormat != '*':
+        if dbHardwareProfile.nameFormat != '*':
+            if configDict['use_reverse_dns_hostname']:
+                raise ConfigurationError(
+                    '\'use_reverse_dns_hostname\' is enabled, but hardware'
+                    ' profile does not allow setting host names. Set hardware'
+                    ' profile name format to \'*\' and retry.')
+            elif configDict['use_instance_hostname']:
                 raise ConfigurationError(
                     '\'use_instance_hostname\' is enabled, but hardware'
                     ' profile does not allow setting host names.  Set'
                     ' hardware profile name format to \'*\' and retry.')
         else:
-            if dbHardwareProfile.nameFormat == '*':
+            if not configDict['use_instance_hostname']:
                 raise ConfigurationError(
                     '\'use_instance_hostname\' is disabled, but hardware'
                     ' profile does not have a name format defined')
@@ -1689,6 +1709,10 @@ fqdn: %s
 
     def __assign_tags(self, configDict: dict, conn: EC2Connection,
                       node: Node, instance):
+        """
+        Add tags to instance and attached EBS volumes
+        """
+
         if not configDict['use_tags']:
             return
 
@@ -1705,6 +1729,8 @@ fqdn: %s
                 self.installer_public_ipaddress,
         }
 
+        instance_specific_tags.update(configDict['tags'])
+
         if configDict['use_instance_hostname']:
             # Use default "Name" tag, if not defined in adapter
             # configuration
@@ -1714,26 +1740,41 @@ fqdn: %s
             # Fallback to default behaviour
             instance_specific_tags['Name'] = node.name
 
-        self.__addTags(
-            conn, [instance.id],
-            dict(list(configDict['tags'].items()) +
-                 list(instance_specific_tags.items())))
+        self.__addTags(conn, [instance.id], instance_specific_tags)
 
         # Volumes are tagged with user-defined tags only (not instance
         # specific resources)
         self.__tag_ebs_volumes(conn, configDict, instance)
 
     def __get_node_name(self, launch_request, instance):
+        if launch_request.configDict['use_reverse_dns_hostname']:
+            ip = instance.private_ip_address
+
+            # use reverse DNS host name
+            self.getLogger().debug(
+                'Using reverse DNS lookup of IP [{}]'.format(ip))
+
+            try:
+                hostent = socket.gethostbyaddr(ip)
+
+                return hostent[0]
+            except socket.herror as exc:
+                name = instance.private_dns_name
+
+                self.getLogger().debug(
+                    'Error performing reverse lookup.'
+                    ' Using AWS-assigned name: [{}]'.format(name))
+
+                return name
+
         if launch_request.configDict['override_dns_domain']:
             hostname, _ = instance.private_dns_name.split('.', 1)
 
             # Use EC2-assigned host name with 'private_dns_zone'.
-            fqdn = '{0}.{1}'.format(
+            return '{0}.{1}'.format(
                 hostname, launch_request.configDict['dns_domain'])
-        else:
-            fqdn = instance.private_dns_name
 
-        return fqdn
+        return instance.private_dns_name
 
     def __create_nodes(self, session: Session,
                        configDict: Dict[str, Any],
@@ -2099,7 +2140,8 @@ fqdn: %s
 
         return 'Discovered'
 
-    def __addTags(self, conn, resource_ids, keyvaluepairs):
+    def __addTags(self, conn: EC2Connection, resource_ids: List[str],
+            keyvaluepairs: Dict[str, str]) -> None:
         """
         Create tags for resources
         """
