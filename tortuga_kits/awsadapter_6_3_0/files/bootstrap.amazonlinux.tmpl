@@ -67,7 +67,7 @@ def installPuppet():
     bRepoInstalled = _isPackageInstalled(pkgname)
 
     if not bRepoInstalled:
-        retval = tryCommand('rpm -ivh %s' % url, 5)
+        retval = tryCommand('rpm -ivh %s' % url, retry_limit=5)
         if retval != 0:
             raise Exception(
                 'Unable to install package [puppetlabs-release]')
