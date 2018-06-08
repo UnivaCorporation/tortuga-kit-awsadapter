@@ -57,7 +57,6 @@ from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
 
-from .awsHelpers import get_ec2_region
 from .exceptions import AWSOperationTimeoutError
 from .helpers import _get_encoded_list, ec2_get_root_block_devices
 from .launchRequest import LaunchRequest, init_node_request_queue
@@ -201,7 +200,7 @@ class Aws(ResourceAdapter):
         connectionArgs = dict(
             aws_access_key_id=configDict['awsaccesskey'],
             aws_secret_access_key=configDict['awssecretkey'],
-            region=configDict['region'])
+        )
 
         if 'proxy_host' in configDict:
             self._logger.debug('Using proxy for AWS (%s:%s)' % (
@@ -217,8 +216,8 @@ class Aws(ResourceAdapter):
             if 'proxy_pass' in configDict:
                 connectionArgs['proxy_pass'] = configDict['proxy_pass']
 
-        # Initialize EC2 connection
-        return EC2Connection(**connectionArgs)
+        return boto.ec2.connect_to_region(configDict['region'],
+                                          **connectionArgs)
 
     def getResourceAdapterConfig(self, sectionName: Union[str, None] = None):
         """
@@ -277,29 +276,66 @@ class Aws(ResourceAdapter):
             config[key] = configDict[key]
 
         # Configuration - optional items
-        for key in ['keypair', 'instancetype', 'region',
-                    'securitygroup', 'sleeptime', 'zone',
-                    'placementgroup', 'endpoint',
-                    'user_data_script_template', 'cloud_init',
-                    'cloud_init_script_template',
-                    'subnet_id', 'vpc_gateway',
-                    'use_instance_hostname',
-                    'awsaccesskey',
-                    'awssecretkey',
-                    'monitoring_enabled',
-                    'ebs_optimized',
-                    'associate_public_ip_address',
-                    'use_custom_dns_domain',
-                    'override_dns_domain',
-                    'dns_search',
-                    'dns_domain',
-                    'dns_nameservers',
-                    'dns_options',
-                    'iam_instance_profile_name',
-                    'use_domain_from_dhcp_option_set',
-                    'installer_ip',
-                   ]:  # noqa
+        optional_settings = [
+            'keypair',
+            'instancetype',
+            'region',
+            'securitygroup',
+            'sleeptime',
+            'zone',
+            'placementgroup',
+            'endpoint',
+            'user_data_script_template',
+            'cloud_init',
+            'cloud_init_script_template',
+            'subnet_id', 'vpc_gateway',
+            'use_instance_hostname',
+            'awsaccesskey',
+            'awssecretkey',
+            'monitoring_enabled',
+            'ebs_optimized',
+            'associate_public_ip_address',
+            'use_custom_dns_domain',
+            'override_dns_domain',
+            'dns_search',
+            'dns_domain',
+            'dns_nameservers',
+            'dns_options',
+            'iam_instance_profile_name',
+            'use_domain_from_dhcp_option_set',
+            'installer_ip',
+            'tags',
+            'use_tags',
+        ]
+
+        for key in optional_settings:
             config[key] = configDict[key] if key in configDict else None
+
+        # other settings
+        addl_optional_settings = [
+            'aki',
+            'ari',
+            'proxy_host',
+            'proxy_port',
+            'proxy_user',
+            'proxy_pass',
+            'block_device_map',
+        ]
+
+        for key in addl_optional_settings:
+            if key in configDict:
+                config[key] = configDict[key]
+
+        all_valid_settings = set(reqd_settings + optional_settings + \
+            addl_optional_settings)
+
+        current_settings_keys = set(configDict.keys())
+
+        unknown_settings = current_settings_keys - all_valid_settings
+        if unknown_settings:
+            raise ConfigurationError(
+                'Unknown setting(s): {}'.format(' '.join(unknown_settings))
+            )
 
         if 'awsaccesskey' in configDict:
             # Validate 'awsaccesskey' and 'awssecretkey'
@@ -314,16 +350,12 @@ class Aws(ResourceAdapter):
                     'AWS configuration item \'awssecretkey\' cannot be'
                     ' blank/empty')
 
-        for key in ['aki', 'ari', 'proxy_host', 'proxy_port', 'proxy_user',
-                    'proxy_pass',
-                    'block_device_map']:
-            if key in configDict:
-                config[key] = configDict[key]
+        if config['region'] is None:
+            # default to us-east1-region
+            config['region'] = 'us-east-1'
 
-        config['region'] = get_ec2_region(
-            config['awsaccesskey'] if 'awsaccesskey' in config else None,
-            config['awssecretkey'] if 'awssecretkey' in config else None,
-            region=config['region'] if 'region' in config else None)
+        if config['installer_ip'] is None:
+            config['installer_ip'] = self.installer_public_ipaddress
 
         # Security group has to be a list
         if config['securitygroup']:
@@ -343,15 +375,11 @@ class Aws(ResourceAdapter):
         config['sleeptime'] = int(configDict['sleeptime']) \
             if 'sleeptime' in configDict else self.DEFAULT_SLEEP_TIME
 
-        config['monitoring_enabled'] = \
-            configDict['monitoring_enabled'] \
-            if 'monitoring_enabled' in configDict and \
-            configDict['monitoring_enabled'].lower() == 'true' else False
+        config['monitoring_enabled'] = self.__convert_to_bool(
+            config['monitoring_enabled'], default=False)
 
-        config['ebs_optimized'] = \
-            configDict['ebs_optimized'] \
-            if 'ebs_optimized' in configDict and \
-            configDict['ebs_optimized'].lower() == 'true' else False
+        config['ebs_optimized'] = self.__convert_to_bool(
+            config['ebs_optimized'], default=False)
 
         if 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template'] and \
@@ -526,10 +554,10 @@ class Aws(ResourceAdapter):
         """
 
         try:
-            vpcconn = boto.vpc.VPCConnection(
+            vpcconn = boto.vpc.connect_to_region(region,
                 aws_access_key_id=config['awsaccesskey'],
-                aws_secret_access_key=config['awssecretkey'],
-                region=config['region'])
+                aws_secret_access_key=config['awssecretkey']
+            )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(
                 'Unable to authenticate AWS connection: check credentials')
