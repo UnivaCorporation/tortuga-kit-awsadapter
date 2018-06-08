@@ -1505,12 +1505,20 @@ fqdn: %s
         """
 
         self.getLogger().error(
-            'Cleaning up failed instance [{0}]'.format(
+            'Terminating failed instance [{0}]'.format(
                 node_request['instance'].id))
 
         node = node_request['node'] if 'node' in node_request else None
 
-        self.__terminate_instance(node_request['instance'])
+        # this step may not be necessary but ensure instance isn't left
+        # running if any transient condition caused the failure
+
+        try:
+            node_request['instance'].terminate()
+        except boto.exception.EC2ResponseError as exc:
+            self.getLogger().warning(
+                'Error while terminating instance [{0}]: {1}'.format(
+                    node_request['instance'].id, exc.message))
 
         if node:
             # Clean up instance cache
@@ -2089,16 +2097,13 @@ fqdn: %s
 
                 if node.state != 'Discovered':
                     # Terminate instance
-                    instance = self.__get_instance_by_instance_id(
+                    self.__terminate_by_instance_id(
                         self.getEC2Connection(configDict),
                         node.instance.instance
                     )
 
-                    if instance:
-                        self.__terminate_instance(instance)
-
-                        # Remove instance id from cache
-                        session.delete(node.instance)
+                    # Remove instance id from cache
+                    session.delete(node.instance)
 
                 # Unset IP address for node
                 node.nics[0].ip = None
@@ -2157,55 +2162,58 @@ fqdn: %s
     def deleteNode(self, nodes: List[Node]) -> None:
         with DbManager().session() as session:
             for node in nodes:
-                self.__delete_node(session, node)
+                self.__delete_node(node)
 
             session.commit()
 
-        self.getLogger().info('%d node(s) deleted' % (len(nodes)))
-
-    def __delete_node(self, session: Session, node: Node) -> None:
-        self.getLogger().info('Deleting node [{0}]'.format(node.name))
-
-        configDict = self.get_node_resource_adapter_config(node)
+    def __delete_node(self, node: Node) -> None:
+        """
+        Delete Puppet certificate (?) and terminate instance
+        """
 
         # Remove Puppet certificate
         bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
         bhm.deleteNodeCleanup(node)
 
-        conn = self.getEC2Connection(configDict)
-
         if node.isIdle:
             return
 
         # Get EC2 instance and terminate it
-        if node.instance and node.instance.instance:
-            instance = self.__get_instance_by_instance_id(
-                conn,
-                node.instance.instance
-            )
+        if not node.instance or not node.instance.instance:
+            # this really shouldn't ever happen. Nodes with backing AWS
+            # instances shouldn't ever not have an associated instance
 
-            if instance:
-                self.__terminate_instance(instance)
-        else:
             self.getLogger().warning(
                 'Unable to determine AWS instance associated with'
                 ' node [{0}]; instance may still be running!'.format(
                     node.name))
 
-    def __terminate_instance(self, instance):
-        """
-        Wrapper around AWS instance termination
-        """
+            return
 
         self.getLogger().info(
-            'Terminating instance [{0}]'.format(instance.id))
+            'Terminating instance [{}] associated with node [{}]'.format(
+                node.instance.instance, node.name
+            )
+        )
 
+        self.__terminate_by_instance_id(
+            self.getEC2Connection(
+                self.get_node_resource_adapter_config(node)
+            ),
+            node.instance.instance
+        )
+
+    def __terminate_by_instance_id(self, conn: EC2Connection,
+                                   instance_id: str) -> None:
+        # attempt to terminate by instance_id
         try:
-            instance.terminate()
+            conn.terminate_instances([instance_id])
         except boto.exception.EC2ResponseError as exc:
             self.getLogger().warning(
                 'Error while terminating instance [{0}]: {1}'.format(
-                    instance.id, exc.message))
+                    instance_id, exc.message
+                )
+            )
 
     def transferNode(self, nodeIdSoftwareProfileTuples: Tuple[Node, str],
                      newSoftwareProfileName: str) -> NoReturn:
