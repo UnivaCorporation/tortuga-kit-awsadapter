@@ -1689,6 +1689,10 @@ fqdn: %s
 
     def __assign_tags(self, configDict: dict, conn: EC2Connection,
                       node: Node, instance):
+        """
+        Add tags to instance and attached EBS volumes
+        """
+
         if not configDict['use_tags']:
             return
 
@@ -1705,6 +1709,8 @@ fqdn: %s
                 self.installer_public_ipaddress,
         }
 
+        instance_specific_tags.update(configDict['tags'])
+
         if configDict['use_instance_hostname']:
             # Use default "Name" tag, if not defined in adapter
             # configuration
@@ -1714,10 +1720,7 @@ fqdn: %s
             # Fallback to default behaviour
             instance_specific_tags['Name'] = node.name
 
-        self.__addTags(
-            conn, [instance.id],
-            dict(list(configDict['tags'].items()) +
-                 list(instance_specific_tags.items())))
+        self.__addTags(conn, [instance.id], instance_specific_tags)
 
         # Volumes are tagged with user-defined tags only (not instance
         # specific resources)
@@ -2099,7 +2102,8 @@ fqdn: %s
 
         return 'Discovered'
 
-    def __addTags(self, conn, resource_ids, keyvaluepairs):
+    def __addTags(self, conn: EC2Connection, resource_ids: List[str],
+            keyvaluepairs: Dict[str, str]) -> None:
         """
         Create tags for resources
         """
