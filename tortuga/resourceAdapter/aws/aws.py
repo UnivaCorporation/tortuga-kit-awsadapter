@@ -334,7 +334,9 @@ class Aws(ResourceAdapter):
         unknown_settings = current_settings_keys - all_valid_settings
         if unknown_settings:
             raise ConfigurationError(
-                'Unknown setting(s): {}'.format(' '.join(unknown_settings))
+                'Unsupported AWS resource adapter setting{}: {}'.format(
+                    's' if len(unknown_settings) > 1 else '',
+                    ' '.join(unknown_settings))
             )
 
         if 'awsaccesskey' in configDict:
