@@ -60,9 +60,11 @@ def _isPackageInstalled(pkgName):
 
 
 def installPuppet():
-    url = 'http://yum.puppetlabs.com/puppetlabs-release-pc1-el-6.noarch.rpm'
+    pkgname = 'puppetlabs-release-pc1'
 
-    bRepoInstalled = _isPackageInstalled('puppetlabs-release')
+    url = 'http://yum.puppetlabs.com/%s-el-6.noarch.rpm' % pkgname
+
+    bRepoInstalled = _isPackageInstalled(pkgname)
 
     if not bRepoInstalled:
         retval = tryCommand('rpm -ivh %s' % url, 5)
