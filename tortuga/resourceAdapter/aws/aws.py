@@ -750,28 +750,32 @@ class Aws(ResourceAdapter):
                     addNodesRequest['nodeDetails'][0]['metadata']:
                 return self.__insert_nodes(dbSession, launch_request)
 
-        if dbSoftwareProfile is None or dbSoftwareProfile.isIdle:
-            # Add idle nodes
-            nodes = self.__add_idle_nodes(dbSession, launch_request)
-        else:
-            # Add (active) nodes
-            if configDict['use_instance_hostname']:
-                # Create instances before node records. We need to the
-                # instance to exist to get the host name for the node
-                # record.
-                self.__prelaunch_instances(dbSession, launch_request)
-            else:
-                # Create node records before instances
-                self.__add_hosts(dbSession, launch_request)
-
-            nodes = self.__process_node_request_queue(
-                dbSession, launch_request)
+        nodes = self.__add_active_nodes(dbSession, launch_request) \
+            if dbSoftwareProfile and not dbSoftwareProfile.isIdle else \
+                self.__add_idle_nodes(dbSession, launch_request)
 
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
         self.addHostApi.clear_session_nodes(nodes)
 
         return nodes
+
+    def __add_active_nodes(self, session: Session,
+                           launch_request: LaunchRequest) -> List[Node]:
+        """
+        Add active nodes
+        """
+
+        if launch_request.configDict['use_instance_hostname']:
+            # Create instances before node records. We need to the
+            # instance to exist to get the host name for the node
+            # record.
+            self.__prelaunch_instances(session, launch_request)
+        else:
+            # Create node records before instances
+            self.__add_hosts(session, launch_request)
+
+        return self.__process_node_request_queue(session, launch_request)
 
     def __insert_nodes(self, session: Session,
                        launch_request: LaunchRequest): \
