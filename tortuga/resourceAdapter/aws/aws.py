@@ -2445,6 +2445,7 @@ fqdn: %s
         node.instance = InstanceMapping(
             instance=instance_id,
             resource_adapter_configuration=self.load_resource_adapter_config(
+                session,
                 addNodesRequest.get('resource_adapter_configuration'))
         )
 
