@@ -598,7 +598,8 @@ class Aws(ResourceAdapter):
         return value.lower().startswith('t') \
             if value is not None else default
 
-    def __process_block_device_map(self, cfg_block_device_map: str) -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
+    def __process_block_device_map(self, cfg_block_device_map: str) \
+            -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
         """
         Raises:
             ConfigurationError
@@ -946,11 +947,13 @@ class Aws(ResourceAdapter):
                             'spot_instance_request': resv[0].id,
                         }
 
+                        adapter_cfg = self.load_resource_adapter_config(
+                            session, cfgname
+                        )
+
                         node.instance = InstanceMapping(
                             metadata=metadata,
-                            resource_adapter_configuration=self.load_resource_adapter_config(
-                                session, cfgname
-                            )
+                            resource_adapter_configuration=adapter_cfg
                         )
 
                         # Post 'add' message onto message queue
@@ -958,12 +961,14 @@ class Aws(ResourceAdapter):
                                                               dbHardwareProfile,
                                                               dbSoftwareProfile,
                                                               cfgname)
-                    # TODO: session.commit()
+
+                    # this may be redundant...
+                    session.commit()
         except boto.exception.EC2ResponseError as exc:
             raise OperationFailed(
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
                     exc.message, exc.error_code))
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             self.getLogger().exception(
                 'Fatal error making spot instance request')
 
@@ -973,7 +978,8 @@ class Aws(ResourceAdapter):
                                          configDict: dict,
                                          ami: str,
                                          security_group_ids: List[str],
-                                         node: Union[Node, None] = None):
+                                         node: Union[Node, None] = None): \
+            # pylint: disable=no-self-use
         """
         Create dict of args for boto request_spot_instances() API
         """
@@ -1351,7 +1357,7 @@ fqdn: %s
 
             # Wait on successfully launched instances
             self.__wait_for_instances(dbSession, launch_request)
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             if instances_launched == 0:
                 raise
 
@@ -1523,7 +1529,7 @@ fqdn: %s
 
             try:
                 with gevent.Timeout(
-                        configDict['launch_timeout'], TimeoutError):
+                    configDict['launch_timeout'], TimeoutError):
                     self.process_item(launch_request, node_request)
 
                     self.getLogger().info(
@@ -1533,10 +1539,9 @@ fqdn: %s
                     # Instance launched successfully
                     self.__post_launch_action(
                         dbSession, launch_request, node_request)
-            except Exception as exc:
+            except Exception as exc:  # pylint: disable=broad-except
                 # Instance launch failed
-                if isinstance(exc, AWSOperationTimeoutError) or \
-                        isinstance(exc, TimeoutError):
+                if isinstance(exc, (AWSOperationTimeoutError, TimeoutError)):
                     logmsg = (
                         'Launch operation failed: timeout waiting for'
                         ' instance(s)')
@@ -2080,8 +2085,6 @@ fqdn: %s
             for node in nodes:
                 self.getLogger().info('Idling node [{0}]'.format(node.name))
 
-                cfg = node.instance.resource_adapter_configuration
-
                 configDict = self.get_node_resource_adapter_config(node)
 
                 if node.state != 'Discovered':
@@ -2151,12 +2154,12 @@ fqdn: %s
         with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
 
-    def deleteNode(self, nodes: List[Node]) -> NoReturn:
+    def deleteNode(self, nodes: List[Node]) -> None:
         with DbManager().session() as session:
             for node in nodes:
                 self.__delete_node(session, node)
 
-            # TODO: session.commit()
+            session.commit()
 
         self.getLogger().info('%d node(s) deleted' % (len(nodes)))
 
@@ -2225,7 +2228,7 @@ fqdn: %s
 
     def migrateNode(self, node: Node, remainingNodeList: List[str],
                     liveMigrate: bool): \
-            # pylint: disable=unused-argument
+            # pylint: disable=no-self-use,unused-argument
         raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
