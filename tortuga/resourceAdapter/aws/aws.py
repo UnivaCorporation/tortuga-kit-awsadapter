@@ -408,9 +408,6 @@ class Aws(ResourceAdapter):
                     ' setting: {0}'.format(exc)
                 )
 
-            self.getLogger().info(
-                'Using user-data script template [%s]' % (
-                    configDict['user_data_script_template']))
         elif 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template']:
             try:
@@ -427,10 +424,6 @@ class Aws(ResourceAdapter):
                     'Invalid \'cloud_init_script_template\' '
                     'setting: {0}'.format(exc)
                 )
-
-            self.getLogger().info(
-                'Using cloud-init script template [%s]' % (
-                    configDict['cloud_init_script_template']))
         else:
             config['cloud_init'] = False
 
@@ -1253,6 +1246,9 @@ fqdn: %s
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         try:
             reservation = self.__launchEC2(
                 launch_request.conn, launch_request.configDict,
@@ -1314,6 +1310,9 @@ fqdn: %s
             dbSession,
             addNodesRequest.get('resource_adapter_configuration')
         )
+
+        # log information about request
+        self.__common_prelaunch(launch_request)
 
         try:
             for node_request in launch_request.node_request_queue:
@@ -1961,9 +1960,6 @@ fqdn: %s
             CommandFailed
         """
 
-        self.getLogger().debug(
-            '__launchEC2(): nodeCount=[%s]' % (nodeCount))
-
         ami = self._validate_ec2_launch_args(conn, configDict)
 
         runArgs = self.__get_common_launch_args(
@@ -1971,9 +1967,6 @@ fqdn: %s
             user_data=userData)
 
         runArgs['max_count'] = nodeCount
-
-        self.getLogger().info('Launching %d AWS %s' % (
-            nodeCount, 'instances' if nodeCount > 1 else 'instance'))
 
         try:
             return conn.run_instances(ami.id, **runArgs)
@@ -2141,6 +2134,9 @@ fqdn: %s
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         for node_request in launch_request.node_request_queue:
             # We now have the data needed to launch the instance
             node_request['instance'] = self.__launchEC2(
@@ -2158,6 +2154,27 @@ fqdn: %s
         # Wait for activated instance(s) to start
         with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
+
+    def __common_prelaunch(self, launch_request: LaunchRequest):
+        """
+        Write log entries about node launch request
+        """
+
+        count = launch_request.addNodesRequest['count']
+
+        logmsg = 'Launching 1 instance' if count == 1 else \
+            f'Launching {count} instances'
+
+        self.getLogger().info(logmsg)
+
+        if 'user_data_script_template' in launch_request.configDict:
+            self.getLogger().info(
+                'Using user-data script template [%s]' % (
+                    launch_request.configDict['user_data_script_template']))
+        elif 'cloud_init_script_template' in launch_request.configDict:
+            self.getLogger().info(
+                'Using cloud-init script template [%s]' % (
+                    launch_request.configDict['cloud_init_script_template']))
 
     def deleteNode(self, nodes: List[Node]) -> None:
         with DbManager().session() as session:
