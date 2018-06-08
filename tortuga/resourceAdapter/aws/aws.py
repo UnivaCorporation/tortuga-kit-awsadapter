@@ -716,35 +716,28 @@ class Aws(ResourceAdapter):
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name if dbSoftwareProfile else '(none)'))
 
-        if 'spot_instance_request' in addNodesRequest:
-            nodes = self.request_spot_instances(
-                addNodesRequest, dbSession, dbHardwareProfile,
-                dbSoftwareProfile)
-
-            return nodes
+        # Get connection to AWS
+        launch_request = LaunchRequest()
+        launch_request.hardwareprofile = dbHardwareProfile
+        launch_request.softwareprofile = dbSoftwareProfile
+        launch_request.addNodesRequest = addNodesRequest
 
         cfgname = addNodesRequest['resource_adapter_configuration'] \
             if 'resource_adapter_configuration' in addNodesRequest else \
             None
 
-        # If the resource adapter configuration profile is specified and that
-        # profile does not exist, getResourceAdapterConfig() raises an
-        # exception
+        launch_request.configDict = self.getResourceAdapterConfig(cfgname)
 
-        configDict = self.getResourceAdapterConfig(cfgname)
+        launch_request.conn = self.getEC2Connection(
+            launch_request.configDict)
 
-        # Get connection to AWS
-        conn = self.getEC2Connection(configDict)
-
-        launch_request = LaunchRequest()
-        launch_request.hardwareprofile = dbHardwareProfile
-        launch_request.softwareprofile = dbSoftwareProfile
-        launch_request.addNodesRequest = addNodesRequest
-        launch_request.conn = conn
-        launch_request.configDict = configDict
+        if 'spot_instance_request' in addNodesRequest:
+            return self.request_spot_instances(
+                dbSession, launch_request)
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
+            # Instances already exist, create node records
             if 'metadata' in addNodesRequest['nodeDetails'][0] and \
                     'ec2_instance_id' in \
                     addNodesRequest['nodeDetails'][0]['metadata']:
@@ -864,10 +857,9 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def request_spot_instances(self, addNodesRequest: dict,
+    def request_spot_instances(self,
                                dbSession: Session,
-                               dbHardwareProfile: HardwareProfile,
-                               dbSoftwareProfile: SoftwareProfile) -> List[Node]:
+                               launch_request: LaunchRequest) -> List[Node]:
         """
         Make request for EC2 spot instances. Spot instance arguments are
         passed through 'addNodesRequest' in the dictionary
@@ -880,20 +872,20 @@ class Aws(ResourceAdapter):
             OperationFailed
         """
 
+        addNodesRequest = launch_request.addNodesRequest
+        cfgname = addNodesRequest['resource_adapter_configuration']
+        dbHardwareProfile = launch_request.hardwareprofile
+        dbSoftwareProfile = launch_request.softwareprofile
+
+        configDict = launch_request.configDict
+
+        conn = launch_request.conn
+
         self.getLogger().debug(
             'request_spot_instances(addNodeRequest=[%s], dbSession=[%s],'
             ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])' % (
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name))
-
-        cfgname = addNodesRequest['resource_adapter_configuration'] \
-            if 'resource_adapter_configuration' in addNodesRequest else \
-            None
-
-        configDict = self.getResourceAdapterConfig(cfgname)
-
-        # Get connection to AWS
-        conn = self.getEC2Connection(configDict)
 
         ami = self._validate_ec2_launch_args(conn, configDict)
 
