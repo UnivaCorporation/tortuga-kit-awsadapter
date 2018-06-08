@@ -408,9 +408,6 @@ class Aws(ResourceAdapter):
                     ' setting: {0}'.format(exc)
                 )
 
-            self.getLogger().info(
-                'Using user-data script template [%s]' % (
-                    configDict['user_data_script_template']))
         elif 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template']:
             try:
@@ -427,10 +424,6 @@ class Aws(ResourceAdapter):
                     'Invalid \'cloud_init_script_template\' '
                     'setting: {0}'.format(exc)
                 )
-
-            self.getLogger().info(
-                'Using cloud-init script template [%s]' % (
-                    configDict['cloud_init_script_template']))
         else:
             config['cloud_init'] = False
 
@@ -555,7 +548,8 @@ class Aws(ResourceAdapter):
         """
 
         try:
-            vpcconn = boto.vpc.connect_to_region(region,
+            vpcconn = boto.vpc.connect_to_region(
+                config['region'],
                 aws_access_key_id=config['awsaccesskey'],
                 aws_secret_access_key=config['awssecretkey']
             )
@@ -597,7 +591,8 @@ class Aws(ResourceAdapter):
         return value.lower().startswith('t') \
             if value is not None else default
 
-    def __process_block_device_map(self, cfg_block_device_map: str) -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
+    def __process_block_device_map(self, cfg_block_device_map: str) \
+            -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
         """
         Raises:
             ConfigurationError
@@ -721,62 +716,59 @@ class Aws(ResourceAdapter):
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name if dbSoftwareProfile else '(none)'))
 
-        if 'spot_instance_request' in addNodesRequest:
-            nodes = self.request_spot_instances(
-                addNodesRequest, dbSession, dbHardwareProfile,
-                dbSoftwareProfile)
-
-            return nodes
+        # Get connection to AWS
+        launch_request = LaunchRequest()
+        launch_request.hardwareprofile = dbHardwareProfile
+        launch_request.softwareprofile = dbSoftwareProfile
+        launch_request.addNodesRequest = addNodesRequest
 
         cfgname = addNodesRequest['resource_adapter_configuration'] \
             if 'resource_adapter_configuration' in addNodesRequest else \
             None
 
-        # If the resource adapter configuration profile is specified and that
-        # profile does not exist, getResourceAdapterConfig() raises an
-        # exception
+        launch_request.configDict = self.getResourceAdapterConfig(cfgname)
 
-        configDict = self.getResourceAdapterConfig(cfgname)
+        launch_request.conn = self.getEC2Connection(
+            launch_request.configDict)
 
-        # Get connection to AWS
-        conn = self.getEC2Connection(configDict)
-
-        launch_request = LaunchRequest()
-        launch_request.hardwareprofile = dbHardwareProfile
-        launch_request.softwareprofile = dbSoftwareProfile
-        launch_request.addNodesRequest = addNodesRequest
-        launch_request.conn = conn
-        launch_request.configDict = configDict
+        if 'spot_instance_request' in addNodesRequest:
+            return self.request_spot_instances(
+                dbSession, launch_request)
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
+            # Instances already exist, create node records
             if 'metadata' in addNodesRequest['nodeDetails'][0] and \
                     'ec2_instance_id' in \
                     addNodesRequest['nodeDetails'][0]['metadata']:
                 return self.__insert_nodes(dbSession, launch_request)
 
-        if dbSoftwareProfile is None or dbSoftwareProfile.isIdle:
-            # Add idle nodes
-            nodes = self.__add_idle_nodes(dbSession, launch_request)
-        else:
-            # Add (active) nodes
-            if configDict['use_instance_hostname']:
-                # Create instances before node records. We need to the
-                # instance to exist to get the host name for the node
-                # record.
-                self.__prelaunch_instances(dbSession, launch_request)
-            else:
-                # Create node records before instances
-                self.__add_hosts(dbSession, launch_request)
-
-            nodes = self.__process_node_request_queue(
-                dbSession, launch_request)
+        nodes = self.__add_active_nodes(dbSession, launch_request) \
+            if dbSoftwareProfile and not dbSoftwareProfile.isIdle else \
+                self.__add_idle_nodes(dbSession, launch_request)
 
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
         self.addHostApi.clear_session_nodes(nodes)
 
         return nodes
+
+    def __add_active_nodes(self, session: Session,
+                           launch_request: LaunchRequest) -> List[Node]:
+        """
+        Add active nodes
+        """
+
+        if launch_request.configDict['use_instance_hostname']:
+            # Create instances before node records. We need to the
+            # instance to exist to get the host name for the node
+            # record.
+            self.__prelaunch_instances(session, launch_request)
+        else:
+            # Create node records before instances
+            self.__add_hosts(session, launch_request)
+
+        return self.__process_node_request_queue(session, launch_request)
 
     def __insert_nodes(self, session: Session,
                        launch_request: LaunchRequest): \
@@ -865,10 +857,9 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def request_spot_instances(self, addNodesRequest: dict,
+    def request_spot_instances(self,
                                dbSession: Session,
-                               dbHardwareProfile: HardwareProfile,
-                               dbSoftwareProfile: SoftwareProfile) -> List[Node]:
+                               launch_request: LaunchRequest) -> List[Node]:
         """
         Make request for EC2 spot instances. Spot instance arguments are
         passed through 'addNodesRequest' in the dictionary
@@ -881,20 +872,20 @@ class Aws(ResourceAdapter):
             OperationFailed
         """
 
+        addNodesRequest = launch_request.addNodesRequest
+        cfgname = addNodesRequest['resource_adapter_configuration']
+        dbHardwareProfile = launch_request.hardwareprofile
+        dbSoftwareProfile = launch_request.softwareprofile
+
+        configDict = launch_request.configDict
+
+        conn = launch_request.conn
+
         self.getLogger().debug(
             'request_spot_instances(addNodeRequest=[%s], dbSession=[%s],'
             ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])' % (
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name))
-
-        cfgname = addNodesRequest['resource_adapter_configuration'] \
-            if 'resource_adapter_configuration' in addNodesRequest else \
-            None
-
-        configDict = self.getResourceAdapterConfig(cfgname)
-
-        # Get connection to AWS
-        conn = self.getEC2Connection(configDict)
 
         ami = self._validate_ec2_launch_args(conn, configDict)
 
@@ -945,11 +936,13 @@ class Aws(ResourceAdapter):
                             'spot_instance_request': resv[0].id,
                         }
 
+                        adapter_cfg = self.load_resource_adapter_config(
+                            session, cfgname
+                        )
+
                         node.instance = InstanceMapping(
                             metadata=metadata,
-                            resource_adapter_configuration=self.load_resource_adapter_config(
-                                session, cfgname
-                            )
+                            resource_adapter_configuration=adapter_cfg
                         )
 
                         # Post 'add' message onto message queue
@@ -957,12 +950,14 @@ class Aws(ResourceAdapter):
                                                               dbHardwareProfile,
                                                               dbSoftwareProfile,
                                                               cfgname)
-                    # TODO: session.commit()
+
+                    # this may be redundant...
+                    session.commit()
         except boto.exception.EC2ResponseError as exc:
             raise OperationFailed(
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
                     exc.message, exc.error_code))
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             self.getLogger().exception(
                 'Fatal error making spot instance request')
 
@@ -972,7 +967,8 @@ class Aws(ResourceAdapter):
                                          configDict: dict,
                                          ami: str,
                                          security_group_ids: List[str],
-                                         node: Union[Node, None] = None):
+                                         node: Union[Node, None] = None): \
+            # pylint: disable=no-self-use
         """
         Create dict of args for boto request_spot_instances() API
         """
@@ -1246,6 +1242,9 @@ fqdn: %s
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         try:
             reservation = self.__launchEC2(
                 launch_request.conn, launch_request.configDict,
@@ -1308,6 +1307,9 @@ fqdn: %s
             addNodesRequest.get('resource_adapter_configuration')
         )
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         try:
             for node_request in launch_request.node_request_queue:
                 userData = self.__get_user_data(
@@ -1350,7 +1352,7 @@ fqdn: %s
 
             # Wait on successfully launched instances
             self.__wait_for_instances(dbSession, launch_request)
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-except
             if instances_launched == 0:
                 raise
 
@@ -1498,12 +1500,20 @@ fqdn: %s
         """
 
         self.getLogger().error(
-            'Cleaning up failed instance [{0}]'.format(
+            'Terminating failed instance [{0}]'.format(
                 node_request['instance'].id))
 
         node = node_request['node'] if 'node' in node_request else None
 
-        self.__terminate_instance(node_request['instance'])
+        # this step may not be necessary but ensure instance isn't left
+        # running if any transient condition caused the failure
+
+        try:
+            node_request['instance'].terminate()
+        except boto.exception.EC2ResponseError as exc:
+            self.getLogger().warning(
+                'Error while terminating instance [{0}]: {1}'.format(
+                    node_request['instance'].id, exc.message))
 
         if node:
             # Clean up instance cache
@@ -1522,7 +1532,7 @@ fqdn: %s
 
             try:
                 with gevent.Timeout(
-                        configDict['launch_timeout'], TimeoutError):
+                    configDict['launch_timeout'], TimeoutError):
                     self.process_item(launch_request, node_request)
 
                     self.getLogger().info(
@@ -1532,10 +1542,9 @@ fqdn: %s
                     # Instance launched successfully
                     self.__post_launch_action(
                         dbSession, launch_request, node_request)
-            except Exception as exc:
+            except Exception as exc:  # pylint: disable=broad-except
                 # Instance launch failed
-                if isinstance(exc, AWSOperationTimeoutError) or \
-                        isinstance(exc, TimeoutError):
+                if isinstance(exc, (AWSOperationTimeoutError, TimeoutError)):
                     logmsg = (
                         'Launch operation failed: timeout waiting for'
                         ' instance(s)')
@@ -1947,9 +1956,6 @@ fqdn: %s
             CommandFailed
         """
 
-        self.getLogger().debug(
-            '__launchEC2(): nodeCount=[%s]' % (nodeCount))
-
         ami = self._validate_ec2_launch_args(conn, configDict)
 
         runArgs = self.__get_common_launch_args(
@@ -1957,9 +1963,6 @@ fqdn: %s
             user_data=userData)
 
         runArgs['max_count'] = nodeCount
-
-        self.getLogger().info('Launching %d AWS %s' % (
-            nodeCount, 'instances' if nodeCount > 1 else 'instance'))
 
         try:
             return conn.run_instances(ami.id, **runArgs)
@@ -2079,22 +2082,17 @@ fqdn: %s
             for node in nodes:
                 self.getLogger().info('Idling node [{0}]'.format(node.name))
 
-                cfg = node.instance.resource_adapter_configuration
-
                 configDict = self.get_node_resource_adapter_config(node)
 
                 if node.state != 'Discovered':
                     # Terminate instance
-                    instance = self.__get_instance_by_instance_id(
+                    self.__terminate_by_instance_id(
                         self.getEC2Connection(configDict),
                         node.instance.instance
                     )
 
-                    if instance:
-                        self.__terminate_instance(instance)
-
-                        # Remove instance id from cache
-                        session.delete(node.instance)
+                    # Remove instance id from cache
+                    session.delete(node.instance)
 
                 # Unset IP address for node
                 node.nics[0].ip = None
@@ -2132,6 +2130,9 @@ fqdn: %s
             self.__get_security_group_ids(
                 launch_request.configDict, launch_request.conn)
 
+        # log information about request
+        self.__common_prelaunch(launch_request)
+
         for node_request in launch_request.node_request_queue:
             # We now have the data needed to launch the instance
             node_request['instance'] = self.__launchEC2(
@@ -2150,58 +2151,82 @@ fqdn: %s
         with DbManager().session() as session:
             self.__wait_for_instances(session, launch_request)
 
-    def deleteNode(self, nodes: List[Node]) -> NoReturn:
+    def __common_prelaunch(self, launch_request: LaunchRequest):
+        """
+        Write log entries about node launch request
+        """
+
+        count = launch_request.addNodesRequest['count']
+
+        logmsg = 'Launching 1 instance' if count == 1 else \
+            f'Launching {count} instances'
+
+        self.getLogger().info(logmsg)
+
+        if 'user_data_script_template' in launch_request.configDict:
+            self.getLogger().info(
+                'Using user-data script template [%s]' % (
+                    launch_request.configDict['user_data_script_template']))
+        elif 'cloud_init_script_template' in launch_request.configDict:
+            self.getLogger().info(
+                'Using cloud-init script template [%s]' % (
+                    launch_request.configDict['cloud_init_script_template']))
+
+    def deleteNode(self, nodes: List[Node]) -> None:
         with DbManager().session() as session:
             for node in nodes:
-                self.__delete_node(session, node)
+                self.__delete_node(node)
 
-            # TODO: session.commit()
+            session.commit()
 
-        self.getLogger().info('%d node(s) deleted' % (len(nodes)))
-
-    def __delete_node(self, session: Session, node: Node) -> None:
-        self.getLogger().info('Deleting node [{0}]'.format(node.name))
-
-        configDict = self.get_node_resource_adapter_config(node)
+    def __delete_node(self, node: Node) -> None:
+        """
+        Delete Puppet certificate (?) and terminate instance
+        """
 
         # Remove Puppet certificate
         bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
         bhm.deleteNodeCleanup(node)
 
-        conn = self.getEC2Connection(configDict)
-
         if node.isIdle:
             return
 
         # Get EC2 instance and terminate it
-        if node.instance and node.instance.instance:
-            instance = self.__get_instance_by_instance_id(
-                conn,
-                node.instance.instance
-            )
+        if not node.instance or not node.instance.instance:
+            # this really shouldn't ever happen. Nodes with backing AWS
+            # instances shouldn't ever not have an associated instance
 
-            if instance:
-                self.__terminate_instance(instance)
-        else:
             self.getLogger().warning(
                 'Unable to determine AWS instance associated with'
                 ' node [{0}]; instance may still be running!'.format(
                     node.name))
 
-    def __terminate_instance(self, instance):
-        """
-        Wrapper around AWS instance termination
-        """
+            return
 
         self.getLogger().info(
-            'Terminating instance [{0}]'.format(instance.id))
+            'Terminating instance [{}] associated with node [{}]'.format(
+                node.instance.instance, node.name
+            )
+        )
 
+        self.__terminate_by_instance_id(
+            self.getEC2Connection(
+                self.get_node_resource_adapter_config(node)
+            ),
+            node.instance.instance
+        )
+
+    def __terminate_by_instance_id(self, conn: EC2Connection,
+                                   instance_id: str) -> None:
+        # attempt to terminate by instance_id
         try:
-            instance.terminate()
+            conn.terminate_instances([instance_id])
         except boto.exception.EC2ResponseError as exc:
             self.getLogger().warning(
                 'Error while terminating instance [{0}]: {1}'.format(
-                    instance.id, exc.message))
+                    instance_id, exc.message
+                )
+            )
 
     def transferNode(self, nodeIdSoftwareProfileTuples: Tuple[Node, str],
                      newSoftwareProfileName: str) -> NoReturn:
@@ -2224,7 +2249,7 @@ fqdn: %s
 
     def migrateNode(self, node: Node, remainingNodeList: List[str],
                     liveMigrate: bool): \
-            # pylint: disable=unused-argument
+            # pylint: disable=no-self-use,unused-argument
         raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
@@ -2444,6 +2469,7 @@ fqdn: %s
         node.instance = InstanceMapping(
             instance=instance_id,
             resource_adapter_configuration=self.load_resource_adapter_config(
+                session,
                 addNodesRequest.get('resource_adapter_configuration'))
         )
 
