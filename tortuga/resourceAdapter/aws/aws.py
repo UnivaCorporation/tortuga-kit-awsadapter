@@ -379,6 +379,10 @@ class Aws(ResourceAdapter):
                     'Invalid \'user_data_script_template\''
                     ' setting: {0}'.format(exc)
                 )
+
+            self.getLogger().info(
+                'Using user-data script template [%s]' % (
+                    configDict['user_data_script_template']))
         elif 'cloud_init_script_template' in configDict and \
                 configDict['cloud_init_script_template']:
             try:
@@ -395,6 +399,10 @@ class Aws(ResourceAdapter):
                     'Invalid \'cloud_init_script_template\' '
                     'setting: {0}'.format(exc)
                 )
+
+            self.getLogger().info(
+                'Using cloud-init script template [%s]' % (
+                    configDict['cloud_init_script_template']))
         else:
             config['cloud_init'] = False
 
@@ -1151,10 +1159,6 @@ dns_nameservers = %(dns_nameservers)s
 
     def __get_user_data_script(self, configDict: dict,
                                node: Optional[Node] = None):
-        self.getLogger().info(
-            'Using user-data script template [%s]' % (
-                configDict['user_data_script_template']))
-
         settings_dict = \
             self.__get_common_user_data_settings(configDict, node)
 
