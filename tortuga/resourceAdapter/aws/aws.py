@@ -439,15 +439,15 @@ class Aws(ResourceAdapter):
                 'OpenVPN support is obsolete; remove \'vpn\' setting'
                 ' from resource adapter configuration')
 
-        # Support for instance tagging is enabled by default
-        config['use_tags'] = configDict['use_tags'].lower() == 'true' \
-            if 'use_tags' in configDict else True
-
         # 'use_instance_hostname' is enabled by default when Tortuga is
         # hosted on EC2.
         config['use_instance_hostname'] = self.__convert_to_bool(
             configDict.get('use_instance_hostname'), default=True
         )
+
+        # Support for instance tagging is enabled by default
+        config['use_tags'] = self.__convert_to_bool(
+            config['use_tags'], default=True)
 
         # Parse out user-defined tags
         config['tags'] = {}
@@ -461,14 +461,15 @@ class Aws(ResourceAdapter):
 
                 config['tags'][key] = value
 
+            config['use_tags'] = True
+
         if 'block_device_map' in configDict:
             config['block_device_map'] = self.__process_block_device_map(
                 configDict['block_device_map'])
 
         # Convert 'associate_public_ip_address' to bool
-        config['associate_public_ip_address'] = \
-            config['associate_public_ip_address'].lower() == 'true' \
-            if config['associate_public_ip_address'] is not None else None
+        config['associate_public_ip_address'] = self.__convert_to_bool(
+            config['associate_public_ip_address'], default=True)
 
         if 'use_custom_dns_domain' in config and \
                 config['use_custom_dns_domain']:
