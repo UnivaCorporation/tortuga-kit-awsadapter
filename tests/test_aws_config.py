@@ -20,64 +20,62 @@ from tortuga.exceptions.configurationError import ConfigurationError
 
 @mock.patch.object(Aws, '_loadConfigDict')
 def test_missing_ami_setting(load_config_dict_mock):
-   load_config_dict_mock.return_value = {}
+    load_config_dict_mock.return_value = {}
 
-   with pytest.raises(ConfigurationError):
-       Aws().getResourceAdapterConfig()
+    with pytest.raises(ConfigurationError):
+        Aws().getResourceAdapterConfig()
 
 
 @mock.patch.object(Aws, '_loadConfigDict')
 def test_use_instance_hostname(load_config_dict_mock):
-   load_config_dict_mock.return_value = {
-       'ami': 'ami-XXXXXX',
-       'override_dns_domain': 'true',
-       'dns_domain': 'cloud.example.com',
-       'use_instance_hostname': 'false',
-   }
+    load_config_dict_mock.return_value = {
+        'ami': 'ami-XXXXXX',
+        'override_dns_domain': 'true',
+        'dns_domain': 'cloud.example.com',
+        'use_instance_hostname': 'false',
+    }
 
-   adapter = Aws()
+    adapter = Aws()
 
-   result = adapter.getResourceAdapterConfig()
+    result = adapter.getResourceAdapterConfig()
 
-   assert result['dns_domain'] == 'cloud.example.com'
+    assert result['dns_domain'] == 'cloud.example.com'
 
 
 @mock.patch.object(Aws, '_loadConfigDict')
 def test_defaults(load_config_dict_mock):
-   load_config_dict_mock.return_value = {
-       'ami': 'ami-XXXXXXXX',
-   }
+    load_config_dict_mock.return_value = {
+        'ami': 'ami-XXXXXXXX',
+    }
 
-   adapter = Aws()
+    adapter = Aws()
 
-   result = adapter.getResourceAdapterConfig()
+    result = adapter.getResourceAdapterConfig()
 
-   assert result['ami'] == 'ami-XXXXXXXX'
+    assert result['ami'] == 'ami-XXXXXXXX'
 
-   assert not result['use_instance_hostname']
+    assert result['use_instance_hostname']
 
-   assert result['use_tags']
+    assert result['use_tags']
 
-   assert result['associate_public_ip_address']
+    assert result['associate_public_ip_address']
 
-   assert not result['cloud_init']
+    assert not result['cloud_init']
 
-   assert not result['override_dns_domain']
+    assert not result['override_dns_domain']
 
-   assert not result['use_domain_from_dhcp_option_set']
+    assert not result['use_domain_from_dhcp_option_set']
 
-   assert result['region'] == 'us-east-1'
-
-   print(result)
+    assert result['region'] == 'us-east-1'
 
 
 @mock.patch.object(Aws, '_loadConfigDict')
 def test_invalid_settings(load_config_dict_mock):
-   load_config_dict_mock.return_value = {
-       'ami': 'ami-XXXXXXXX',
-       'unrecognized': 'setting',
-       'another_bad_setting': 'value',
-   }
+    load_config_dict_mock.return_value = {
+        'ami': 'ami-XXXXXXXX',
+        'unrecognized': 'setting',
+        'another_bad_setting': 'value',
+    }
 
-   with pytest.raises(ConfigurationError):
-       Aws().getResourceAdapterConfig()
+    with pytest.raises(ConfigurationError):
+        Aws().getResourceAdapterConfig()
