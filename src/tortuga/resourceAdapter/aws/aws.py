@@ -221,36 +221,31 @@ class Aws(ResourceAdapter):
         return boto.ec2.connect_to_region(configDict['region'],
                                           **connectionArgs)
 
-    def getResourceAdapterConfig(self, sectionName: Union[str, None] = None):
+    def _normalize_resource_adapter_config(
+            self, default_config: Dict[str, str],
+            override_config: Optional[Dict[str, str]]) -> dict:
         """
-        Raises:
-            ConfigurationError
+        'default_config' and 'override_config' are key-value pairs
+        extracted from the resource adapter configuration.
         """
 
-        # load default configuration
-        configDict = self._loadConfigDict()
+        configDict = dict.copy(default_config or {})
 
-        if sectionName:
-            overrideConfigDict = self._loadConfigDict(sectionName=sectionName)
+        # 'user_data_script_template' and 'cloud_init_script_template'
+        # are mutually exclusive arguments. Ensure resource adapter
+        # configuration overrides default settings accordingly.
 
-            # 'user_data_script_template' and 'cloud_init_script_template'
-            # are mutually exclusive arguments. Ensure resource adapter
-            # configuration overrides default settings accordingly.
+        if override_config:
+            if 'user_data_script_template' in override_config and \
+                    'cloud_init_script_template' in default_config:
+                del default_config['cloud_init_script_template']
 
-            if 'user_data_script_template' in overrideConfigDict and \
-                    'cloud_init_script_template' in configDict:
-                del configDict['cloud_init_script_template']
-
-            if 'cloud_init_script_template' in overrideConfigDict and \
-                    'user_data_script_template' in configDict:
+            if 'cloud_init_script_template' in override_config and \
+                    'user_data_script_template' in default_config:
                 del configDict['user_data_script_template']
 
-            configDict.update(overrideConfigDict)
+            configDict.update(override_config)
 
-        return self._normalize_resource_adapter_config(configDict)
-
-    def _normalize_resource_adapter_config(
-            self, configDict: Dict[str, Any]) -> dict:
         config = {}
 
         if 'ami' in configDict:
