@@ -37,6 +37,7 @@ from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from sqlalchemy.orm.session import Session
+
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.dbManager import DbManager
 from tortuga.db.models.hardwareProfile import HardwareProfile
@@ -56,7 +57,6 @@ from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
-from tortuga.resourceAdapter.utility import get_provisioning_hwprofilenetwork
 from tortuga.utility.helper import str2bool
 
 from .exceptions import AWSOperationTimeoutError
