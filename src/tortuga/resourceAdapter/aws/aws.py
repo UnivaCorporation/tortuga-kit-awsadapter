@@ -229,7 +229,7 @@ class Aws(ResourceAdapter):
         extracted from the resource adapter configuration.
         """
 
-        configDict = dict.copy(default_config)
+        configDict = dict.copy(default_config or {})
 
         # 'user_data_script_template' and 'cloud_init_script_template'
         # are mutually exclusive arguments. Ensure resource adapter
@@ -244,7 +244,7 @@ class Aws(ResourceAdapter):
                     'user_data_script_template' in default_config:
                 del configDict['user_data_script_template']
 
-        configDict.update(override_config)
+            configDict.update(override_config)
 
         config = {}
 
