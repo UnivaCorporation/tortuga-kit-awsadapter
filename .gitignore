@@ -7,3 +7,4 @@ man/**/*.8
 __pycache__/
 .pytest_cache/
 .ropeproject/
+.tox/
