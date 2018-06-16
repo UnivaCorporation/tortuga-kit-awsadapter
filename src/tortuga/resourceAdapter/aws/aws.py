@@ -1,5 +1,5 @@
-#
 # Copyright 2008-2018 Univa Corporation
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -26,6 +26,7 @@ import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
+from typing.io import TextIO
 
 import boto
 import boto.ec2
@@ -426,6 +427,9 @@ class Aws(ResourceAdapter):
                 )
         else:
             config['cloud_init'] = False
+
+            del config['user_data_script_template']
+            del config['cloud_init_script_template']
 
         if 'vpn' in configDict:
             raise ConfigurationError(
@@ -983,7 +987,8 @@ class Aws(ResourceAdapter):
         Create dict of args for boto request_spot_instances() API
         """
 
-        user_data = self.__get_user_data(configDict, node=node)
+        user_data = self.__get_user_data(configDict, node=node) \
+            if configDict['cloud_init'] else None
 
         # Get common AWS launch args
         args = self.__get_common_launch_args(
@@ -1130,7 +1135,8 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def _get_installer_ip(self, hardwareprofile: Optional[HardwareProfile] = None) -> str:
+    def _get_installer_ip(
+            self, hardwareprofile: Optional[HardwareProfile] = None) -> str:
         if self.__installer_ip is None:
             if hardwareprofile and hardwareprofile.nics:
                 self.__installer_ip = hardwareprofile.nics[0].ip
@@ -1139,36 +1145,39 @@ class Aws(ResourceAdapter):
 
         return self.__installer_ip
 
-    def __get_common_user_data_settings(self, configDict: dict,
-                                        node: Optional[Node] = None):
-        if configDict['installer_ip']:
-            installerIp = configDict['installer_ip']
-        else:
-            installerIp = self._get_installer_ip(
+    def __get_common_user_data_settings(self, config: Dict[str, str],
+                                        node: Optional[Node] = None) \
+            -> Dict[str, str]:
+        """
+        Returns dict containing resource adapter configuration metadata
+        """
+
+        installerIp = config['installer_ip'] \
+            if config['installer_ip'] else \
+            self._get_installer_ip(
                 hardwareprofile=node.hardwareprofile if node else None)
 
-        dns_domain_value = '\'{0}\''.format(configDict['dns_domain'])
+        dns_domain_value = '\'{0}\''.format(config['dns_domain']) \
+            if config['dns_domain'] else None
 
-        settings_dict = {
+        return {
             'installerHostName': self.installer_public_hostname,
             'installerIp': '\'{0}\''.format(installerIp)
                            if installerIp else 'None',
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
-            'override_dns_domain': str(configDict['override_dns_domain']),
-            'dns_options': '\'{0}\''.format(configDict['dns_options'])
-                           if configDict['dns_options'] else None,
+            'override_dns_domain': str(config['override_dns_domain']),
+            'dns_options': '\'{0}\''.format(config['dns_options'])
+                           if config['dns_options'] else None,
             'dns_domain': dns_domain_value,
-            'dns_nameservers': _get_encoded_list(
-                configDict['dns_nameservers']),
+            'dns_nameservers': _get_encoded_list(config['dns_nameservers']),
         }
 
-        return settings_dict
-
-    def __get_common_user_data_content(self, settings_dict: dict) -> str: \
-            # pylint: disable=no-self-use
-        result = """\
+    def __get_common_user_data_content(
+            self, user_data_settings: Dict[str, str]) \
+            -> str: # pylint: disable=no-self-use
+        return """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
 port = %(adminport)d
@@ -1181,45 +1190,44 @@ dns_options = %(dns_options)s
 dns_search = %(dns_domain)s
 dns_domain = %(dns_domain)s
 dns_nameservers = %(dns_nameservers)s
-""" % (settings_dict)
+""" % (user_data_settings)
 
-        return result
+    def __get_user_data(self, config: Dict[str, str],
+                        node: Optional[Node] = None) -> str:
+        """
+        Return metadata to be associated with each launched instance
+        """
 
-    def __get_user_data(self, configDict: dict,
-                        node: Optional[Node] = None):
-        if not configDict['cloud_init']:
-            return None
-
-        if 'user_data_script_template' in configDict:
-            return self.__get_user_data_script(configDict, node=node)
+        if 'user_data_script_template' in config:
+            with open(config['user_data_script_template']) as fp:
+                return self.__get_user_data_script(fp, config, node=node)
 
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
-        return self.expand_cloud_init_user_data_template(configDict, node=node)
+        return self.expand_cloud_init_user_data_template(config, node=node)
 
-    def __get_user_data_script(self, configDict: dict,
+    def __get_user_data_script(self, fp: TextIO,
+                               config: Dict[str, str],
                                node: Optional[Node] = None):
-        settings_dict = \
-            self.__get_common_user_data_settings(configDict, node)
+        settings_dict = self.__get_common_user_data_settings(config, node)
 
-        with open(configDict['user_data_script_template']) as fp:
-            result = ''
+        result = ''
 
-            for inp in fp.readlines():
-                if inp.startswith('### SETTINGS'):
-                    result += self.__get_common_user_data_content(
-                        settings_dict)
-                else:
-                    result += inp
+        for inp in fp.readlines():
+            if inp.startswith('### SETTINGS'):
+                result += self.__get_common_user_data_content(
+                    settings_dict)
+            else:
+                result += inp
 
-        combined_message = MIMEMultipart()
-
-        if node and not configDict['use_instance_hostname']:
+        if node and not config['use_instance_hostname']:
             # Use cloud-init to set fully-qualified domain name of instance
             cloud_init = """#cloud-config
 
 fqdn: %s
 """ % (node.name)
+
+            combined_message = MIMEMultipart()
 
             sub_message = MIMEText(
                 cloud_init, 'text/cloud-config', sys.getdefaultencoding())
@@ -1254,7 +1262,8 @@ fqdn: %s
         # log information about request
         self.__common_prelaunch(launch_request)
 
-        user_data = self.__get_user_data(launch_request.configDict)
+        user_data = self.__get_user_data(launch_request.configDict) \
+            if launch_request.configDict['cloud_init'] else None
 
         security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(
@@ -1328,7 +1337,8 @@ fqdn: %s
         try:
             for node_request in launch_request.node_request_queue:
                 userData = self.__get_user_data(
-                    configDict, node=node_request['node'])
+                    configDict, node=node_request['node']) \
+                    if configDict['cloud_init'] else None
 
                 # Launch instance
                 try:
@@ -2154,7 +2164,9 @@ fqdn: %s
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
-        userData = self.__get_user_data(launch_request.configDict, node=node)
+        userData = self.__get_user_data(
+            launch_request.configDict, node=node) \
+            if launch_request.configDict['cloud_init'] else None
 
         launch_request.node_request_queue = init_node_request_queue([node])
 
