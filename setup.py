@@ -37,6 +37,7 @@ setup(
         'click',
         'colorama',
         'daemonize',
+        'Jinja2',
     ],
     entry_points={
         'console_scripts': [
