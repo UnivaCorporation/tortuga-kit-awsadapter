@@ -55,7 +55,6 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
-from tortuga.os_utility import osUtility
 from tortuga.resourceAdapter.resourceAdapter import DbManager, ResourceAdapter
 from tortuga.utility.helper import str2bool
 
@@ -2133,10 +2132,17 @@ fqdn: %s
 
                 if node.state != 'Discovered':
                     # Terminate instance
-                    self.__terminate_by_instance_id(
-                        self.getEC2Connection(configDict),
-                        node.instance.instance
-                    )
+                    try:
+                        conn = self.getEC2Connection(configDict)
+
+                        conn.terminate_instances([node.instance.instance])
+                    except boto.exception.EC2ResponseError as exc:
+                        self.getLogger().warning(
+                            'Error while terminating instance [{}]:'
+                            ' {1}'.format(
+                                node.instance.instance, exc.message
+                            )
+                        )
 
                     # Remove instance id from cache
                     session.delete(node.instance)
@@ -2230,28 +2236,27 @@ fqdn: %s
             )
 
     def deleteNode(self, nodes: List[Node]) -> None:
+        self.getLogger().debug(
+            'Deleting nodes: [{}]'.format(
+                ' '.join([node.name for node in nodes]))
+        )
         with DbManager().session() as session:
             for node in nodes:
+                if node.isIdle:
+                    continue
+
                 self.__delete_node(node)
 
             session.commit()
 
     def __delete_node(self, node: Node) -> None:
         """
-        Delete Puppet certificate (?) and terminate instance
+        Terminate instance associated with node
         """
 
-        # Remove Puppet certificate
-        bhm = osUtility.getOsObjectFactory().getOsBootHostManager()
-        bhm.deleteNodeCleanup(node)
-
-        if node.isIdle:
-            return
-
-        # Get EC2 instance and terminate it
         if not node.instance or not node.instance.instance:
             # this really shouldn't ever happen. Nodes with backing AWS
-            # instances shouldn't ever not have an associated instance
+            # instances should never not have an associated instance
 
             self.getLogger().warning(
                 'Unable to determine AWS instance associated with'
@@ -2266,22 +2271,16 @@ fqdn: %s
             )
         )
 
-        self.__terminate_by_instance_id(
-            self.getEC2Connection(
-                self.get_node_resource_adapter_config(node)
-            ),
-            node.instance.instance
-        )
-
-    def __terminate_by_instance_id(self, conn: EC2Connection,
-                                   instance_id: str) -> None:
         # attempt to terminate by instance_id
         try:
-            conn.terminate_instances([instance_id])
+            conn = self.getEC2Connection(
+                self.get_node_resource_adapter_config(node))
+
+            conn.terminate_instances([node.instance.instance])
         except boto.exception.EC2ResponseError as exc:
             self.getLogger().warning(
                 'Error while terminating instance [{0}]: {1}'.format(
-                    instance_id, exc.message
+                    node.instance.instance, exc.message
                 )
             )
 
