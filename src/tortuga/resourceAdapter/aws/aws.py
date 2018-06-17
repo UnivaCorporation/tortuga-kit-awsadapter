@@ -1763,7 +1763,7 @@ fqdn: %s
                 hostent = socket.gethostbyaddr(ip)
 
                 return hostent[0]
-            except socket.herror as exc:
+            except socket.herror:
                 name = instance.private_dns_name
 
                 self.getLogger().debug(
