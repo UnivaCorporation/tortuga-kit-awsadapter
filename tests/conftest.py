@@ -18,6 +18,8 @@ import pytest
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy import create_engine
 
+import tortuga.resourceAdapter
+import tortuga.resourceAdapter.aws.aws
 from tortuga.config.configManager import ConfigManager
 from tortuga.db import (adminDbApi, globalParameterDbApi, hardwareProfileDbApi,
                         kitDbApi, networkDbApi, nodeDbApi,
@@ -42,8 +44,8 @@ from tortuga.db.models.tag import Tag
 from tortuga.deployer.dbUtility import init_global_parameters, primeDb
 from tortuga.node import nodeManager
 from tortuga.objects import osFamilyInfo, osInfo
-from tortuga.objectstore import manager as objectstore_manager
-from tortuga.tasks.celery import app
+from tortuga.db.models.instanceMapping import InstanceMapping
+
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +62,9 @@ def disable_DbManager(monkeypatch, dbm):
     monkeypatch.setattr(networkDbApi, 'DbManager', mockreturn)
     monkeypatch.setattr(kitDbApi, 'DbManager', mockreturn)
     monkeypatch.setattr(nodeManager, 'DbManager', mockreturn)
+    monkeypatch.setattr(tortuga.resourceAdapter.resourceAdapter, 'DbManager', mockreturn)
+    monkeypatch.setattr(tortuga.resourceAdapter.aws.aws, 'DbManager', mockreturn)
+
 
 
 @pytest.fixture(scope='session')
@@ -216,7 +221,7 @@ def dbm():
         )
 
         aws_adapter_cfg.settings.append(
-            ResourceAdapterSetting(key='ami', value='ami-XXXXXX')
+            ResourceAdapterSetting(key='ami', value='ami-abcd1234')
         )
 
         aws_adapter.resource_adapter_config.append(aws_adapter_cfg)
@@ -237,6 +242,15 @@ def dbm():
 
         session.add(aws_hwprofile)
 
+        aws_hwprofile2 = HardwareProfile(
+            name='aws2',
+            location='remote',
+            resourceadapter=aws_adapter,
+            nameFormat='*'
+        )
+
+        session.add(aws_hwprofile2)
+
         # create 'compute' software profile
         compute_swprofile = SoftwareProfile(name='compute')
         compute_swprofile.os = os_
@@ -251,6 +265,7 @@ def dbm():
 
         # map 'aws' to 'compute'
         aws_hwprofile.mappedsoftwareprofiles.append(compute_swprofile)
+        aws_hwprofile2.mappedsoftwareprofiles.append(compute_swprofile)
 
         # create 'localiron' hardware profile
         localiron_hwprofile = HardwareProfile(name='localiron', nameFormat='compute-#NN')
@@ -306,6 +321,23 @@ def dbm():
                 compute_node.tags.append(all_tags[4])
 
             session.add(compute_node)
+
+        # create arbitrary aws nodes
+        for idx in range(1, 10):
+            new_node = Node(
+                name='ip-10-10-10-{:0d}.ec2.internal'.format(idx),
+                hardwareprofile=aws_hwprofile,
+                softwareprofile=compute_swprofile,
+                isIdle=False
+            )
+
+            new_node.instance = InstanceMapping(
+                instance='i-{:08x}'.format(idx)
+            )
+
+            new_node.instance.resource_adapter_configuration = aws_adapter_cfg
+
+            session.add(new_node)
 
         # create arbitrary hardware profiles
         hwprofile1 = HardwareProfile(name='profile1', tags=[all_tags[0]])
