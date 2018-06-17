@@ -70,6 +70,8 @@ class Aws(ResourceAdapter):
     """
     __adaptername__ = 'aws'
 
+    LAUNCH_INITIAL_SLEEP_TIME = 10.0
+
     settings = {
         'ami': settings.StringSetting(
             required=True,
@@ -1474,7 +1476,7 @@ fqdn: %s
         instance = node_request['instance']
 
         # Initially sleep for 10s prior to polling
-        total_sleep_time = 10.0
+        total_sleep_time = self.LAUNCH_INITIAL_SLEEP_TIME
         gevent.sleep(total_sleep_time)
 
         if self.__aws_check_instance_state(instance) == 'running':
