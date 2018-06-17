@@ -752,6 +752,7 @@ class Aws(ResourceAdapter):
             if 'metadata' in addNodesRequest['nodeDetails'][0] and \
                     'ec2_instance_id' in \
                     addNodesRequest['nodeDetails'][0]['metadata']:
+                # inserting nodes based on metadata
                 return self.__insert_nodes(dbSession, launch_request)
 
         nodes = self.__add_active_nodes(dbSession, launch_request) \
@@ -782,8 +783,7 @@ class Aws(ResourceAdapter):
         return self.__process_node_request_queue(session, launch_request)
 
     def __insert_nodes(self, session: Session,
-                       launch_request: LaunchRequest): \
-            # pylint: disable=unused-argument
+                       launch_request: LaunchRequest) -> List[Node]:
         """
         Directly insert nodes with pre-existing AWS instances
 
@@ -791,9 +791,12 @@ class Aws(ResourceAdapter):
         AWS instance exists before the Tortuga associated node record.
         """
 
-        self.getLogger().debug('__insert_nodes()')
+        self.getLogger().debug(
+            'Inserting {} node(s)'.format(
+                len(launch_request.addNodesRequest['nodeDetails']))
+        )
 
-        nodes = []
+        nodes: List[Node] = []
 
         for nodedetail in launch_request.addNodesRequest['nodeDetails']:
             ip = nodedetail['metadata']['ec2_ipaddress']
