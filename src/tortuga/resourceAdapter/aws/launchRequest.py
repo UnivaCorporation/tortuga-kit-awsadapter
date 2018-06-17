@@ -13,22 +13,30 @@
 # limitations under the License.
 
 
+from typing import Any, Dict, List, Optional
+
+from tortuga.db.models.hardwareProfile import HardwareProfile
+from tortuga.db.models.node import Node
+from tortuga.db.models.softwareProfile import SoftwareProfile
+
+
 class LaunchRequest(object):
-    def __init__(self, hardwareprofile=None, softwareprofile=None):
+    def __init__(self, hardwareprofile: Optional[HardwareProfile] = None,
+                 softwareprofile: Optional[SoftwareProfile] = None) -> None:
         self.hardwareprofile = hardwareprofile
         self.softwareprofile = softwareprofile
-        self.node_request_queue = []
+        self.node_request_queue: List[Dict[str, Any]] = []
         self.addNodesRequest = None
         self.configDict = None
         self.conn = None
 
 
-def init_node_request_queue(nodes):
+def init_node_request_queue(nodes: List[Node]) -> List[Dict[str, Any]]:
     """
     Construct a lookup table of nodes
     """
 
-    node_request_queue = []
+    node_request_queue: List[Dict[str, Any]] = []
 
     for node in nodes:
         node_request = {

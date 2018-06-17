@@ -1046,7 +1046,7 @@ class Aws(ResourceAdapter):
 
     def validate_start_arguments(self, addNodesRequest: dict,
                                  dbHardwareProfile: HardwareProfile,
-                                 dbSoftwareProfile: SoftwareProfile) -> NoReturn: \
+                                 dbSoftwareProfile: SoftwareProfile) -> None: \
             # pylint: disable=unused-argument
 
         """
@@ -1393,7 +1393,8 @@ fqdn: %s
             dbSession.delete(node)
 
     def __process_node_request_queue(self, dbSession: Session,
-                                     launch_request: LaunchRequest) -> List[Node]:
+                                     launch_request: LaunchRequest) \
+            -> List[Node]:
         """
         Iterate over all instances/nodes that have been started
         successfully. Clean up those that didn't start or timed out before
@@ -1933,8 +1934,14 @@ fqdn: %s
 
         return ami
 
-    def __get_common_launch_args(self, configDict, ami,
-                                 security_group_ids=None, user_data=None):
+    def __get_common_launch_args(
+            self, configDict: Dict[str, Any], ami: str,
+            security_group_ids: Optional[List[str]] = None,
+            user_data: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Return key-value pairs of arguments for passing to launch API
+        """
+
         args = {
             'key_name': configDict['keypair'],
             'placement': configDict['zone'],
