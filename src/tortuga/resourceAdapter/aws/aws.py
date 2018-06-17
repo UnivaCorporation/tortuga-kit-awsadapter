@@ -40,7 +40,6 @@ from boto.ec2.networkinterface import (NetworkInterfaceCollection,
 from sqlalchemy.orm.session import Session
 
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
-from tortuga.db.dbManager import DbManager
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.nic import Nic
@@ -57,7 +56,7 @@ from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.os_utility import osUtility
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+from tortuga.resourceAdapter.resourceAdapter import DbManager, ResourceAdapter
 from tortuga.utility.helper import str2bool
 
 from .exceptions import AWSOperationTimeoutError
