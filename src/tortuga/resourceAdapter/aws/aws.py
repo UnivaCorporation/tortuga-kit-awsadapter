@@ -72,6 +72,8 @@ class Aws(ResourceAdapter):
 
     LAUNCH_INITIAL_SLEEP_TIME = 10.0
 
+    TEST_MODE = False
+
     settings = {
         'ami': settings.StringSetting(
             required=True,
@@ -901,7 +903,7 @@ class Aws(ResourceAdapter):
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name))
 
-        ami = self._validate_ec2_launch_args(conn, configDict)
+        self._validate_ec2_launch_args(conn, configDict)
 
         security_group_ids: Union[List[str], None] = \
             self.__get_security_group_ids(configDict, conn)
@@ -911,9 +913,9 @@ class Aws(ResourceAdapter):
                 nodes: List[Node] = []
 
                 args = self.__get_request_spot_instance_args(
+                    conn,
                     addNodesRequest,
                     configDict,
-                    ami,
                     security_group_ids)
 
                 resv = conn.request_spot_instances(
@@ -935,9 +937,9 @@ class Aws(ResourceAdapter):
                 with DbManager().session() as session:
                     for node in nodes:
                         args = self.__get_request_spot_instance_args(
+                            conn,
                             addNodesRequest,
                             configDict,
-                            ami,
                             security_group_ids,
                             node=node)
 
@@ -977,12 +979,11 @@ class Aws(ResourceAdapter):
 
         return nodes
 
-    def __get_request_spot_instance_args(self, addNodesRequest: dict,
+    def __get_request_spot_instance_args(self, conn: EC2Connection,
+                                         addNodesRequest: dict,
                                          configDict: dict,
-                                         ami: str,
                                          security_group_ids: List[str],
-                                         node: Union[Node, None] = None): \
-            # pylint: disable=no-self-use
+                                         node: Optional[Node] = None):
         """
         Create dict of args for boto request_spot_instances() API
         """
@@ -992,8 +993,8 @@ class Aws(ResourceAdapter):
 
         # Get common AWS launch args
         args = self.__get_common_launch_args(
+            conn,
             configDict,
-            ami,
             security_group_ids=security_group_ids,
             user_data=user_data)
 
@@ -1869,20 +1870,6 @@ fqdn: %s
 
     def _validate_ec2_launch_args(self, conn: EC2Connection,
                                   configDict: dict):
-        # Get the image
-        try:
-            imageList = conn.get_all_images(configDict['ami'])
-        except boto.exception.EC2ResponseError as ex:
-            # Image isn't found, could be permission error or
-            # non-existent error
-
-            extErrMsg = self.__parseEC2ResponseError(ex)
-
-            raise CommandFailed('Error accessing AMI [%s] (%s)' % (
-                configDict['ami'], extErrMsg or '<no reason provided>'))
-
-        ami = imageList[0]
-
         # # Get the kernel, if specified
         # if 'aki' in configDict and configDict['aki']:
         #     try:
@@ -1932,10 +1919,8 @@ fqdn: %s
                         configDict['placementgroup'],
                         extErrMsg or '<no reason provided>'))
 
-        return ami
-
     def __get_common_launch_args(
-            self, configDict: Dict[str, Any], ami: str,
+            self, conn: EC2Connection, configDict: Dict[str, Any],
             security_group_ids: Optional[List[str]] = None,
             user_data: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -1963,8 +1948,10 @@ fqdn: %s
         # Build 'block_device_map'
         args['block_device_map'] = \
             self.__build_block_device_map(
+                conn,
                 configDict['block_device_map']
-                if 'block_device_map' in configDict else None, ami)
+                if 'block_device_map' in configDict else None,
+                configDict['ami'])
 
         if 'ebs_optimized' in configDict:
             args['ebs_optimized'] = configDict['ebs_optimized']
@@ -2009,16 +1996,17 @@ fqdn: %s
             CommandFailed
         """
 
-        ami = self._validate_ec2_launch_args(conn, configDict)
+        self._validate_ec2_launch_args(conn, configDict)
 
         runArgs = self.__get_common_launch_args(
-            configDict, ami, security_group_ids=security_group_ids,
+            conn,
+            configDict, security_group_ids=security_group_ids,
             user_data=userData)
 
         runArgs['max_count'] = nodeCount
 
         try:
-            return conn.run_instances(ami.id, **runArgs)
+            return conn.run_instances(configDict['ami'], **runArgs)
         except boto.exception.EC2ResponseError as ex:
             extErrMsg = self.__parseEC2ResponseError(ex)
 
@@ -2057,7 +2045,8 @@ fqdn: %s
 
         return security_group_ids
 
-    def __build_block_device_map(self, block_device_map, ami):
+    def __build_block_device_map(self, conn: EC2Connection,
+                                 block_device_map, image_id: str):
         result = None
 
         if block_device_map:
@@ -2068,51 +2057,54 @@ fqdn: %s
 
             result = block_device_map
 
-        # determine root device name
-        root_block_devices = ec2_get_root_block_devices(ami)
+        if not self.TEST_MODE:
+            ami = conn.get_image(image_id)
 
-        if root_block_devices:
-            root_block_device = root_block_devices[0]
+            # determine root device name
+            root_block_devices = ec2_get_root_block_devices(ami)
 
-            if not result or root_block_device not in iter(result.keys()):
-                # block device map previously undefined. Add entry for root
-                # device
-                if not result:
-                    bdm = boto.ec2.blockdevicemapping.BlockDeviceMapping()
+            if root_block_devices:
+                root_block_device = root_block_devices[0]
 
-                    result = bdm
-                else:
-                    bdm = result
+                if not result or root_block_device not in iter(result.keys()):
+                    # block device map previously undefined. Add entry for root
+                    # device
+                    if not result:
+                        bdm = boto.ec2.blockdevicemapping.BlockDeviceMapping()
 
-                # Add block device mapping entry for root disk
-                bdt = boto.ec2.blockdevicemapping.BlockDeviceType()
-                bdm[root_block_device] = bdt
+                        result = bdm
+                    else:
+                        bdm = result
 
-            # Mark root block device for deletion on termination
-            result[root_block_device].delete_on_termination = True
-        else:
-            self.getLogger().warning(
-                'Unable to determine root device name for'
-                ' AMI [%s]' % (ami.id))
+                    # Add block device mapping entry for root disk
+                    bdt = boto.ec2.blockdevicemapping.BlockDeviceType()
+                    bdm[root_block_device] = bdt
 
-            self.getLogger().warning(
-                'Delete on termination flag cannot be set')
+                # Mark root block device for deletion on termination
+                result[root_block_device].delete_on_termination = True
+            else:
+                self.getLogger().warning(
+                    'Unable to determine root device name for'
+                    ' AMI [%s]' % (ami.id))
 
-        for device, bd in result.items():
-            logmsg = 'BDM: device=[{0}], size=[{1}]'.format(
-                device, bd.size if bd.size else '<default>')
+                self.getLogger().warning(
+                    'Delete on termination flag cannot be set')
 
-            if bd.ephemeral_name:
-                logmsg += ', ephemeral_name=[{0}]'.format(
-                    bd.ephemeral_name)
+            for device, bd in result.items():
+                logmsg = 'BDM: device=[{0}], size=[{1}]'.format(
+                    device, bd.size if bd.size else '<default>')
 
-            logmsg += ', delete_on_termination=[{0}]'.format(
-                bd.delete_on_termination)
+                if bd.ephemeral_name:
+                    logmsg += ', ephemeral_name=[{0}]'.format(
+                        bd.ephemeral_name)
 
-            if bd.volume_type:
-                logmsg += ', volume_type=[{0}]'.format(bd.volume_type)
+                logmsg += ', delete_on_termination=[{0}]'.format(
+                    bd.delete_on_termination)
 
-            self.getLogger().debug(logmsg)
+                if bd.volume_type:
+                    logmsg += ', volume_type=[{0}]'.format(bd.volume_type)
+
+                self.getLogger().debug(logmsg)
 
         return result
 
