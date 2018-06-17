@@ -702,16 +702,13 @@ class Aws(ResourceAdapter):
         return bdm
 
     def __get_instance_by_instance_id(self, conn: EC2Connection,
-                                      instance_id: str): \
-            # pylint: disable=no-self-use
-        # Find the instance itself
-        reservations = [r for r in conn.get_all_reservations(
-            filters={'instance-id': instance_id})]
-
-        if not reservations:
+                                      instance_id: str) \
+            -> Union[boto.ec2.instance.Instance, None]:
+        result = conn.get_only_instances(instance_ids=[instance_id])
+        if not result:
             return None
 
-        return reservations[0].instances[0]
+        return result[0]
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
