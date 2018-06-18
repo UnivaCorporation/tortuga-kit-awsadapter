@@ -16,7 +16,7 @@ matrix:
 install:
 - pip install tox
 - git clone https://github.com/UnivaCorporation/tortuga.git tortuga-base
-- env TORTUGA_SRC=`pwd`/tortuga-base tox
+- env TORTUGA_SRC=`pwd`/tortuga-base ./.travis/run tox
 - cd tortuga-base/
 - pip install -r requirements.txt
 - paver build
