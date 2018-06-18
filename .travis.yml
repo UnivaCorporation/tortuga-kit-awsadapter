@@ -8,11 +8,6 @@ env:
 before_install:
 - docker pull puppet/puppet-agent
 
-matrix:
-  include:
-    - python: 3.6
-      env: TOXENV=py36
-
 install:
 - pip install tox tox-travis
 - git clone https://github.com/UnivaCorporation/tortuga.git tortuga-base
