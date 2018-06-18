@@ -12,82 +12,199 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from mock import patch
-import pytest
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
-from tortuga.resourceAdapter.aws import Aws
-from tortuga.exceptions.configurationError import ConfigurationError
+import boto
+import mock
+
+from moto import mock_ec2_deprecated
+
+from tortuga.db.models.node import Node
+from tortuga.resourceAdapter.aws.aws import Aws, ResourceAdapter
+from tortuga.db.hardwareProfilesDbHandler import HardwareProfilesDbHandler
+from tortuga.db.softwareProfilesDbHandler import SoftwareProfilesDbHandler
 
 
-@pytest.fixture
-def minimal_configDict():
-    return {
-        'ami': 'ami-XXXXXXXX',
+def test_instantiation():
+    """
+    Simple test to ensure resource adapter can be instantiated
+    """
+
+    assert Aws()
+
+
+def test_instantiation_with_addHostSession():
+    """
+    Simple test to ensure resource adapter can be instantiated
+    """
+
+    adapter = Aws(addHostSession=123)
+
+    assert adapter.addHostSession == 123
+
+
+def test_installer_public_ipaddress():
+    with mock.patch(
+            'tortuga.resourceAdapter.aws.Aws.installer_public_ipaddress',
+            new_callable=mock.PropertyMock) \
+            as installer_public_ipaddress_mock:
+        installer_public_ipaddress_mock.return_value = '1.2.3.4'
+
+        assert Aws()._get_installer_ip() == '1.2.3.4'
+
+
+def test_installer_public_ipaddress_with_hardwareprofile():
+    class DummyNic:
+        def __init__(self, ip):
+            self.ip = ip
+
+    class DummyHardwareProfile:
+        def __init__(self):
+            self.nics = [
+                DummyNic('1.2.3.4'),
+                DummyNic('2.3.4.5'),
+            ]
+
+    ip = Aws()._get_installer_ip(hardwareprofile=DummyHardwareProfile())
+
+    assert ip == '1.2.3.4'
+
+
+def test_deleteNode(dbm):
+    with mock_ec2_deprecated():
+        with dbm.session() as session:
+            adapter = Aws()
+
+            node = session.query(Node).filter(
+                Node.name == 'ip-10-10-10-1.ec2.internal').one()
+
+            adapter.deleteNode([node])
+
+
+@mock.patch.object(Aws, 'fire_provisioned_event')
+@mock.patch.object(Aws, '_pre_add_host')
+@mock.patch.object(Aws, '_loadConfigDict')
+@mock_ec2_deprecated
+def test_start(load_config_dict_mock, pre_add_host_mock,
+               fire_provisioned_even_mock, dbm):
+    """
+    Test ResourceAdapter.start() workflow
+    """
+
+    load_config_dict_mock.return_value = {
+        'ami': 'ami-abcd1234',
+        'use_instance_hostname': 'true',
     }
 
+    with dbm.session() as session:
+        adapter = Aws(addHostSession='123EXAMPLE')
 
-def test_invalid_adapter_configuration():
-    """Ensure exception is raissed from missing required settings"""
+        # override default sleep time
+        adapter.LAUNCH_INITIAL_SLEEP_TIME = 0.0
 
-    with pytest.raises(ConfigurationError):
-        with patch.object(
-                ResourceAdapter, 'getResourceAdapterConfig', return_value={}):
-            Aws().getResourceAdapterConfig()
+        adapter.TEST_MODE = True
+
+        addNodesRequest = {
+            'count': 2,
+        }
+
+        hardwareprofile = HardwareProfilesDbHandler().getHardwareProfile(
+            session, 'aws2'
+        )
+
+        softwareprofile = SoftwareProfilesDbHandler().getSoftwareProfile(
+            session, 'compute'
+        )
+
+        nodes = adapter.start(
+            addNodesRequest, session, hardwareprofile,
+            dbSoftwareProfile=softwareprofile
+        )
+
+        assert nodes and isinstance(nodes, list) and \
+            isinstance(nodes[0], Node)
+
+        assert nodes[0].instance.instance
+
+        if len(nodes) > 1:
+            assert nodes[1].instance.instance
+
+    pre_add_host_mock.assert_called()
+
+    fire_provisioned_even_mock.assert_called()
 
 
-def test_minimal_config(minimal_configDict):
-    with patch.object(
-            ResourceAdapter, 'getResourceAdapterConfig',
-            return_value=minimal_configDict):
-        config = Aws().getResourceAdapterConfig()
-
-        assert 'ami' in config
-
-        assert config['ami'] == 'ami-XXXXXXXX'
-
-        assert isinstance(config['override_dns_domain'], bool)
-
-        assert not config['override_dns_domain']
-
-        assert config['dns_domain'] is None
-
-
-def test_override_dns_domain_enabled():
+@mock.patch.object(Aws, 'fire_provisioned_event')
+@mock.patch.object(Aws, '_pre_add_host')
+@mock.patch.object(Aws, '_loadConfigDict')
+@mock_ec2_deprecated
+def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
+                           fire_provisioned_even_mock, dbm):
     configDict = {
-        'ami': 'ami-XXXXXXXX',
-        'override_dns_domain': str(True),
+        'ami': 'ami-abcd1234',
+        'use_instance_hostname': 'true',
     }
 
-    with patch.object(
-            ResourceAdapter, 'getResourceAdapterConfig',
-            return_value=configDict):
-        config = Aws().getResourceAdapterConfig()
+    load_config_dict_mock.return_value = configDict
 
-        assert isinstance(config['override_dns_domain'], bool)
+    with dbm.session() as session:
+        addHostSession = '123EXAMPLE'
 
-        assert config['override_dns_domain']
+        adapter = Aws(addHostSession=addHostSession)
 
-        # when 'dns_domain' is not specified in the resource adapter
-        # configuration, the current private DNS zone is used. We don't
-        # care what the value is as long as there is one.
-        assert isinstance(config['dns_domain'], str)
-        assert config['dns_domain']
+        # override default sleep time
+        adapter.LAUNCH_INITIAL_SLEEP_TIME = 0.0
 
+        count = 3
 
-def test_override_dns_domain_enabled_with_dns_domain():
-    configDict = {
-        'ami': 'ami-XXXXXXXX',
-        'override_dns_domain': str(True),
-        'dns_domain': 'mydomain',
-    }
+        hardwareprofile = HardwareProfilesDbHandler().getHardwareProfile(
+            session, 'aws2'
+        )
 
-    with patch.object(
-            ResourceAdapter, 'getResourceAdapterConfig',
-            return_value=configDict):
-        config = Aws().getResourceAdapterConfig()
+        softwareprofile = SoftwareProfilesDbHandler().getSoftwareProfile(
+            session, 'compute'
+        )
 
-        assert isinstance(config['override_dns_domain'], bool)
+        # create instances to be associated with nodes
+        conn = boto.connect_ec2('the_key', 'the_secret')
 
-        assert config['override_dns_domain']
+        conn.run_instances(
+            configDict['ami'],
+            min_count=count,
+            max_count=count
+        )
 
-        assert config['dns_domain'] == 'mydomain'
+        # get newly created instances
+        instances = conn.get_only_instances()
+
+        # intialize 'addNodesRequest'
+        addNodesRequest = {
+            'nodeDetails': [],
+        }
+
+        for instance in instances:
+            addNodesRequest['nodeDetails'].append({
+                'name': instance.private_dns_name,
+                'metadata': {
+                    'ec2_instance_id': instance.id,
+                    'ec2_ipaddress': instance.private_ip_address,
+                }
+            })
+
+        # call Aws.start() with instance metadata
+        nodes = adapter.start(
+            addNodesRequest, session, hardwareprofile,
+            dbSoftwareProfile=softwareprofile
+        )
+
+        assert nodes and len(nodes) == count
+
+        assert isinstance(nodes[0], Node)
+
+        assert nodes[0].softwareprofile.name == softwareprofile.name
+
+        assert nodes[0].hardwareprofile.name == hardwareprofile.name
+
+        assert nodes[0].addHostSession == addHostSession
+
+        fire_provisioned_even_mock.assert_called()
+
+        pre_add_host_mock.assert_called()
