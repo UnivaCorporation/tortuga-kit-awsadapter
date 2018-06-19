@@ -201,7 +201,7 @@ class Aws(ResourceAdapter):
 
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
-    def getEC2Connection(self, configDict: dict) -> EC2Connection:
+    def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         connectionArgs = dict(
             aws_access_key_id=configDict['awsaccesskey'],
             aws_secret_access_key=configDict['awssecretkey'],
@@ -735,9 +735,11 @@ class Aws(ResourceAdapter):
         launch_request.softwareprofile = dbSoftwareProfile
         launch_request.addNodesRequest = addNodesRequest
 
-        cfgname = addNodesRequest['resource_adapter_configuration'] \
-            if 'resource_adapter_configuration' in addNodesRequest else \
-            None
+        cfgname = addNodesRequest.get('resource_adapter_configuration')
+        if cfgname is None or cfgname == 'default':
+            # use default resource adapter configuration, if set
+            cfgname = dbHardwareProfile.default_resource_adapter_config.name \
+                if dbHardwareProfile.default_resource_adapter_config else None
 
         launch_request.configDict = self.getResourceAdapterConfig(cfgname)
 
