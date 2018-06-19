@@ -1047,7 +1047,7 @@ class Aws(ResourceAdapter):
     def cancel_spot_instance_requests(self):
         """TODO"""
 
-    def validate_start_arguments(self, addNodesRequest: dict,
+    def validate_start_arguments(self, addNodesRequest: Dict[str, Any],
                                  dbHardwareProfile: HardwareProfile,
                                  dbSoftwareProfile: SoftwareProfile) -> None: \
             # pylint: disable=unused-argument
@@ -1060,9 +1060,11 @@ class Aws(ResourceAdapter):
             ConfigurationError
         """
 
-        cfgname = addNodesRequest['resource_adapter_configuration'] \
-            if 'resource_adapter_configuration' in addNodesRequest else \
-            None
+        cfgname = addNodesRequest.get('resource_adapter_configuration')
+        if cfgname is None or cfgname == 'default':
+            # use default resource adapter configuration, if set
+            cfgname = dbHardwareProfile.default_resource_adapter_config.name \
+                if dbHardwareProfile.default_resource_adapter_config else None
 
         configDict = self.getResourceAdapterConfig(cfgname)
 
@@ -1871,7 +1873,7 @@ fqdn: %s
         return security_group
 
     def _validate_ec2_launch_args(self, conn: EC2Connection,
-                                  configDict: dict):
+                                  configDict: Dict[str, Any]):
         # # Get the kernel, if specified
         # if 'aki' in configDict and configDict['aki']:
         #     try:
