@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import socket
-
 import pytest
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy import create_engine
 
 import tortuga.resourceAdapter
 import tortuga.resourceAdapter.aws.aws
-from tortuga.config.configManager import ConfigManager
+from tortuga.config.configManager import ConfigManager, getfqdn
 from tortuga.db import (adminDbApi, globalParameterDbApi, hardwareProfileDbApi,
                         kitDbApi, networkDbApi, nodeDbApi,
                         softwareProfileDbApi)
@@ -88,7 +86,7 @@ def dbm():
     os_info = osInfo.OsInfo('centos', '7.4', 'x86_64')
     os_info.setOsFamilyInfo(rhel7_os_family_info)
 
-    installer_fqdn = socket.getfqdn()
+    installer_fqdn = getfqdn()
 
     settings = {
         'language': 'en',
