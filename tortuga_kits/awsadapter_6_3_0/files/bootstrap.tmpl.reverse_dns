@@ -15,10 +15,10 @@
 # limitations under the License.
 
 import os
-import itertools
 import subprocess
-import random
+import socket
 import urllib2
+import platform
 import time
 import base64
 import json
@@ -26,20 +26,19 @@ import json
 ### SETTINGS
 
 
-def tryCommand(command, good_return_values=(0,), retry_limit=0,
-               time_limit=0, max_sleep_time=15000, sleep_interval=2000):
-    total_sleep_time = 0
-    for retries in itertools.count(0):
-        returned = subprocess.Popen(command, shell=True).wait()
-        if returned in good_return_values or \
-                retries >= retry_limit or total_sleep_time >= time_limit:
-            return returned
+def runCommand(cmd, retries=1):
+    for nRetry in range(retries):
+        p = subprocess.Popen(cmd, shell=True)
 
-        seed = min(max_sleep_time, sleep_interval * 2 ** retries)
-        sleep_for = (seed / 2 + random.randint(0, seed / 2)) / 1000.0
-        total_sleep_time += sleep_for
+        retval = p.wait()
+        if retval == 0:
+            break
 
-        time.sleep(sleep_for)
+        time.sleep(5 + 2 ** (nRetry * 0.75))
+    else:
+        return -1
+
+    return retval
 
 
 def _installPackage(pkgList, yumopts=None, retries=10):
@@ -50,39 +49,37 @@ def _installPackage(pkgList, yumopts=None, retries=10):
 
     cmd += ' -y install %s' % (pkgList)
 
-    retval = tryCommand(cmd, retry_limit=retries)
+    retval = runCommand(cmd, retries)
     if retval != 0:
         raise Exception('Error installing package [%s]' % (pkgList))
 
 
 def _isPackageInstalled(pkgName):
-    return tryCommand('rpm -q --quiet %s' % pkgName) == 0
+    return runCommand('rpm -q --quiet %s' % (pkgName)) == 0
 
 
-def installPuppet():
-    pkgname = 'puppetlabs-release-pc1'
+def installPuppet(vers):
+    pkgname = 'puppet5-release'
 
-    url = 'http://yum.puppetlabs.com/%s-el-6.noarch.rpm' % pkgname
+    url = 'http://yum.puppetlabs.com/puppet5/%s-el-%s.noarch.rpm' % (pkgname, vers)
 
     bRepoInstalled = _isPackageInstalled(pkgname)
 
     if not bRepoInstalled:
-        retval = tryCommand('rpm -ivh %s' % url, retry_limit=5)
+        retval = runCommand('rpm -ivh %s' % (url), 5)
         if retval != 0:
-            raise Exception(
-                'Unable to install package [puppetlabs-release]')
+            sys.stderr.write(
+                'Error: unable to install package \"{0}\"\n'.format(pkgname))
 
-    # Attempt to install 'puppet-agent'
+            sys.exit(1)
+
+    # Attempt to install puppet
     if not _isPackageInstalled('puppet-agent'):
         _installPackage('puppet-agent')
 
 
 def setHostName():
     url = 'https://%s:%s/v1/identify-node' % (installerIpAddress, port)
-
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
 
     req = urllib2.Request(url)
 
@@ -93,9 +90,9 @@ def setHostName():
 
     for nCount in range(5):
         try:
-            response = urllib2.urlopen(req, context=ctx)
+            response = urllib2.urlopen(req)
             break
-        except urllib2.URLError:
+        except urllib2.URLError as ex:
             pass
         except urllib2.HTTPError as ex:
             if ex.code == 401:
@@ -124,47 +121,72 @@ def setHostName():
 
     h = d['node']['name']
 
-    tryCommand('hostname %s' % h)
+    runCommand('hostname %s' % (h))
 
     with open('/etc/sysconfig/network', 'a') as fp:
-        fp.write('HOSTNAME=\"%s\"\n' % h)
+        fp.write('HOSTNAME=\"%s\"\n' % (h))
 
     return h
+
+
+def updateResolver(domainName):
+    with open('/etc/resolv.conf', 'w') as fp:
+        if domainName:
+            fp.write('search %s\n' % (domainName))
+
+        fp.write('nameserver %s\n' % (installerIpAddress))
 
 
 def bootstrapPuppet():
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
-           ' --onetime --server %s --waitforcert 120' % installerHostName)
+           ' --onetime --server %s --waitforcert 120' % (installerHostName))
 
-    tryCommand(cmd, good_return_values=(0, 2), time_limit=10 * 60)
+    runCommand(cmd)
 
 
 def main():
-    domainName = dns_search
+    subprocess.Popen('yum install -y bind-utils', shell=True).wait()
+    
+    cmd = 'ip -4 a s eth0 | awk \'/inet/ { print $2}\' | sed \'s/\/.*//\''
+    
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    result = p.stdout.readline().rstrip()
+    retval = p.wait()
+    if retval == 0:
+        print('Detected IP address: {}'.format(result))
 
-    global dns_nameservers
+        fqdn = socket.gethostbyaddr(result)[0]
+        
+        cmd = 'hostnamectl set-hostname --static {}'.format(fqdn)
+        p = subprocess.Popen(cmd, shell=True)
+        retval = p.wait()
+        if retval != 0:
+            print('Error setting hostname using \'hostnamectl\'')
 
     if override_dns_domain:
         with open('/etc/resolv.conf', 'w') as fp:
             fp.write('# Created by Tortuga\n')
 
-            if domainName is not None:
-                fp.write('search %s\n' % domainName)
+            if dns_search is not None:
+                fp.write('search %s\n' % (dns_search))
 
             if dns_options is not None:
                 fp.write('options %s\n' % (dns_options))
 
-            if not dns_nameservers:
-                dns_nameservers = [installerIpAddress]
-
             for dns_nameserver in dns_nameservers:
                 fp.write('nameserver %s\n' % (dns_nameserver))
+
+    runCommand('setenforce permissive')
+
+    vals = platform.dist()
+
+    vers = vals[1].split('.')[0]
 
     with open('/etc/hosts', 'a+') as fp:
         fp.write('%s\t%s\n' % (installerIpAddress, installerHostName))
 
-    installPuppet()
+    installPuppet(vers)
 
     bootstrapPuppet()
 

@@ -13,5 +13,3 @@
 # limitations under the License.
 
 __import__('pkg_resources').declare_namespace(__name__)
-
-from .aws import Aws

@@ -22,7 +22,8 @@ setup(
     author='Univa Corp',
     author_email='info@univa.com',
     license='Commercial',
-    packages=find_packages(exclude=['tortuga_kits']),
+    packages=find_packages(where='src'),
+    package_dir={'': 'src'},
     namespace_packages=[
         'tortuga',
         'tortuga.resourceAdapter'
@@ -36,6 +37,7 @@ setup(
         'click',
         'colorama',
         'daemonize',
+        'Jinja2',
     ],
     entry_points={
         'console_scripts': [

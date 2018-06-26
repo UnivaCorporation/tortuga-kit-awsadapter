@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,8 +14,9 @@
 
 import pprint
 import unittest
+
+from tortuga.exceptions.configurationError import ConfigurationError
 from tortuga.resourceAdapter.aws import Aws
-from tortuga.exceptions.invalidArgument import InvalidArgument
 
 
 class AwsAdapterTestSuite(unittest.TestCase):
@@ -64,7 +63,7 @@ class AwsAdapterTestSuite(unittest.TestCase):
 
     def test_failed_block_device_mapping(self):
         self.assertRaises(
-            InvalidArgument,
+            ConfigurationError,
             self.adapter._Aws__process_block_device_map, 'chicken')
 
     def test_simple_snapshot_device_mapping(self):
@@ -93,7 +92,7 @@ class AwsAdapterTestSuite(unittest.TestCase):
         volume_type = 'io1'
 
         self.assertRaises(
-            InvalidArgument,
+            ConfigurationError,
             self.adapter._Aws__process_block_device_map,
             '/dev/sda=:::%s' % (volume_type))
 
