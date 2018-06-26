@@ -2540,17 +2540,31 @@ fqdn: %s
         :param name: node name
         :return: number of vcpus
         :returntype: int
+
         """
 
+        #
+        # Default to zero, because if for some reason the node can't be found
+        # (i.e. it was deleted in the background), then it will not be using
+        # any cpus
+        #
+        vcpus = 0
+
         with DbManager().session() as session:
-            configDict = self.get_node_resource_adapter_config(
-                NodesDbHandler().getNode(session, name)
-            )
+            try:
+                configDict = self.get_node_resource_adapter_config(
+                    NodesDbHandler().getNode(session, name)
+                )
 
-        if 'vcpus' in configDict:
-            return configDict['vcpus']
+                vcpus = configDict.get('vcpus', 0)
+                if not vcpus:
+                    vcpus = self.get_instance_size_mapping(
+                        configDict['instancetype'])
 
-        return self.get_instance_size_mapping(configDict['instancetype'])
+            except NodeNotFound:
+                pass
+
+        return vcpus
 
     def get_instance_size_mapping(self, value: str) -> int:
         """
