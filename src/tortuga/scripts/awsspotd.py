@@ -33,6 +33,7 @@ from tortuga.exceptions.nodeAlreadyExists import NodeAlreadyExists
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.hardwareprofile.hardwareProfileApi import HardwareProfileApi
 from tortuga.node.nodeApi import NodeApi
+from tortuga.node import state
 from tortuga.wsapi.addHostWsApi import AddHostWsApi
 
 
@@ -471,7 +472,7 @@ class AWSSpotdAppClass(object):
 
             # Mark node as 'Provisioned' now that there's a backing instance
             NodeApi().updateNode(node_name, updateNodeRequest={
-                'state': 'Provisioned',
+                'state': state.NODE_STATE_PROVISIONED,
                 'nics': [
                     {
                         'ip': instance.private_ip_address,
