@@ -15,7 +15,12 @@
 
 class tortuga_kit_awsadapter::params {
   $major_version = '6.3'
-  $version = "${major_version}.0"
 
-  $kitdescr = "awsadapter-${version}-0"
+  $minor_version = '1'
+
+  $version = "${major_version}.${minor_version}"
+
+  $iteration = '0'
+
+  $kitdescr = "awsadapter-${version}-${iteration}"
 }
