@@ -54,6 +54,7 @@ from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
+from tortuga.node import state
 from tortuga.objects import resourceadapter_settings as settings
 from tortuga.resourceAdapter.resourceAdapter import DbManager, ResourceAdapter
 from tortuga.utility.helper import str2bool
@@ -849,7 +850,7 @@ class Aws(ResourceAdapter):
             node.softwareprofile = launch_request.softwareprofile
             node.hardwareprofile = launch_request.hardwareprofile
             node.isIdle = False
-            node.state = 'Provisioned'
+            node.state = state.NODE_STATE_PROVISIONED
             node.addHostSession = self.addHostSession
 
             node.nics = [Nic(ip=ip, boot=True)]
@@ -1714,7 +1715,7 @@ fqdn: %s
         # This node is ready
         node_request['status'] = 'running'
 
-        node.state = 'Provisioned'
+        node.state = state.NODE_STATE_PROVISIONED
 
         self.fire_provisioned_event(node)
 
@@ -2477,7 +2478,7 @@ fqdn: %s
         addNodesRequest['resource_adapter_configuration'] = \
             node.instance.resource_adapter_configuration.name
 
-        if node.state == 'Allocated' and \
+        if node.state == state.NODE_STATE_ALLOCATED and \
                 'state' in updateNodeRequest and \
                 updateNodeRequest['state'] != 'Allocated':
             # Node state transitioning from 'Allocated'
