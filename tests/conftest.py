@@ -218,7 +218,7 @@ def dbm():
             description='Example default resource adapter configuration'
         )
 
-        aws_adapter_cfg.settings.append(
+        aws_adapter_cfg.configuration.append(
             ResourceAdapterSetting(key='ami', value='ami-abcd1234')
         )
 
@@ -227,7 +227,7 @@ def dbm():
         # add second resource adapter configuration
         aws_adapter_cfg2 = ResourceAdapterConfig(
             name='nondefault', admin=admin)
-        aws_adapter_cfg2.settings.append(
+        aws_adapter_cfg2.configuration.append(
             ResourceAdapterSetting(key='another_key', value='another_value')
         )
 
