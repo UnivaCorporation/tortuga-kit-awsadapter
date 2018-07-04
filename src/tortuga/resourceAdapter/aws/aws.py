@@ -97,12 +97,14 @@ class Aws(ResourceAdapter):
         'cloud_init_script_template': settings.FileSetting(
             description='Path to cloud init script',
             mutually_exclusive=['user_data_script_template'],
-            base_path='/opt/tortuga/config/'
+            base_path='/opt/tortuga/config/',
+            overrides=['user_data_script_template']
         ),
         'user_data_script_template': settings.FileSetting(
             description='Path to user date template script',
             mutually_exclusive=['cloud_init_script_template'],
-            base_path='/opt/tortuga/config/'
+            base_path='/opt/tortuga/config/',
+            overrides=['cloud_init_script_template']
         ),
         'endpoint': settings.StringSetting(
             description='AWS (or compatible) API endpoint'
