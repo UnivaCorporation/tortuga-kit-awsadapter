@@ -489,6 +489,7 @@ class Aws(ResourceAdapter):
 
         Raises:
             InvalidArgument
+
         """
 
         self.getLogger().debug(
@@ -1456,7 +1457,7 @@ fqdn: %s
 
         total_sleep = 0
 
-        while total_sleep < self.DEFAULT_CREATE_TIMEOUT:
+        while total_sleep < launch_request.configDict['createtimeout']:
             try:
                 self.__assign_tags(
                     launch_request.configDict, launch_request.conn, node,
@@ -1472,7 +1473,7 @@ fqdn: %s
 
             total_sleep += 3
 
-        if total_sleep >= self.DEFAULT_CREATE_TIMEOUT:
+        if total_sleep >= launch_request.configDict['createtimeout']:
             raise AWSOperationTimeoutError(
                 'Timeout attempting to assign tags to instance {0}'.format(
                     instance.id))
