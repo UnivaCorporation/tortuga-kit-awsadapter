@@ -414,10 +414,8 @@ def main(verbose, debug, ignore_iam, unattended, profile):
     }
 
     if access_key and secret_key:
-        adapter_cfg['awsaccesskey'] = access_key
-        adapter_cfg['awssecretkey'] = secret_key
-    elif iam_profile_name:
-        adapter_cfg['iam_instance_profile_name'] = iam_profile_name
+        adapter_cfg['awsAccessKey'] = access_key
+        adapter_cfg['awsSecretKey'] = secret_key
 
     override_adapter_cfg = {
         'keypair': keypair,

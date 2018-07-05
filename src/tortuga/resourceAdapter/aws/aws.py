@@ -80,20 +80,14 @@ class Aws(ResourceAdapter):
             description='AMI ID to use for launching node instances'
         ),
         'awsAccessKey': settings.StringSetting(
-            required=True,
             secret=True,
             description='AWS API access key',
-            requires=['awsSecretKey'],
-            overrides=['iam_instance_profile_name'],
-            mutually_exclusive=['iam_instance_profile_name']
+            requires=['awsSecretKey']
         ),
         'awsSecretKey': settings.StringSetting(
-            required=True,
             secret=True,
             description='AWS API secret key',
-            requires=['awsAccessKey'],
-            overrides=['iam_instance_profile_name'],
-            mutually_exclusive=['iam_instance_profile_name']
+            requires=['awsAccessKey']
         ),
         'block_device_map': settings.StringSetting(
             description='Block device map for new node instances'
@@ -115,10 +109,7 @@ class Aws(ResourceAdapter):
         ),
         'iam_instance_profile_name': settings.StringSetting(
             description='IAM Instance Profile (IIP) name to associate with '
-                        'new node instance(s)',
-            required=True,
-            mutually_exclusive=['awsAccessKey', 'awsSecretKey'],
-            overrides=['awsAccessKey', 'awsSecretKey']
+                        'new node instance(s)'
         ),
         'instancetype': settings.StringSetting(
             description='AWS compute node instance type',
