@@ -234,8 +234,8 @@ class Aws(ResourceAdapter):
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         connectionArgs = dict(
-            aws_access_key_id=configDict['awsAccessKey'],
-            aws_secret_access_key=configDict['awsSecretKey'],
+            aws_access_key_id=configDict.get('awsAccessKey', None),
+            aws_secret_access_key=configDict.get('awsSecretKey', None),
         )
 
         if 'proxy_host' in configDict:
@@ -343,8 +343,8 @@ class Aws(ResourceAdapter):
         try:
             vpcconn = boto.vpc.connect_to_region(
                 config['region'],
-                aws_access_key_id=config['awsAccessKey'],
-                aws_secret_access_key=config['awsSecretKey']
+                aws_access_key_id=config.get('awsAccessKey', None),
+                aws_secret_access_key=config.get('awsSecretKey', None)
             )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(
