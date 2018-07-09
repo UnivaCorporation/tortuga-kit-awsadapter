@@ -1661,6 +1661,8 @@ fqdn: %s
             # Update node name based on instance name assigned by AWS
             node.name = self.__get_node_name(launch_request, instance)
 
+            node.public_hostname = instance.public_dns_name
+
             resource_adapter_configuration = self.load_resource_adapter_config(
                 dbSession,
                 launch_request.addNodesRequest.get('resource_adapter_configuration')
