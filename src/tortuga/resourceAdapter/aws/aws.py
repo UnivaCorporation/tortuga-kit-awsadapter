@@ -25,7 +25,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from typing.io import TextIO
 
 import boto
@@ -1012,7 +1012,7 @@ class Aws(ResourceAdapter):
                                          dbHardwareProfile: HardwareProfile,
                                          dbSoftwareProfile: SoftwareProfile,
                                          cfgname: Union[str, None] = None) \
-            -> NoReturn:
+            -> None:
         # Send message to awsspotd (using zeromq)
         context = zmq.Context()
 
@@ -1594,7 +1594,7 @@ fqdn: %s
                 self.__launch_wait_queue.task_done()
 
     def __wait_for_instances(self, dbSession: Session,
-                             launch_request: LaunchRequest) -> NoReturn:
+                             launch_request: LaunchRequest) -> None:
         """
         Raises:
             ConfigurationError
@@ -1622,7 +1622,7 @@ fqdn: %s
 
     def __post_launch_action(self, dbSession: Session,
                              launch_request: LaunchRequest,
-                             node_request: dict) -> NoReturn:
+                             node_request: dict) -> None:
         """
         Perform tasks after instance has been launched successfully
 
@@ -1660,6 +1660,8 @@ fqdn: %s
         if launch_request.configDict['use_instance_hostname']:
             # Update node name based on instance name assigned by AWS
             node.name = self.__get_node_name(launch_request, instance)
+
+            node.public_hostname = instance.public_dns_name
 
             resource_adapter_configuration = self.load_resource_adapter_config(
                 dbSession,
@@ -2284,7 +2286,7 @@ fqdn: %s
             )
 
     def transferNode(self, nodeIdSoftwareProfileTuples: Tuple[Node, str],
-                     newSoftwareProfileName: str) -> NoReturn:
+                     newSoftwareProfileName: str) -> None:
         """
         Transfer the given idle node
         """
@@ -2384,7 +2386,7 @@ fqdn: %s
         return {}
 
     def rebootNode(self, nodes: List[Node],
-                   bSoftReset: Optional[bool] = False) -> NoReturn:
+                   bSoftReset: Optional[bool] = False) -> None:
         self.getLogger().debug(
             'rebootNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
@@ -2427,7 +2429,7 @@ fqdn: %s
                     node.name, instance.id))
 
     def shutdownNode(self, nodes: List[Node],
-                     bSoftReset: Optional[bool] = False) -> NoReturn:
+                     bSoftReset: Optional[bool] = False) -> None:
         self.getLogger().debug(
             'shutdownNode(): nodes=[%s], soft=[%s]' % (
                 ' '.join([node.name for node in nodes]), bSoftReset))
@@ -2468,7 +2470,7 @@ fqdn: %s
                 continue
 
     def updateNode(self, session: Session, node: Node,
-                   updateNodeRequest: dict) -> NoReturn: \
+                   updateNodeRequest: dict) -> None: \
             # pylint: disable=unused-argument
         self.getLogger().debug(
             'updateNode(): node=[{0}]'.format(node.name))
