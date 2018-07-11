@@ -45,7 +45,7 @@ setup(
     url='http://univa.com',
     author='Univa Corp',
     author_email='info@univa.com',
-    license='Commercial',
+    license='Apache 2.0',
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     namespace_packages=[
