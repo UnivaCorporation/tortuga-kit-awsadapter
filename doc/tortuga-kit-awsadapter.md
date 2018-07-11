@@ -22,7 +22,7 @@ load).
 
 The AWS Adapter Kit installs as a standard kit using `install-kit`:
 
-    install-kit kit-awsadapter-6.3.0-0.tar.bz2
+    install-kit kit-awsadapter-6.3.1-0.tar.bz2
 
 After installing the AWS Adapter Kit and enabling the management component, the following changes are made within Tortuga:
 
@@ -55,8 +55,8 @@ After installing the AWS Adapter Kit and enabling the management component, the 
    **dns** component *must* also be enabled to map Tortuga-assigned host names to
    AWS instances.
 
-        enable-component -p awsadapter-6.3.0-0 management-6.3 --no-sync
-        enable-component -p base-6.3.0-0 dns-6.3
+        enable-component -p awsadapter-6.3.1-0 management-6.3 --no-sync
+        enable-component -p base-6.3.1-0 dns-6.3
 
 ### Creating AWS Hardware Profile
 
