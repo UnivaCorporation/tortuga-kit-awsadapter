@@ -55,9 +55,8 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
-from tortuga.objects import resourceadapter_settings as settings
+from tortuga.resourceAdapterConfiguration import settings
 from tortuga.resourceAdapter.resourceAdapter import DbManager, ResourceAdapter
-from tortuga.utility.helper import str2bool
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import _get_encoded_list, ec2_get_root_block_devices
@@ -81,41 +80,36 @@ class Aws(ResourceAdapter):
             description='AMI ID to use for launching node instances'
         ),
         'awsAccessKey': settings.StringSetting(
-            required=True,
             secret=True,
             description='AWS API access key',
-            mutually_exclusive=['iam_instance_profile_name'],
             requires=['awsSecretKey']
         ),
         'awsSecretKey': settings.StringSetting(
-            required=True,
             secret=True,
             description='AWS API secret key',
-            mutually_exclusive=['iam_instance_profile_name'],
             requires=['awsAccessKey']
         ),
         'block_device_map': settings.StringSetting(
             description='Block device map for new node instances'
         ),
-        'cloud_init': settings.BooleanSetting(
-            description='Enable/disable cloud-init script user-data',
-            default=True
-        ),
         'cloud_init_script_template': settings.FileSetting(
             description='Path to cloud init script',
-            mutually_exclusive=['user_data_script_template']
+            mutually_exclusive=['user_data_script_template'],
+            base_path='/opt/tortuga/config/',
+            overrides=['user_data_script_template']
         ),
         'user_data_script_template': settings.FileSetting(
             description='Path to user date template script',
-            mutually_exclusive=['cloud_init_script_template']
+            mutually_exclusive=['cloud_init_script_template'],
+            base_path='/opt/tortuga/config/',
+            overrides=['cloud_init_script_template']
         ),
         'endpoint': settings.StringSetting(
             description='AWS (or compatible) API endpoint'
         ),
         'iam_instance_profile_name': settings.StringSetting(
             description='IAM Instance Profile (IIP) name to associate with '
-                        'new node instance(s)',
-            mutually_exclusive=['awsAccessKey', 'awsSecretKey']
+                        'new node instance(s)'
         ),
         'instancetype': settings.StringSetting(
             description='AWS compute node instance type',
@@ -128,9 +122,10 @@ class Aws(ResourceAdapter):
         ),
         'override_dns_domain': settings.BooleanSetting(
             description='Allow the compute node bootstrap process to manage '
-                        '/etc/resolv.conf'
+                        '/etc/resolv.conf',
+            default='False'
         ),
-        'dns_search': settings.StringSetting(
+        'dns_domain': settings.StringSetting(
             description='The DNS search order to be configured on new node '
                         'instances',
             requires=['override_dns_domain']
@@ -144,10 +139,13 @@ class Aws(ResourceAdapter):
             description='specifies the "nameservers" field in '
                         '/etc/resolv.conf on compute node instances and is '
                         'a space-separated list of IP addresses',
-            requires=['override_dns_domain']
+            requires=['override_dns_domain'],
+            list=True,
+            list_separator=' '
         ),
         'use_domain_from_dhcp_option_set': settings.BooleanSetting(
             description='use domain specified in DHCP option set',
+            default='False'
         ),
         'region': settings.StringSetting(
             description='AWS region',
@@ -162,7 +160,8 @@ class Aws(ResourceAdapter):
         'securitygroup': settings.StringSetting(
             description='AWS security group. This security group must allow '
                         'unrestricted access between the Tortuga installer '
-                        'and compute instances.'
+                        'and compute instances.',
+            list=True
         ),
         'subnet_id': settings.StringSetting(
             description='AWS subnet ID for new node instances'
@@ -173,25 +172,47 @@ class Aws(ResourceAdapter):
         ),
         'use_instance_hostname': settings.BooleanSetting(
             description='When true, the AWS-assigned host name will be '
-                        'used as the host name for new instances'
+                        'used as the host name for new instances',
+            default='True'
         ),
         'vcpus': settings.IntegerSetting(
-            description='The of virtual CPUs for the resource adapter '
+            description='The number of virtual CPUs for the resource adapter '
                         'configuration profile'
         ),
         'launch_timeout': settings.IntegerSetting(
             description='Timeout (in seconds) of the launch request',
-            default=300
-        )
+            default='300'
+        ),
+        'vpc_gateway': settings.StringSetting(),
+        'monitoring_enabled': settings.BooleanSetting(),
+        'ebs_optimized': settings.BooleanSetting(),
+        'associate_public_ip_address': settings.BooleanSetting(
+            default='True'
+        ),
+        'installer_ip': settings.StringSetting(),
+        'use_reverse_dns_hostname': settings.BooleanSetting(
+            default='False',
+            requires=['use_instance_hostname']
+        ),
+        'proxy_host': settings.StringSetting(),
+        'proxy_port': settings.IntegerSetting(),
+        'proxy_user': settings.StringSetting(),
+        'proxy_pass': settings.StringSetting(secret=True),
+        'createtimeout': settings.IntegerSetting(
+            description='Default time in seconds before creates will return '
+                        'even if not completed',
+            default='900',
+            advanced=True
+        ),
+        'sleeptime': settings.IntegerSetting(
+            description='Time (in seconds) between attempts to update EC2 '
+                        'instance status to avoid thrashing',
+            default='5',
+            advanced=True
+        ),
+        'aki': settings.StringSetting(advanced=True),
+        'ari': settings.StringSetting(advanced=True),
     }
-
-    # Default time in seconds before creates will return even if not
-    # completed
-    DEFAULT_CREATE_TIMEOUT = 900
-
-    # Time (seconds) between attempts to update EC2 instance status to
-    # avoid thrashing
-    DEFAULT_SLEEP_TIME = 5
 
     def __init__(self, addHostSession: Optional[str] = None) -> None:
         super(Aws, self).__init__(addHostSession=addHostSession)
@@ -204,8 +225,8 @@ class Aws(ResourceAdapter):
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         connectionArgs = dict(
-            aws_access_key_id=configDict['awsaccesskey'],
-            aws_secret_access_key=configDict['awssecretkey'],
+            aws_access_key_id=configDict.get('awsAccessKey', None),
+            aws_secret_access_key=configDict.get('awsSecretKey', None),
         )
 
         if 'proxy_host' in configDict:
@@ -225,335 +246,81 @@ class Aws(ResourceAdapter):
         return boto.ec2.connect_to_region(configDict['region'],
                                           **connectionArgs)
 
-    def _normalize_resource_adapter_config(
-            self, default_config: Dict[str, str],
-            override_config: Optional[Dict[str, str]]) -> dict:
-        """
-        'default_config' and 'override_config' are key-value pairs
-        extracted from the resource adapter configuration.
-        """
-
-        configDict = dict.copy(default_config or {})
-
-        # 'user_data_script_template' and 'cloud_init_script_template'
-        # are mutually exclusive arguments. Ensure resource adapter
-        # configuration overrides default settings accordingly.
-
-        if override_config:
-            if 'user_data_script_template' in override_config and \
-                    'cloud_init_script_template' in default_config:
-                del default_config['cloud_init_script_template']
-
-            if 'cloud_init_script_template' in override_config and \
-                    'user_data_script_template' in default_config:
-                del configDict['user_data_script_template']
-
-            configDict.update(override_config)
-
-        config = {}
-
-        if 'ami' in configDict:
-            config['ami'] = configDict['ami']
-
-        reqd_settings = ['ami']
-
-        missing = set(reqd_settings) - set(config.keys())
-
-        if missing:
-            errmsg = 'Missing required EC2 configuration parameter(s): %s' % (
-                ' '.join(missing))
-
-            self.getLogger().error(errmsg)
-
-            raise ConfigurationError(errmsg)
-
-        # Copy values from src dict to dst dict
-
-        # Configuration - required items
-        for key in reqd_settings:
-            if key not in configDict:
-                continue
-
-            config[key] = configDict[key]
-
-        # Configuration - optional items
-        optional_settings = [
-            'keypair',
-            'instancetype',
-            'region',
-            'securitygroup',
-            'sleeptime',
-            'zone',
-            'placementgroup',
-            'endpoint',
-            'user_data_script_template',
-            'cloud_init',
-            'cloud_init_script_template',
-            'subnet_id', 'vpc_gateway',
-            'use_instance_hostname',
-            'awsaccesskey',
-            'awssecretkey',
-            'monitoring_enabled',
-            'ebs_optimized',
-            'associate_public_ip_address',
-            'use_custom_dns_domain',
-            'override_dns_domain',
-            'dns_search',
-            'dns_domain',
-            'dns_nameservers',
-            'dns_options',
-            'iam_instance_profile_name',
-            'use_domain_from_dhcp_option_set',
-            'installer_ip',
-            'tags',
-            'use_tags',
-            'use_reverse_dns_hostname',
-        ]
-
-        for key in optional_settings:
-            config[key] = configDict[key] if key in configDict else None
-
-        # other settings
-        addl_optional_settings = [
-            'aki',
-            'ari',
-            'proxy_host',
-            'proxy_port',
-            'proxy_user',
-            'proxy_pass',
-            'block_device_map',
-        ]
-
-        for key in addl_optional_settings:
-            if key in configDict:
-                config[key] = configDict[key]
-
-        all_valid_settings = set(reqd_settings + optional_settings + \
-            addl_optional_settings)
-
-        current_settings_keys = set(configDict.keys())
-
-        unknown_settings = current_settings_keys - all_valid_settings
-        if unknown_settings:
-            raise ConfigurationError(
-                'Unsupported AWS resource adapter setting{}: {}'.format(
-                    's' if len(unknown_settings) > 1 else '',
-                    ' '.join(unknown_settings))
-            )
-
-        if 'awsaccesskey' in configDict:
-            # Validate 'awsaccesskey' and 'awssecretkey'
-            if not configDict['awsaccesskey'].strip():
-                raise ConfigurationError(
-                    'AWS configuration item \'awsaccesskey\' cannot be'
-                    ' blank/empty')
-
-            if 'awssecretkey' not in configDict or \
-                    not configDict['awssecretkey'].strip():
-                raise ConfigurationError(
-                    'AWS configuration item \'awssecretkey\' cannot be'
-                    ' blank/empty')
-
-        if config['region'] is None:
-            # default to us-east1-region
-            config['region'] = 'us-east-1'
-
-        if config['installer_ip'] is None:
+    def process_config(self, config: Dict[str, Any]):
+        #
+        # Set the installer IP address if required
+        #
+        if not config.get('installer_ip', None):
             config['installer_ip'] = self.installer_public_ipaddress
 
-        # Security group has to be a list
-        if config['securitygroup']:
-            vals = config['securitygroup'].split(',')
-
-            config['securitygroup'] = [
-                securitygroup.strip() for securitygroup in vals
-            ]
-
-        # Special handling for configuration options which aren't strings
-        config['createtimeout'] = int(configDict['createtimeout']) \
-            if 'createtimeout' in configDict else self.DEFAULT_CREATE_TIMEOUT
-
-        config['launch_timeout'] = int(configDict['launch_timeout']) \
-            if 'launch_timeout' in configDict else 300
-
-        config['sleeptime'] = int(configDict['sleeptime']) \
-            if 'sleeptime' in configDict else self.DEFAULT_SLEEP_TIME
-
-        config['monitoring_enabled'] = self.__convert_to_bool(
-            config['monitoring_enabled'], default=False)
-
-        config['ebs_optimized'] = self.__convert_to_bool(
-            config['ebs_optimized'], default=False)
-
-        if 'cloud_init_script_template' in configDict and \
-                configDict['cloud_init_script_template'] and \
-                'user_data_script_template' in configDict and \
-                configDict['user_data_script_template']:
-            raise ConfigurationError(
-                '\'cloud_init_script_template\' and'
-                ' \'user_data_script_template\' settings are mutually'
-                ' exclusive')
-
-        if 'user_data_script_template' in configDict and \
-                configDict['user_data_script_template']:
-            try:
-                config['user_data_script_template'] = \
-                    self._get_config_file_path(
-                        configDict['user_data_script_template']
-                    )
-
-                del config['cloud_init_script_template']
-
-                # automatically toggle 'cloud_init' flag
-                config['cloud_init'] = True
-            except ConfigurationError as exc:
-                raise ConfigurationError(
-                    'Invalid \'user_data_script_template\''
-                    ' setting: {0}'.format(exc)
-                )
-
-        elif 'cloud_init_script_template' in configDict and \
-                configDict['cloud_init_script_template']:
-            try:
-                config['cloud_init_script_template'] = \
-                    self._get_config_file_path(
-                        configDict['cloud_init_script_template']
-                    )
-
-                del config['user_data_script_template']
-
-                config['cloud_init'] = True
-            except ConfigurationError as exc:
-                raise ConfigurationError(
-                    'Invalid \'cloud_init_script_template\' '
-                    'setting: {0}'.format(exc)
-                )
+        #
+        # Set clould_init if required
+        #
+        if config.get('user_data_script_template', None) or \
+                config.get('cloud_init_script_template', None):
+            config['cloud_init'] = True
         else:
             config['cloud_init'] = False
 
-            del config['user_data_script_template']
-            del config['cloud_init_script_template']
-
-        if 'vpn' in configDict:
-            raise ConfigurationError(
-                'OpenVPN support is obsolete; remove \'vpn\' setting'
-                ' from resource adapter configuration')
-
-        # 'use_instance_hostname' is enabled by default when Tortuga is
-        # hosted on EC2.
-        config['use_instance_hostname'] = self.__convert_to_bool(
-            configDict.get('use_instance_hostname'), default=True
-        )
-
-        # Support for instance tagging is enabled by default
-        config['use_tags'] = self.__convert_to_bool(
-            config['use_tags'], default=True)
-
-        config['use_reverse_dns_hostname'] = \
-            str2bool(configDict['use_reverse_dns_hostname']) \
-            if 'use_reverse_dns_hostname' in configDict else False
-
-        # if 'use_reverse_dns_hostname' is set, ensure 'use_instance_hostname'
-        # is also set
-        if config['use_reverse_dns_hostname'] and \
-            not config['use_instance_hostname']:
-                config['use_instance_hostname'] = True
-
-        # Parse out user-defined tags
-        config['tags'] = {}
-
-        if 'tags' in configDict and configDict['tags']:
+        #
+        # Parse user-defined tags
+        #
+        if 'tags' in config and config['tags']:
+            tags = {}
+            #
             # Support tag names/values containing spaces and tags without a
             # value.
-            for tagdef in shlex.split(configDict['tags']):
+            #
+            for tagdef in shlex.split(config['tags']):
                 key, value = tagdef.rsplit('=', 1) \
                     if '=' in tagdef else (tagdef, '')
+                tags[key] = value
 
-                config['tags'][key] = value
-
+            config['tags'] = tags
             config['use_tags'] = True
 
-        if 'block_device_map' in configDict:
+        #
+        # Setup block device map
+        #
+        if 'block_device_map' in config:
             config['block_device_map'] = self.__process_block_device_map(
-                configDict['block_device_map'])
+                config['block_device_map'])
 
-        # Convert 'associate_public_ip_address' to bool
-        config['associate_public_ip_address'] = self.__convert_to_bool(
-            config['associate_public_ip_address'], default=True)
+        #
+        # DNS specific settings
+        #
+        if config.get('override_dns_domain', None):
+            if not config.get('dns_domain', None):
+                config['dns_domain'] = self.private_dns_zone
 
-        if 'use_custom_dns_domain' in config and \
-                config['use_custom_dns_domain']:
-            self.getLogger().warning(
-                'Setting \'use_custom_dns_domain\' is deprecated.'
-                ' Please use \'override_dns_domain\' to remove this'
-                ' warning.')
+            #
+            # Ensure 'dns_nameservers' defaults to the Tortuga installer
+            # as the DNS nameserver
+            #
+            config['dns_nameservers'] = config.get(
+                'dns_nameservers', []).append(config['installer_ip'])
 
-            config['override_dns_domain'] = self.__convert_to_bool(
-                config['use_custom_dns_domain'])
-        else:
-            config['override_dns_domain'] = self.__convert_to_bool(
-                config['override_dns_domain'])
-
-        del config['use_custom_dns_domain']
-
-        if config['override_dns_domain']:
-            if config['dns_search']:
-                self.getLogger().warning(
-                    'Setting \'dns_search\' is deprecated. Please use'
-                    ' \'dns_domain\' to remove this warning.')
-
-                # Map deprecated 'dns_search' setting to 'dns_domain'
-                config['dns_domain'] = config['dns_search']
-            else:
-                # ensure 'dns_domain' is set
-                if not config['dns_domain']:
-                    config['dns_domain'] = self.private_dns_zone
-
-            config['dns_nameservers'] = config['dns_nameservers'].split(' ') \
-                if config['dns_nameservers'] else []
-
-            if not config['dns_nameservers']:
-                # Ensure 'dns_nameservers' defaults to the Tortuga installer
-                # as the DNS nameserver
-                config['dns_nameservers'].append(
-                    config['installer_ip']
-                    if config['installer_ip'] else
-                    self.installer_public_ipaddress)
-
-        del config['dns_search']
-
+        #
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
-        config['use_domain_from_dhcp_option_set'] = self.__convert_to_bool(
-            config['use_domain_from_dhcp_option_set'], default=False,
-        )
-        if config['subnet_id'] and config['use_domain_from_dhcp_option_set']:
+        #
+        if config.get('subnet_id', None) and \
+                config.get('use_domain_from_dhcp_option_set', None):
+            #
             # Attempt to look up default DNS domain from DHCP options set
+            #
             domain = self.__get_vpc_default_domain(config)
             if domain:
                 self.getLogger().info(
                     'Using default domain [%s] from DHCP option set',
                     domain
                 )
-
                 config['dns_domain'] = domain
                 config['override_dns_domain'] = True
 
-        if 'vcpus' in configDict:
-            try:
-                config['vcpus'] = int(configDict['vcpus'])
-            except ValueError:
-                raise ConfigurationError(
-                    'Invalid/malformed value for \'vcpus\'')
-
-        if config['override_dns_domain'] is None:
-            config['override_dns_domain'] = False
-
-        if config['override_dns_domain']:
+        if config.get('override_dns_domain', None):
             self.getLogger().debug(
                 'Using DNS domain {0} for compute nodes'.format(
                     config['dns_domain']))
-
-        return config
 
     def __get_vpc_default_domain(self, config: dict) -> str: \
             # pylint: disable=no-self-use
@@ -567,8 +334,8 @@ class Aws(ResourceAdapter):
         try:
             vpcconn = boto.vpc.connect_to_region(
                 config['region'],
-                aws_access_key_id=config['awsaccesskey'],
-                aws_secret_access_key=config['awssecretkey']
+                aws_access_key_id=config.get('awsAccessKey', None),
+                aws_secret_access_key=config.get('awsSecretKey', None)
             )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(
@@ -577,7 +344,7 @@ class Aws(ResourceAdapter):
         try:
             # Look up configured subnet_id
             subnet = vpcconn.get_all_subnets(
-                subnet_ids=[config['subnet_id']])[0]
+                subnet_ids=[config.get('subnet_id', None)])[0]
 
             # Look up VPC
             vpc = vpcconn.get_all_vpcs(vpc_ids=[subnet.vpc_id])[0]
@@ -722,6 +489,7 @@ class Aws(ResourceAdapter):
 
         Raises:
             InvalidArgument
+
         """
 
         self.getLogger().debug(
@@ -811,7 +579,7 @@ class Aws(ResourceAdapter):
                 fqdn = self.addHostApi.generate_node_name(
                     session,
                     launch_request.hardwareprofile.nameFormat,
-                    dns_zone=launch_request.configDict['dns_domain'])
+                    dns_zone=launch_request.configDict.get('dns_domain', None))
             else:
                 fqdn = nodedetail['name']
 
@@ -1156,6 +924,7 @@ class Aws(ResourceAdapter):
             -> Dict[str, str]:
         """
         Returns dict containing resource adapter configuration metadata
+
         """
 
         installerIp = config['installer_ip'] \
@@ -1164,7 +933,7 @@ class Aws(ResourceAdapter):
                 hardwareprofile=node.hardwareprofile if node else None)
 
         dns_domain_value = '\'{0}\''.format(config['dns_domain']) \
-            if config['dns_domain'] else None
+            if config.get('dns_domain', None) else None
 
         return {
             'installerHostName': self.installer_public_hostname,
@@ -1173,11 +942,13 @@ class Aws(ResourceAdapter):
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
-            'override_dns_domain': str(config['override_dns_domain']),
+            'override_dns_domain': str(config.get('override_dns_domain',
+                                                  False)),
             'dns_options': '\'{0}\''.format(config['dns_options'])
-                           if config['dns_options'] else None,
+                           if config.get('dns_options', None) else None,
             'dns_domain': dns_domain_value,
-            'dns_nameservers': _get_encoded_list(config['dns_nameservers']),
+            'dns_nameservers': _get_encoded_list(
+                config.get('dns_nameservers', None)),
         }
 
     def __get_common_user_data_content(
@@ -1688,7 +1459,7 @@ fqdn: %s
 
         total_sleep = 0
 
-        while total_sleep < self.DEFAULT_CREATE_TIMEOUT:
+        while total_sleep < launch_request.configDict['createtimeout']:
             try:
                 self.__assign_tags(
                     launch_request.configDict, launch_request.conn, node,
@@ -1704,7 +1475,7 @@ fqdn: %s
 
             total_sleep += 3
 
-        if total_sleep >= self.DEFAULT_CREATE_TIMEOUT:
+        if total_sleep >= launch_request.configDict['createtimeout']:
             raise AWSOperationTimeoutError(
                 'Timeout attempting to assign tags to instance {0}'.format(
                     instance.id))
@@ -1727,7 +1498,7 @@ fqdn: %s
         Add tags to instance and attached EBS volumes
         """
 
-        if not configDict['use_tags']:
+        if not configDict.get('use_tags', None):
             return
 
         instance_specific_tags = {
@@ -1743,12 +1514,12 @@ fqdn: %s
                 self.installer_public_ipaddress,
         }
 
-        instance_specific_tags.update(configDict['tags'])
+        instance_specific_tags.update(configDict.get('tags', {}))
 
         if configDict['use_instance_hostname']:
             # Use default "Name" tag, if not defined in adapter
             # configuration
-            if 'Name' not in configDict['tags']:
+            if 'Name' not in configDict.get('tags', {}):
                 instance_specific_tags['Name'] = 'Tortuga compute node'
         else:
             # Fallback to default behaviour
@@ -1781,12 +1552,12 @@ fqdn: %s
 
                 return name
 
-        if launch_request.configDict['override_dns_domain']:
+        if launch_request.configDict.get('override_dns_domain', None):
             hostname, _ = instance.private_dns_name.split('.', 1)
 
             # Use EC2-assigned host name with 'private_dns_zone'.
             return '{0}.{1}'.format(
-                hostname, launch_request.configDict['dns_domain'])
+                hostname, launch_request.configDict.get('dns_domain', None))
 
         return instance.private_dns_name
 
@@ -1815,7 +1586,8 @@ fqdn: %s
                 node.name = self.addHostApi.generate_node_name(
                     session,
                     hardwareprofile.nameFormat,
-                    dns_zone=configDict['dns_domain'])
+                    dns_zone=configDict.get('dns_domain', None)
+                )
 
             node.state = initial_state
             node.isIdle = False
@@ -1905,7 +1677,7 @@ fqdn: %s
         #                 extErrMsg or '<no reason provided>'))
 
         # Create placement group if needed.
-        if configDict['placementgroup']:
+        if configDict.get('placementgroup', None):
             try:
                 self._logger.debug(
                     'Attempting to create placement group [%s]' % (
@@ -1936,9 +1708,9 @@ fqdn: %s
 
         args = {
             'key_name': configDict['keypair'],
-            'placement': configDict['zone'],
+            'placement': configDict.get('zone', None),
             'instance_type': configDict['instancetype'],
-            'placement_group': configDict['placementgroup'],
+            'placement_group': configDict.get('placementgroup', None),
         }
 
         if user_data:
@@ -1988,7 +1760,7 @@ fqdn: %s
                 NetworkInterfaceCollection(primary_nic)
         else:
             # Default instance (non-VPC)
-            args['security_groups'] = configDict['securitygroup']
+            args['security_groups'] = configDict.get('securitygroup', [])
 
         return args
 
@@ -2034,7 +1806,7 @@ fqdn: %s
 
         security_group_ids: List[str] = []
 
-        for groupname in configDict['securitygroup'] or []:
+        for groupname in configDict.get('securitygroup', []):
             if groupname.startswith('sg-'):
                 security_group_ids.append(groupname)
 
@@ -2229,7 +2001,7 @@ fqdn: %s
                 'Using cloud-init script template [%s]' % (
                     launch_request.configDict['cloud_init_script_template']))
 
-        if 'securitygroup' not in launch_request.configDict or\
+        if 'securitygroup' not in launch_request.configDict or \
                 not launch_request.configDict['securitygroup']:
             self.getLogger().warning(
                 '\'securitygroup\' not configured. Default security group'

@@ -14,25 +14,21 @@
 
 import io
 
-import pytest
 from mock import patch
 
 from tortuga.resourceAdapter.aws import Aws
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
 
 from jinja2 import Template
 
 
 minimal_user_data_config = {
     'ami': 'ami-XYXYXYXYX',
-    'cloud_init': 'true',
     'user_data_script_template': 'blah.txt'
 }
 
 
 minimal_user_data_config_with_node = {
     'ami': 'ami-XYXYXYXYX',
-    'cloud_init': 'true',
     'user_data_script_template': 'blah.txt',
     'use_instance_hostname': 'false',
 }
@@ -45,7 +41,7 @@ minimal_cloud_init_config = {
 
 
 @patch.object(Aws, '_get_config_file_path', return_value='xxxxxxxx')
-@patch.object(Aws, '_loadConfigDict',
+@patch.object(Aws, '_load_config_from_database',
               return_value=minimal_user_data_config)
 def test_get_user_data(
         load_config_dict_mock, get_config_path_mock): \
@@ -82,7 +78,7 @@ if __name__ == '__main__':
 
 
 @patch.object(Aws, '_get_config_file_path', return_value='xxxxxxxx')
-@patch.object(Aws, '_loadConfigDict',
+@patch.object(Aws, '_load_config_from_database',
               return_value=minimal_user_data_config_with_node)
 def test_get_user_data_with_node(
         load_config_dict_mock, get_config_path_mock): \
@@ -125,7 +121,7 @@ if __name__ == '__main__':
 
 
 @patch.object(Aws, '_get_config_file_path', return_value='xxxxxxxx')
-@patch.object(Aws, '_loadConfigDict',
+@patch.object(Aws, '_load_config_from_database',
               return_value=minimal_cloud_init_config)
 def test_expand_cloud_init_user_data_template(
         load_config_dict_mock, get_config_path_mock): \

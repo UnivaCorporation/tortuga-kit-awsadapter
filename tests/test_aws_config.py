@@ -33,13 +33,13 @@ def test_invalid_adapter_configuration(dbm):
 
     with pytest.raises(ConfigurationError):
         with patch.object(
-                ResourceAdapter, '_loadConfigDict', return_value={}):
+                ResourceAdapter, '_load_config_from_database', return_value={}):
             Aws().getResourceAdapterConfig()
 
 
 def test_minimal_config(minimal_configDict):
     with patch.object(
-            ResourceAdapter, '_loadConfigDict',
+            ResourceAdapter, '_load_config_from_database',
             return_value=minimal_configDict):
         config = Aws().getResourceAdapterConfig()
 
@@ -51,8 +51,6 @@ def test_minimal_config(minimal_configDict):
 
         assert not config['override_dns_domain']
 
-        assert config['dns_domain'] is None
-
 
 def test_override_dns_domain_enabled():
     configDict = {
@@ -61,7 +59,7 @@ def test_override_dns_domain_enabled():
     }
 
     with patch.object(
-            ResourceAdapter, '_loadConfigDict',
+            ResourceAdapter, '_load_config_from_database',
             return_value=configDict):
         config = Aws().getResourceAdapterConfig()
 
@@ -84,7 +82,7 @@ def test_override_dns_domain_enabled_with_dns_domain():
     }
 
     with patch.object(
-            ResourceAdapter, '_loadConfigDict',
+            ResourceAdapter, '_load_config_from_database',
             return_value=configDict):
         config = Aws().getResourceAdapterConfig()
 
@@ -95,7 +93,7 @@ def test_override_dns_domain_enabled_with_dns_domain():
         assert config['dns_domain'] == 'mydomain'
 
 
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 def test_missing_ami_setting(load_config_dict_mock):
     load_config_dict_mock.return_value = {}
 
@@ -103,7 +101,7 @@ def test_missing_ami_setting(load_config_dict_mock):
         Aws().getResourceAdapterConfig()
 
 
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 def test_use_instance_hostname(load_config_dict_mock):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXX',
@@ -119,7 +117,7 @@ def test_use_instance_hostname(load_config_dict_mock):
     assert result['dns_domain'] == 'cloud.example.com'
 
 
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 def test_defaults(load_config_dict_mock):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXXXX',
@@ -133,20 +131,18 @@ def test_defaults(load_config_dict_mock):
 
     assert result['use_instance_hostname']
 
-    assert result['use_tags']
-
     assert result['associate_public_ip_address']
 
     assert not result['cloud_init']
 
-    assert not result['override_dns_domain']
+    assert not result.get('override_dns_domain', None)
 
-    assert not result['use_domain_from_dhcp_option_set']
+    assert not result.get('use_domain_from_dhcp_option_set', None)
 
     assert result['region'] == 'us-east-1'
 
 
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 def test_invalid_settings(load_config_dict_mock):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXXXX',

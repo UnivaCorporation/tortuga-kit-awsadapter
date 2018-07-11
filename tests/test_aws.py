@@ -68,7 +68,13 @@ def test_installer_public_ipaddress_with_hardwareprofile():
     assert ip == '1.2.3.4'
 
 
-def test_deleteNode(dbm):
+@mock.patch.object(Aws, '_load_config_from_database')
+def test_deleteNode(load_config_dict_mock, dbm):
+    load_config_dict_mock.return_value = {
+        'awsAccessKey': 'the_key',
+        'awsSecretKey': 'the_secret'
+    }
+
     with mock_ec2_deprecated():
         with dbm.session() as session:
             adapter = Aws()
@@ -81,7 +87,7 @@ def test_deleteNode(dbm):
 
 @mock.patch.object(Aws, 'fire_provisioned_event')
 @mock.patch.object(Aws, '_pre_add_host')
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 @mock_ec2_deprecated
 def test_start(load_config_dict_mock, pre_add_host_mock,
                fire_provisioned_even_mock, dbm):
@@ -90,8 +96,12 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
     """
 
     load_config_dict_mock.return_value = {
+        'awsAccessKey': 'the_key',
+        'awsSecretKey': 'the_secret',
+        'keypair': 'the_keypair',
         'ami': 'ami-abcd1234',
         'use_instance_hostname': 'true',
+        'instancetype': 'the_instancetype'
     }
 
     with dbm.session() as session:
@@ -134,11 +144,13 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
 
 @mock.patch.object(Aws, 'fire_provisioned_event')
 @mock.patch.object(Aws, '_pre_add_host')
-@mock.patch.object(Aws, '_loadConfigDict')
+@mock.patch.object(Aws, '_load_config_from_database')
 @mock_ec2_deprecated
 def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
-                           fire_provisioned_even_mock, dbm):
+                           fire_provisioned_event_mock, dbm):
     configDict = {
+        'awsAccessKey': 'the_key',
+        'awsSecretKey': 'the_secret',
         'ami': 'ami-abcd1234',
         'use_instance_hostname': 'true',
     }
@@ -164,7 +176,8 @@ def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
         )
 
         # create instances to be associated with nodes
-        conn = boto.connect_ec2('the_key', 'the_secret')
+        conn = boto.connect_ec2(configDict['awsAccessKey'],
+                                configDict['awsSecretKey'])
 
         conn.run_instances(
             configDict['ami'],
@@ -205,6 +218,6 @@ def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
 
         assert nodes[0].addHostSession == addHostSession
 
-        fire_provisioned_even_mock.assert_called()
+        fire_provisioned_event_mock.assert_called()
 
         pre_add_host_mock.assert_called()

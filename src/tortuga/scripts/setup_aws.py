@@ -91,6 +91,7 @@ def main(verbose, debug, ignore_iam, unattended, profile):
     print_statement('Detected AWS region: [{0}]', region)
 
     creds = False
+    iam_profile_name = None
 
     if not ignore_iam:
         # if IAM profile is not in use, query access/secret keys
@@ -413,8 +414,8 @@ def main(verbose, debug, ignore_iam, unattended, profile):
     }
 
     if access_key and secret_key:
-        adapter_cfg['awsaccesskey'] = access_key
-        adapter_cfg['awssecretkey'] = secret_key
+        adapter_cfg['awsAccessKey'] = access_key
+        adapter_cfg['awsSecretKey'] = secret_key
 
     override_adapter_cfg = {
         'keypair': keypair,

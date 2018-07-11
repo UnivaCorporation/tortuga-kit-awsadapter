@@ -43,7 +43,18 @@ from tortuga.deployer.dbUtility import init_global_parameters, primeDb
 from tortuga.node import nodeManager
 from tortuga.objects import osFamilyInfo, osInfo
 from tortuga.db.models.instanceMapping import InstanceMapping
+from tortuga.resourceAdapter.aws import Aws
 
+
+#
+# Override some settings so that validation doesn't complain
+#
+Aws.settings['awsAccessKey'].required = False
+Aws.settings['awsSecretKey'].required = False
+Aws.settings['keypair'].required = False
+Aws.settings['instancetype'].required = False
+Aws.settings['cloud_init_script_template'].must_exist = False
+Aws.settings['user_data_script_template'].must_exist = False
 
 
 @pytest.fixture(autouse=True)
