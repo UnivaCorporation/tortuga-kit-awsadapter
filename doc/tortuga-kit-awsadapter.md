@@ -55,8 +55,8 @@ After installing the AWS Adapter Kit and enabling the management component, the 
    **dns** component *must* also be enabled to map Tortuga-assigned host names to
    AWS instances.
 
-        enable-component -p awsadapter-6.3.1-0 management-6.3 --no-sync
-        enable-component -p base-6.3.1-0 dns-6.3
+        enable-component -p awsadapter-6.3.1-0 management-6.3.1 --no-sync
+        enable-component -p base-6.3.1-0 dns-6.3.1
 
 ### Creating AWS Hardware Profile
 
