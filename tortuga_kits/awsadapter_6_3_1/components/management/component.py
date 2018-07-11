@@ -1,5 +1,3 @@
-<?xml version="1.0"?>
-<!--
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-//-->
 
-<hardwareprofile name="{{ name }}">
-  <description>AWS-based compute nodes</description>
-  <location>remote</location>
-  <installType>package</installType>
-  <nameFormat>*</nameFormat>
-  <resourceadapter name="aws"/>
-</hardwareprofile>
+from tortuga.kit.mixins.resource_adapter import \
+    ResourceAdapterManagementComponentInstaller
+
+
+class ComponentInstaller(ResourceAdapterManagementComponentInstaller):
+    name = 'management'
+    version = '6.3.1'
+    os_list = [
+        {'family': 'rhel', 'version': '6', 'arch': 'x86_64'},
+        {'family': 'rhel', 'version': '7', 'arch': 'x86_64'},
+    ]

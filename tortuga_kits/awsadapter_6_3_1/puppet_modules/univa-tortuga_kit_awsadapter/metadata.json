@@ -1,13 +1,12 @@
 {
   "name": "univa-tortuga_kit_awsadapter",
-  "version": "6.3.0",
+  "version": "6.3.1",
   "author": "Univa Corporation",
   "summary": "Tortuga AWS adapter kit integration module",
-  "license": "Commercial",
+  "license": "Apache-2.0",
   "source": "Univa Corporation",
   "project_page": "http://univa.com",
-  "issues_url": null,
-  "description": "Tortuga AWS adapter kit integration module",
+  "issues_url": "https://support.univa.com",
   "dependencies": [
     {"name":"puppetlabs/stdlib"}
   ]
