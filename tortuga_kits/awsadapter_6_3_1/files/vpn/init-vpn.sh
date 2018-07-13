@@ -41,6 +41,7 @@ default_instance_type="t2.nano"
 verbose=0
 force=0
 unattended=0
+subnet_id=
 
 if ! $(type -P ipcalc &> /dev/null); then
     echo "Error: this script requires 'ipcalc' (found on most Linuxes)"
@@ -67,7 +68,8 @@ function mask2cdr()
 readonly vpn_network_addr=$(echo $vpn_network_cidr | cut -f1 -d/)
 readonly vpn_network_netmask=$(cidr2mask $(echo $vpn_network_cidr | cut -f2 -d/))
 
-TEMP=$(getopt -o v,f,y --long verbose,force,key-name:,local-networks:,region:,ami:,securitygroup: -- "$@")
+TEMP=$(getopt -o v,f,y --long verbose,force,key-name:,local-networks:\
+,region:,ami:,securitygroup:,subnet-id:,help -- "$@")
 [[ $? -eq 0 ]] || {
     echo "Terminating..." >&2
     exit 1
@@ -75,8 +77,18 @@ TEMP=$(getopt -o v,f,y --long verbose,force,key-name:,local-networks:,region:,am
 
 eval set -- "$TEMP"
 
+usage() {
+    echo "usage: ${0} [options]"
+
+    exit 0
+}
+
 while true; do
     case "$1" in
+        --help)
+            usage
+            shift
+            ;;
         -v|--verbose)
             verbose=1
             shift
@@ -107,6 +119,10 @@ while true; do
             ;;
         --securitygroup)
             securitygroup=$2
+            shift 2
+            ;;
+        --subnet-id)
+            subnet_id=$2
             shift 2
             ;;
         --)
@@ -149,6 +165,27 @@ if [[ -z $vpc_id ]] || [[ ${vpc_id} == null ]] ; then
 fi
 
 echo "$vpc_id"
+
+[[ -z ${subnet_id} ]] && {
+    echo -n "Getting subnet ID... "
+
+    subnet_ids=($(aws ec2 describe-subnets --output text \
+    --filter "Name=vpc-id,Values=${vpc_id}" --query "Subnets[*].SubnetId"))
+
+    [[ $? -eq 0 ]] && [[ -n ${subnet_ids} ]] || {
+        echo "failed."
+        echo "Error: unable to determine subnet for VPC ${vpc_id}" >&2
+        exit 1
+    }
+
+    subnet_idx=$((RANDOM % ${#subnet_ids[*]}))
+
+    subnet_id=${subnet_ids[${subnet_idx}]}
+} || {
+    echo -n "Using subnet ID "
+}
+
+echo "$subnet_id"
 
 eval remote_network_cidr=$(aws ec2 describe-vpcs --filter Name=tag:Name,Values=${vpc_name} --output json --query "Vpcs[0].CidrBlock")
 
@@ -214,17 +251,6 @@ if [[ -z $1 ]]; then
     } || {
         security_group_id=${securitygroup}
     }
-
-    echo -n "Getting subnet ID... "
-    eval subnet_id=$(aws ec2 describe-subnets --output json --filter "Name=vpc-id,Values=${vpc_id}" --query "Subnets[0].SubnetId")
-
-    if [[ ${subnet_id} == null ]] || [[ -z $subnet_id ]]; then
-        echo "failed."
-        echo "Error: unable to determine subnet for VPC ${vpc_id}" >&2
-        exit 1
-    fi
-
-    echo "$subnet_id"
 
     # Create keys/certificates
     certdir="$TORTUGA_ROOT/etc/certs"
@@ -343,8 +369,6 @@ fi
 
 echo "$instance_id"
 
-eval route_table_id=$(aws ec2 describe-route-tables --filter "Name=vpc-id,Values=${vpc_id}" --output json --query "RouteTables[0].RouteTableId")
-
 # Wait for instance to reach running state
 echo -n "Waiting for instance to reach running state... "
 for ((i=0; i<40; i++)); do
@@ -373,27 +397,52 @@ fi
 # Add tag to instance
 aws ec2 create-tags $common_args --resources $instance_id --tag "Key=Name,Value=${vpn_instance_name}"
 
+# get route table id
+route_table_id=$(aws ec2 describe-route-tables \
+--filters Name=association.subnet-id,Values=${subnet_id} \
+--query "RouteTables[0].RouteTableId" --output text)
+
+[[ $? -eq 0 ]] && {
+    echo "Using route table ${route_table_id}"
+} || {
+    echo "Error getting route table id" >&2
+    route_table_id=
+}
 
 # Delete existing routes
+[[ -n ${route_table_id} ]] && {
+    echo -n "Deleting existing routes (if necessary)... "
 
-echo -n "Deleting existing routes (if necessary)... "
+    for local_cidr in ${local_cidrs_array[@]}; do
+        aws ec2 delete-route $common_args --route-table-id $route_table_id \
+            --destination-cidr-block $local_cidr &>/dev/null
+    done
 
-for local_cidr in ${local_cidrs_array[@]}; do
+    echo "done."
+
+    # Set up routes for VPN
+
+    echo "Setting up routing... "
+
+    for local_cidr in ${local_cidrs_array[@]}; do
+        echo -n "   Creating route for ${local_cidr}... "
+
+        aws ec2 create-route $common_args --route-table-id $route_table_id \
+            --destination-cidr-block $local_cidr --instance-id $instance_id &>/dev/null
+
+        [[ $? -eq 0 ]] || {
+            echo "failed."
+            exit 1
+        }
+
+        echo "done."
+    done
+
     aws ec2 delete-route $common_args --route-table-id $route_table_id \
-        --destination-cidr-block $local_cidr &>/dev/null
-done
-
-echo "done."
-
-# Set up routes for VPN
-
-echo "Setting up routing... "
-
-for local_cidr in ${local_cidrs_array[@]}; do
-    echo -n "   Creating route for ${local_cidr}... "
+        --destination-cidr-block $vpn_network_cidr &>/dev/null
 
     aws ec2 create-route $common_args --route-table-id $route_table_id \
-        --destination-cidr-block $local_cidr --instance-id $instance_id &>/dev/null
+        --destination-cidr-block $vpn_network_cidr --instance-id $instance_id &>/dev/null
 
     [[ $? -eq 0 ]] || {
         echo "failed."
@@ -401,20 +450,7 @@ for local_cidr in ${local_cidrs_array[@]}; do
     }
 
     echo "done."
-done
-
-aws ec2 delete-route $common_args --route-table-id $route_table_id \
-    --destination-cidr-block $vpn_network_cidr &>/dev/null
-
-aws ec2 create-route $common_args --route-table-id $route_table_id \
-    --destination-cidr-block $vpn_network_cidr --instance-id $instance_id &>/dev/null
-
-[[ $? -eq 0 ]] || {
-    echo "failed."
-    exit 1
 }
-
-echo "done."
 
 eval remote_ip=$(aws ec2 describe-instances $common_args --output json --query "Reservations[0].Instances[0].PublicIpAddress" --instance-id $instance_id)
 
