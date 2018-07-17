@@ -75,129 +75,198 @@ class Aws(ResourceAdapter):
     TEST_MODE = False
 
     settings = {
-        'ami': settings.StringSetting(
-            required=True,
-            description='AMI ID to use for launching node instances'
-        ),
+        #
+        # Authentication and Authorization
+        #
         'awsAccessKey': settings.StringSetting(
             secret=True,
             description='AWS API access key',
+            group='Authentication and Authorization',
             requires=['awsSecretKey']
         ),
         'awsSecretKey': settings.StringSetting(
             secret=True,
             description='AWS API secret key',
+            group='Authentication and Authorization',
             requires=['awsAccessKey']
-        ),
-        'block_device_map': settings.StringSetting(
-            description='Block device map for new node instances'
-        ),
-        'cloud_init_script_template': settings.FileSetting(
-            description='Path to cloud init script',
-            mutually_exclusive=['user_data_script_template'],
-            base_path='/opt/tortuga/config/',
-            overrides=['user_data_script_template']
-        ),
-        'user_data_script_template': settings.FileSetting(
-            description='Path to user date template script',
-            mutually_exclusive=['cloud_init_script_template'],
-            base_path='/opt/tortuga/config/',
-            overrides=['cloud_init_script_template']
-        ),
-        'endpoint': settings.StringSetting(
-            description='AWS (or compatible) API endpoint'
         ),
         'iam_instance_profile_name': settings.StringSetting(
             description='IAM Instance Profile (IIP) name to associate with '
-                        'new node instance(s)'
-        ),
-        'instancetype': settings.StringSetting(
-            description='AWS compute node instance type',
-            required=True
+                        'new node instance(s)',
+            group='Authentication and Authorization',
         ),
         'keypair': settings.StringSetting(
             description='Name of AWS SSH keypair to install on new node '
                         'instances',
+            group='Authentication and Authorization',
             required=True
         ),
+
+        #
+        # DNS
+        #
         'override_dns_domain': settings.BooleanSetting(
             description='Allow the compute node bootstrap process to manage '
                         '/etc/resolv.conf',
+            group='DNS',
             default='False'
         ),
         'dns_domain': settings.StringSetting(
             description='The DNS search order to be configured on new node '
                         'instances',
+            group='DNS',
             requires=['override_dns_domain']
         ),
         'dns_options': settings.StringSetting(
             description='specifies the "options" field in /etc/resolv.conf '
                         'on new node instances',
+            group='DNS',
             requires=['override_dns_domain']
         ),
         'dns_nameservers': settings.StringSetting(
             description='specifies the "nameservers" field in '
                         '/etc/resolv.conf on compute node instances and is '
                         'a space-separated list of IP addresses',
+            group='DNS',
             requires=['override_dns_domain'],
             list=True,
             list_separator=' '
         ),
         'use_domain_from_dhcp_option_set': settings.BooleanSetting(
             description='use domain specified in DHCP option set',
+            group='DNS',
             default='False'
-        ),
-        'region': settings.StringSetting(
-            description='AWS region',
-            default='us-east-1'
-        ),
-        'zone': settings.StringSetting(
-            description='AWS zone'
-        ),
-        'placementgroup': settings.StringSetting(
-            description='AWS placement group'
-        ),
-        'securitygroup': settings.StringSetting(
-            description='AWS security group. This security group must allow '
-                        'unrestricted access between the Tortuga installer '
-                        'and compute instances.',
-            list=True
-        ),
-        'subnet_id': settings.StringSetting(
-            description='AWS subnet ID for new node instances'
-        ),
-        'tags': settings.StringSetting(
-            description='AWS tags, a space separated list in the form of '
-                        'key=value'
         ),
         'use_instance_hostname': settings.BooleanSetting(
             description='When true, the AWS-assigned host name will be '
                         'used as the host name for new instances',
+            group='DNS',
             default='True'
+        ),
+        'use_reverse_dns_hostname': settings.BooleanSetting(
+            group='DNS',
+            default='False',
+            requires=['use_instance_hostname']
+        ),
+
+        #
+        # Networking
+        #
+        'securitygroup': settings.StringSetting(
+            description='AWS security group. This security group must allow '
+                        'unrestricted access between the Tortuga installer '
+                        'and compute instances.',
+            group='Networking',
+            list=True
+        ),
+        'subnet_id': settings.StringSetting(
+            description='AWS subnet ID for new node instances',
+            group='Networking',
+        ),
+        'associate_public_ip_address': settings.BooleanSetting(
+            group='Networking',
+            default='True'
+        ),
+        'vpc_gateway': settings.StringSetting(
+            group='Networking'
+        ),
+
+        #
+        # Compute Instance
+        #
+        'instancetype': settings.StringSetting(
+            description='AWS compute node instance type',
+            group='Compute Instance',
+            required=True
+        ),
+        'ami': settings.StringSetting(
+            description='AMI ID to use for launching node instances',
+            group='Compute Instance',
+            required=True
+        ),
+        'block_device_map': settings.StringSetting(
+            description='Block device map for new node instances',
+            group='Compute Instance',
+        ),
+        'cloud_init_script_template': settings.FileSetting(
+            description='Path to cloud init script',
+            group='Compute Instance',
+            mutually_exclusive=['user_data_script_template'],
+            base_path='/opt/tortuga/config/',
+            overrides=['user_data_script_template']
+        ),
+        'user_data_script_template': settings.FileSetting(
+            description='Path to user date template script',
+            group='Compute Instance',
+            mutually_exclusive=['cloud_init_script_template'],
+            base_path='/opt/tortuga/config/',
+            overrides=['cloud_init_script_template']
         ),
         'vcpus': settings.IntegerSetting(
             description='The number of virtual CPUs for the resource adapter '
-                        'configuration profile'
+                        'configuration profile',
+            group='Compute Instance'
         ),
+        'monitoring_enabled': settings.BooleanSetting(
+            group='Compute Instance'
+        ),
+        'ebs_optimized': settings.BooleanSetting(
+            group='Compute Instance'
+        ),
+        'region': settings.StringSetting(
+            description='AWS region',
+            group='Compute Instance',
+            default='us-east-1'
+        ),
+        'zone': settings.StringSetting(
+            description='AWS zone',
+            group='Compute Instance'
+        ),
+        'placementgroup': settings.StringSetting(
+            description='AWS placement group',
+            group='Compute Instance'
+        ),
+        'tags': settings.StringSetting(
+            description='AWS tags, a space separated list in the form of '
+                        'key=value',
+            group='Compute Instance'
+        ),
+
+        #
+        # API
+        #
+        'endpoint': settings.StringSetting(
+            description='AWS (or compatible) API endpoint',
+            group='API'
+    ),
+        'proxy_host': settings.StringSetting(
+            group='API'
+        ),
+        'proxy_port': settings.IntegerSetting(
+            group='API'
+        ),
+        'proxy_user': settings.StringSetting(
+            group='API'
+        ),
+        'proxy_pass': settings.StringSetting(
+            group='API',
+            secret=True
+        ),
+
+        #
+        # Tortuga
+        #
+        'installer_ip': settings.StringSetting(
+            group='Tortuga'
+        ),
+
+        #
+        # Unspecified
+        #
         'launch_timeout': settings.IntegerSetting(
             description='Timeout (in seconds) of the launch request',
             default='300'
         ),
-        'vpc_gateway': settings.StringSetting(),
-        'monitoring_enabled': settings.BooleanSetting(),
-        'ebs_optimized': settings.BooleanSetting(),
-        'associate_public_ip_address': settings.BooleanSetting(
-            default='True'
-        ),
-        'installer_ip': settings.StringSetting(),
-        'use_reverse_dns_hostname': settings.BooleanSetting(
-            default='False',
-            requires=['use_instance_hostname']
-        ),
-        'proxy_host': settings.StringSetting(),
-        'proxy_port': settings.IntegerSetting(),
-        'proxy_user': settings.StringSetting(),
-        'proxy_pass': settings.StringSetting(secret=True),
         'createtimeout': settings.IntegerSetting(
             description='Default time in seconds before creates will return '
                         'even if not completed',
