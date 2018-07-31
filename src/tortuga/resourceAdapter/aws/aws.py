@@ -76,29 +76,29 @@ class Aws(ResourceAdapter):
 
     settings = {
         #
-        # Authentication and Authorization
+        # Authentication
         #
         'awsAccessKey': settings.StringSetting(
             secret=True,
             description='AWS API access key',
-            group='Authentication and Authorization',
+            group='Authentication',
             requires=['awsSecretKey']
         ),
         'awsSecretKey': settings.StringSetting(
             secret=True,
             description='AWS API secret key',
-            group='Authentication and Authorization',
+            group='Authentication',
             requires=['awsAccessKey']
         ),
         'iam_instance_profile_name': settings.StringSetting(
             description='IAM Instance Profile (IIP) name to associate with '
                         'new node instance(s)',
-            group='Authentication and Authorization',
+            group='Authentication',
         ),
         'keypair': settings.StringSetting(
             description='Name of AWS SSH keypair to install on new node '
                         'instances',
-            group='Authentication and Authorization',
+            group='Authentication',
             required=True
         ),
 
@@ -172,32 +172,32 @@ class Aws(ResourceAdapter):
         ),
 
         #
-        # Compute Instance
+        # Instances
         #
         'instancetype': settings.StringSetting(
             description='AWS compute node instance type',
-            group='Compute Instance',
+            group='Instances',
             required=True
         ),
         'ami': settings.StringSetting(
             description='AMI ID to use for launching node instances',
-            group='Compute Instance',
+            group='Instances',
             required=True
         ),
         'block_device_map': settings.StringSetting(
             description='Block device map for new node instances',
-            group='Compute Instance',
+            group='Instances',
         ),
         'cloud_init_script_template': settings.FileSetting(
             description='Path to cloud init script',
-            group='Compute Instance',
+            group='Instances',
             mutually_exclusive=['user_data_script_template'],
             base_path='/opt/tortuga/config/',
             overrides=['user_data_script_template']
         ),
         'user_data_script_template': settings.FileSetting(
             description='Path to user date template script',
-            group='Compute Instance',
+            group='Instances',
             mutually_exclusive=['cloud_init_script_template'],
             base_path='/opt/tortuga/config/',
             overrides=['cloud_init_script_template']
@@ -205,31 +205,31 @@ class Aws(ResourceAdapter):
         'vcpus': settings.IntegerSetting(
             description='The number of virtual CPUs for the resource adapter '
                         'configuration profile',
-            group='Compute Instance'
+            group='Instances'
         ),
         'monitoring_enabled': settings.BooleanSetting(
-            group='Compute Instance'
+            group='Instances'
         ),
         'ebs_optimized': settings.BooleanSetting(
-            group='Compute Instance'
+            group='Instances'
         ),
         'region': settings.StringSetting(
             description='AWS region',
-            group='Compute Instance',
+            group='Instances',
             default='us-east-1'
         ),
         'zone': settings.StringSetting(
             description='AWS zone',
-            group='Compute Instance'
+            group='Instances'
         ),
         'placementgroup': settings.StringSetting(
             description='AWS placement group',
-            group='Compute Instance'
+            group='Instances'
         ),
         'tags': settings.StringSetting(
             description='AWS tags, a space separated list in the form of '
                         'key=value',
-            group='Compute Instance'
+            group='Instances'
         ),
 
         #
