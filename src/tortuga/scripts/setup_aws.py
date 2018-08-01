@@ -402,8 +402,8 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
 
             if result['SecurityGroups']:
                 group_id = result['SecurityGroups'][0]['GroupId']
-
                 break
+
         except botocore.exceptions.ClientError:
             pass
 
@@ -483,7 +483,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         'keypair': keypair,
         'ami': ami_id,
         'instancetype': instance_type,
-        'securitygroup': group_id,
+        'securitygroup': ','.join(group_id.split('\n')),
         'subnet_id': subnet_id,
         'tags': 'Name=\"UGE compute node\"',
         'region': region,
