@@ -215,12 +215,12 @@ def main(verbose, debug, ignore_iam, unattended, profile):
                 error_message(errmsg)
 
             sys.exit(1)
-
-        # Write/update "~/.aws/credentials"
-        update_aws_credentials(region, access_key, secret_key)
     else:
         # using available IAM profile
         ec2 = boto3.client('ec2', region_name=region)
+
+    # Write/update "~/.aws/credentials"
+    update_aws_credentials(region, access_key, secret_key)
 
     # keypair
 
@@ -433,60 +433,44 @@ def main(verbose, debug, ignore_iam, unattended, profile):
     print_statement('Resource adapter configuration completed successfully.')
 
 
-def update_aws_credentials(region, access_key, secret_key):
+def _aws_configure_set(key, value):
+    with open(os.devnull, 'w') as devnull:
+        cmd = 'aws configure set %s %s' % (key, value)
+        p = subprocess.Popen(cmd, shell=True, stdout=devnull)
+        return p.wait()
+
+
+def update_aws_credentials(region, access_key=None, secret_key=None):
     """
     Create ~/.aws/credentials
     """
 
-    # Write "~/.aws/credentials"
-    destpath = os.path.expandvars('$HOME/.aws')
-    fn = os.path.join(destpath, 'credentials')
-
     print(
         colorama.Style.BRIGHT + colorama.Fore.GREEN +
-        'Updating/creating AWS credentials (' +
-        colorama.Fore.WHITE + fn + colorama.Fore.GREEN +
-        ')... ' + colorama.Style.RESET_ALL, end='')
+        'Updating/creating AWS credentials... ' +
+        colorama.Style.RESET_ALL, end=''
+    )
 
-    if not os.path.exists(destpath):
-        try:
-            os.makedirs(destpath)
-        except Exception as exc:  # noqa pylint: disable=broad-except
-            print(
-                colorama.Style.BRIGHT + colorama.Fore.RED + 'failed')
+    if not access_key or not secret_key:
+        retval = _aws_configure_set('default.region', region)
+    else:
+        retval = _aws_configure_set('region', region)
+        if retval == 0:
+            retval = _aws_configure_set('aws_access_key_id', access_key)
+            if retval == 0:
+                retval = _aws_configure_set(
+                    'aws_secret_access_key', secret_key)
 
-            errmsg = 'Unable to create directory [{0}]'.format(destpath)
+    if retval != 0:
+        print(colorama.Style.BRIGHT + colorama.Fore.RED + 'failed')
 
-            error_message(errmsg + ': {0}'.format(exc))
-
-            sys.exit(1)
-
-    try:
-        contents = """\
-[default]
-region = {0}
-aws_access_key_id = {1}
-aws_secret_access_key = {2}
-""".format(region, access_key, secret_key)
-
-        # Backup destination
-        if os.path.exists(fn):
-            shutil.copyfile(fn, fn + '.orig')
-
-        with open(fn, 'w') as fp:
-            fp.write(contents)
-
-        print(colorama.Style.BRIGHT + colorama.Fore.GREEN + 'done.')
-    except Exception as exc:  # noqa pylint: disable=broad-except
-        print(colorama.Style.BRIGHT + colorama.Fore.RED + 'failed.' +
-              colorama.Style.RESET_ALL)
-
-        error_message('Unable to write/update [{0}]: {1}\n'.format(fn, exc))
+        error_message('Unable to set AWS defaults')
 
         sys.exit(1)
-    finally:
-        print(colorama.Style.RESET_ALL, end='')
 
+    # success
+    print(colorama.Style.BRIGHT +
+          colorama.Fore.GREEN + 'done.' + colorama.Style.RESET_ALL)
 
 def _write_resource_adapter_configuration(adapter_cfg, profile):
     profile_ = 'resource-adapter' if profile == 'default' else profile
