@@ -24,11 +24,10 @@ import boto3
 import botocore
 import click
 import colorama
-
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
-from tortuga.resourceAdapterConfiguration.api \
-    import ResourceAdapterConfigurationApi
+from tortuga.resourceAdapterConfiguration.api import \
+    ResourceAdapterConfigurationApi
 
 
 DEFAULT_AWS_REGION = 'us-east-1'
@@ -50,7 +49,8 @@ def get_ec2_metadata():
     return result['ec2_metadata'] if 'ec2_metadata' in result else {}
 
 
-def disable_colour(ctx, param, value):
+def disable_colour(ctx, param, value): \
+        # pylint: disable=unused-argument
     colorama.init(strip=value)
 
 
@@ -100,8 +100,8 @@ def main(verbose, debug, ignore_iam, unattended, profile):
         response = None
 
         print(colorama.Fore.GREEN + colorama.Style.BRIGHT +
-                   'Checking for IAM profile...' +
-                   colorama.Style.RESET_ALL, end=' ')
+              'Checking for IAM profile...' +
+              colorama.Style.RESET_ALL, end=' ')
 
         try:
             response = client.get_caller_identity()
@@ -121,26 +121,25 @@ def main(verbose, debug, ignore_iam, unattended, profile):
 
             if not assumed_role:
                 print(colorama.Style.BRIGHT + colorama.Fore.YELLOW +
-                           '*' + colorama.Style.RESET_ALL +
-                           format_string_with_arg(
-                               ' Ensure IAM profile [{0}] is used to launch'
-                               ' Grid Engine/Tortuga instance',
-                               iam_profile_name))
+                      '*' + colorama.Style.RESET_ALL +
+                      format_string_with_arg(
+                          ' Ensure IAM profile [{0}] is used to launch'
+                          ' Grid Engine/Tortuga instance', iam_profile_name))
 
             creds = True
         except botocore.exceptions.NoCredentialsError:
             print(colorama.Fore.YELLOW +
-                       colorama.Style.BRIGHT + 'not found' +
-                       colorama.Style.RESET_ALL)
-        except Exception as exc:
+                  colorama.Style.BRIGHT + 'not found' +
+                  colorama.Style.RESET_ALL)
+        except Exception as exc:  # noqa pylint: disable=broad-except
             print(colorama.Style.DIM +
-                       '[debug] Error querying IAM profile name:'
-                       ' {0}'.format(exc) + colorama.Style.RESET_ALL)
+                  '[debug] Error querying IAM profile name:'
+                  ' {0}'.format(exc) + colorama.Style.RESET_ALL)
     else:
         if debug:
             print(colorama.Style.DIM +
-                       '[debug] Ignoring IAM profile (--ignore-iam argument'
-                       ' specified)' + colorama.Style.RESET_ALL)
+                  '[debug] Ignoring IAM profile (--ignore-iam argument'
+                  ' specified)' + colorama.Style.RESET_ALL)
 
     access_key = None
     secret_key = None
@@ -156,8 +155,8 @@ def main(verbose, debug, ignore_iam, unattended, profile):
 
         if os.getenv('AWS_ACCESS_KEY') and os.getenv('AWS_SECRET_ACCESS_KEY'):
             print(colorama.Fore.GREEN + colorama.Style.BRIGHT +
-                       'Using AWS_ACCESS_KEY/AWS_SECRET_ACCESS_KEY from'
-                       ' environment' + colorama.Style.RESET_ALL)
+                  'Using AWS_ACCESS_KEY/AWS_SECRET_ACCESS_KEY from'
+                  ' environment' + colorama.Style.RESET_ALL)
 
             # use envvars for credentials
             access_key = os.getenv('AWS_ACCESS_KEY')
@@ -197,18 +196,18 @@ def main(verbose, debug, ignore_iam, unattended, profile):
             if debug:
                 print()
                 print(colorama.Style.DIM +
-                           '[debug] Calling \'describe_images()\' to '
-                           'validate credentials' + colorama.Style.RESET_ALL)
+                      '[debug] Calling \'describe_images()\' to '
+                      'validate credentials' + colorama.Style.RESET_ALL)
 
             ec2.describe_images(Owners=['self'])
 
             print(colorama.Fore.GREEN +
-                       colorama.Style.BRIGHT + 'ok.' +
-                       colorama.Style.RESET_ALL)
+                  colorama.Style.BRIGHT + 'ok.' +
+                  colorama.Style.RESET_ALL)
         except botocore.exceptions.ClientError as exc:
             print(colorama.Fore.RED +
-                       colorama.Style.BRIGHT + 'failed.' +
-                       colorama.Style.RESET_ALL)
+                  colorama.Style.BRIGHT + 'failed.' +
+                  colorama.Style.RESET_ALL)
             errmsg = 'Error validating provided access credentials'
             if exc.response['Error']['Code'] != 'AuthFailure':
                 error_message(errmsg + ': {0}', exc)
@@ -233,7 +232,7 @@ def main(verbose, debug, ignore_iam, unattended, profile):
             keypair = key_values['openssh-key'].split(' ')[-1]
 
             break
-    except Exception:
+    except Exception:  # noqa pylint: disable=broad-except
         pass
 
     while not keypair:
@@ -246,12 +245,12 @@ def main(verbose, debug, ignore_iam, unattended, profile):
 
             for tmp_keypair in result['KeyPairs']:
                 print('    ' + colorama.Fore.YELLOW +
-                           colorama.Style.BRIGHT +
-                           tmp_keypair['KeyName'] +
-                           colorama.Style.RESET_ALL +
-                           colorama.Style.DIM +
-                           ' (' + tmp_keypair['KeyFingerprint'] +
-                           ')' + colorama.Style.RESET_ALL)
+                      colorama.Style.BRIGHT +
+                      tmp_keypair['KeyName'] +
+                      colorama.Style.RESET_ALL +
+                      colorama.Style.DIM +
+                      ' (' + tmp_keypair['KeyFingerprint'] +
+                      ')' + colorama.Style.RESET_ALL)
 
             continue
 
@@ -293,7 +292,7 @@ def main(verbose, debug, ignore_iam, unattended, profile):
     vpc_id = None
 
     if ec2_metadata:
-        for mac, values in \
+        for _, values in \
                 ec2_metadata['network']['interfaces']['macs'].items():
             subnet_id = values['subnet-id']
             group_id = values['security-group-ids']
@@ -351,12 +350,12 @@ def main(verbose, debug, ignore_iam, unattended, profile):
 
             for secgroup in result['SecurityGroups']:
                 print('    ' + colorama.Fore.YELLOW +
-                           colorama.Style.BRIGHT +
-                           secgroup['GroupId'] + ' ' +
-                           colorama.Fore.WHITE +
-                           colorama.Style.DIM +
-                           secgroup['GroupName'] +
-                           colorama.Style.RESET_ALL)
+                      colorama.Style.BRIGHT +
+                      secgroup['GroupId'] + ' ' +
+                      colorama.Fore.WHITE +
+                      colorama.Style.DIM +
+                      secgroup['GroupName'] +
+                      colorama.Style.RESET_ALL)
 
             continue
 
@@ -452,7 +451,7 @@ def update_aws_credentials(region, access_key, secret_key):
     if not os.path.exists(destpath):
         try:
             os.makedirs(destpath)
-        except Exception as exc:
+        except Exception as exc:  # noqa pylint: disable=broad-except
             print(
                 colorama.Style.BRIGHT + colorama.Fore.RED + 'failed')
 
@@ -478,9 +477,9 @@ aws_secret_access_key = {2}
             fp.write(contents)
 
         print(colorama.Style.BRIGHT + colorama.Fore.GREEN + 'done.')
-    except Exception as exc:
+    except Exception as exc:  # noqa pylint: disable=broad-except
         print(colorama.Style.BRIGHT + colorama.Fore.RED + 'failed.' +
-                   colorama.Style.RESET_ALL)
+              colorama.Style.RESET_ALL)
 
         error_message('Unable to write/update [{0}]: {1}\n'.format(fn, exc))
 
