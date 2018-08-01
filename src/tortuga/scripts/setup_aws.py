@@ -16,7 +16,6 @@ import configparser
 import getpass
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -24,6 +23,7 @@ import boto3
 import botocore
 import click
 import colorama
+from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.resourceAdapterConfiguration.api import \
@@ -443,10 +443,37 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
 
         break
 
+    # determine which bootstrap/cloud-init script template to use
+    cloud_init_script_template = None
+    user_data_script_template = None
+
+    aws_adapter_cfg = os.path.join(
+        ConfigManager().getKitConfigBase(), 'aws', 'adapter.ini')
+
+    if os.path.exists(aws_adapter_cfg):
+        cfg = configparser.ConfigParser()
+        cfg.read(aws_adapter_cfg)
+        if cfg.has_section('aws'):
+            if cfg.has_option('aws', 'cloud_init_script_template'):
+                cloud_init_script_template = cfg.get(
+                    'aws', 'cloud_init_script_template'
+                )
+            elif cfg.has_option('aws', 'user_data_script_template'):
+                user_data_script_template = cfg.get(
+                    'aws', 'user_data_script_template'
+                )
+
+    if not user_data_script_template and not cloud_init_script_template:
+        user_data_script_template = 'bootstrap.tmpl'
+
     adapter_cfg = {
         'associate_public_ip_address': 'true',
-        'user_data_script_template': 'bootstrap.tmpl',
     }
+
+    if user_data_script_template:
+        adapter_cfg['user_data_script_template'] = user_data_script_template
+    elif cloud_init_script_template:
+        adapter_cfg['cloud_init_script_template'] = cloud_init_script_template
 
     if access_key and secret_key:
         adapter_cfg['awsAccessKey'] = access_key
@@ -555,6 +582,16 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
         normalized_cfg.append({
             'key': key,
             'value': value,
+        })
+
+    # remove conflicting configuration items
+    if 'user_data_script_template' in adapter_cfg:
+        normalized_cfg.append({
+            'key': 'cloud_init_script_template', 'value': None
+        })
+    elif 'cloud_init_script_template' in adapter_cfg:
+        normalized_cfg.append({
+            'key': 'user_data_script_template', 'value': None
         })
 
     api = ResourceAdapterConfigurationApi()
