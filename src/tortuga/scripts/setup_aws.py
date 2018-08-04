@@ -535,20 +535,6 @@ def update_aws_credentials(region, access_key=None, secret_key=None):
     print(colorama.Style.BRIGHT +
           colorama.Fore.GREEN + 'done.' + colorama.Style.RESET_ALL)
 
-def _write_resource_adapter_configuration(adapter_cfg, profile):
-    profile_ = 'resource-adapter' if profile == 'default' else profile
-    cfg = configparser.ConfigParser()
-    cfg.add_section(profile_)
-
-    for key, value in adapter_cfg.items():
-        cfg.set(profile_, key, value)
-
-    fn = '/tmp/adapter-defaults-aws.conf'
-    with open(fn, 'w') as fp:
-        cfg.write(fp)
-
-    print_statement('Wrote resource adapter configuration [{0}]', fn)
-
 
 def error_message(msg, *args):
     print(
@@ -575,8 +561,6 @@ def print_statement(msg, *args):
 
 
 def _update_resource_adapter_configuration(adapter_cfg, profile_name):
-    _write_resource_adapter_configuration(adapter_cfg, profile_name)
-
     normalized_cfg = []
     for key, value in adapter_cfg.items():
         normalized_cfg.append({
