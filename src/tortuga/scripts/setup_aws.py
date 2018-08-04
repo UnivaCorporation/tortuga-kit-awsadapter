@@ -568,16 +568,6 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
             'value': value,
         })
 
-    # remove conflicting configuration items
-    if 'user_data_script_template' in adapter_cfg:
-        normalized_cfg.append({
-            'key': 'cloud_init_script_template', 'value': None
-        })
-    elif 'cloud_init_script_template' in adapter_cfg:
-        normalized_cfg.append({
-            'key': 'user_data_script_template', 'value': None
-        })
-
     api = ResourceAdapterConfigurationApi()
 
     # check for resource adapter configuration
@@ -588,6 +578,16 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
             print_statement(
                 'Updating AWS resource adapter configuration profile [{0}]',
                 profile_name)
+
+            # remove potentially conflicting configuration items
+            if 'user_data_script_template' in adapter_cfg:
+                normalized_cfg.append({
+                    'key': 'cloud_init_script_template', 'value': None
+                })
+            elif 'cloud_init_script_template' in adapter_cfg:
+                normalized_cfg.append({
+                    'key': 'user_data_script_template', 'value': None
+                })
 
             api.update(session, 'aws', profile_name, normalized_cfg)
         except ResourceNotFound:
