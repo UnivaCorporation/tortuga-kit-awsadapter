@@ -56,7 +56,7 @@ from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
 from tortuga.resourceAdapterConfiguration import settings
-from tortuga.resourceAdapter.resourceAdapter import DbManager, ResourceAdapter
+from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import _get_encoded_list, ec2_get_root_block_devices
@@ -774,41 +774,42 @@ class Aws(ResourceAdapter):
                                             count=addNodesRequest['count'],
                                             initial_state='Allocated')
 
-                with DbManager().session() as session:
-                    for node in nodes:
-                        args = self.__get_request_spot_instance_args(
-                            conn,
-                            addNodesRequest,
-                            configDict,
-                            security_group_ids,
-                            node=node)
+                session = self.session
 
-                        resv = conn.request_spot_instances(
-                            addNodesRequest['spot_instance_request']['price'],
-                            configDict['ami'], **args)
+                for node in nodes:
+                    args = self.__get_request_spot_instance_args(
+                        conn,
+                        addNodesRequest,
+                        configDict,
+                        security_group_ids,
+                        node=node)
 
-                        # Update instance cache
-                        metadata = {
-                            'spot_instance_request': resv[0].id,
-                        }
+                    resv = conn.request_spot_instances(
+                        addNodesRequest['spot_instance_request']['price'],
+                        configDict['ami'], **args)
 
-                        adapter_cfg = self.load_resource_adapter_config(
-                            session, cfgname
-                        )
+                    # Update instance cache
+                    metadata = {
+                        'spot_instance_request': resv[0].id,
+                    }
 
-                        node.instance = InstanceMapping(
-                            metadata=metadata,
-                            resource_adapter_configuration=adapter_cfg
-                        )
+                    adapter_cfg = self.load_resource_adapter_config(
+                        session, cfgname
+                    )
 
-                        # Post 'add' message onto message queue
-                        self.__post_add_spot_instance_request(resv,
-                                                              dbHardwareProfile,
-                                                              dbSoftwareProfile,
-                                                              cfgname)
+                    node.instance = InstanceMapping(
+                        metadata=metadata,
+                        resource_adapter_configuration=adapter_cfg
+                    )
 
-                    # this may be redundant...
-                    session.commit()
+                    # Post 'add' message onto message queue
+                    self.__post_add_spot_instance_request(resv,
+                                                            dbHardwareProfile,
+                                                            dbSoftwareProfile,
+                                                            cfgname)
+
+                # this may be redundant...
+                session.commit()
         except boto.exception.EC2ResponseError as exc:
             raise OperationFailed(
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
@@ -1966,31 +1967,32 @@ fqdn: %s
         return False
 
     def idleActiveNode(self, nodes: List[Node]) -> str:
-        with DbManager().session() as session:
-            for node in nodes:
-                self.getLogger().info('Idling node [{0}]'.format(node.name))
+        session = self.session
 
-                configDict = self.get_node_resource_adapter_config(node)
+        for node in nodes:
+            self.getLogger().info('Idling node [{0}]'.format(node.name))
 
-                if node.state != 'Discovered':
-                    # Terminate instance
-                    try:
-                        conn = self.getEC2Connection(configDict)
+            configDict = self.get_node_resource_adapter_config(node)
 
-                        conn.terminate_instances([node.instance.instance])
-                    except boto.exception.EC2ResponseError as exc:
-                        self.getLogger().warning(
-                            'Error while terminating instance [{}]:'
-                            ' {1}'.format(
-                                node.instance.instance, exc.message
-                            )
+            if node.state != 'Discovered':
+                # Terminate instance
+                try:
+                    conn = self.getEC2Connection(configDict)
+
+                    conn.terminate_instances([node.instance.instance])
+                except boto.exception.EC2ResponseError as exc:
+                    self.getLogger().warning(
+                        'Error while terminating instance [{}]:'
+                        ' {1}'.format(
+                            node.instance.instance, exc.message
                         )
+                    )
 
-                    # Remove instance id from cache
-                    session.delete(node.instance)
+                # Remove instance id from cache
+                session.delete(node.instance)
 
-                # Unset IP address for node
-                node.nics[0].ip = None
+            # Unset IP address for node
+            node.nics[0].ip = None
 
         return 'Discovered'
 
@@ -2046,8 +2048,7 @@ fqdn: %s
             node.instance.instance = node_request['instance'].id
 
         # Wait for activated instance(s) to start
-        with DbManager().session() as session:
-            self.__wait_for_instances(session, launch_request)
+        self.__wait_for_instances(self.session, launch_request)
 
     def __common_prelaunch(self, launch_request: LaunchRequest):
         """
@@ -2082,14 +2083,12 @@ fqdn: %s
             'Deleting nodes: [{}]'.format(
                 ' '.join([node.name for node in nodes]))
         )
-        with DbManager().session() as session:
-            for node in nodes:
-                if node.isIdle:
-                    continue
 
-                self.__delete_node(node)
+        for node in nodes:
+            if node.isIdle:
+                continue
 
-            session.commit()
+            self.__delete_node(node)
 
     def __delete_node(self, node: Node) -> None:
         """
@@ -2394,19 +2393,18 @@ fqdn: %s
         #
         vcpus = 0
 
-        with DbManager().session() as session:
-            try:
-                configDict = self.get_node_resource_adapter_config(
-                    NodesDbHandler().getNode(session, name)
-                )
+        try:
+            configDict = self.get_node_resource_adapter_config(
+                NodesDbHandler().getNode(self.session, name)
+            )
 
-                vcpus = configDict.get('vcpus', 0)
-                if not vcpus:
-                    vcpus = self.get_instance_size_mapping(
-                        configDict['instancetype'])
+            vcpus = configDict.get('vcpus', 0)
+            if not vcpus:
+                vcpus = self.get_instance_size_mapping(
+                    configDict['instancetype'])
 
-            except NodeNotFound:
-                pass
+        except NodeNotFound:
+            pass
 
         return vcpus
 
