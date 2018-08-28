@@ -34,7 +34,6 @@ class CancelSpotInstanceRequestsCLI(TortugaCli):
         self.nodeApi = NodeApi()
 
         self._logger = logging.getLogger('tortuga.console')
-        self._logger.addHandler(logging.NullHandler())
 
     def parseArgs(self, usage=None):
         self.addOption('--all', action='store_true', default=False,
