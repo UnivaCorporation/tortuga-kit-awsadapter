@@ -1,6 +1,6 @@
-## AWS resource adapter kit
+# AWS resource adapter kit
 
-### Overview
+## Overview
 
 [Amazon Elastic Compute Cloud][amazon ec2] support is enabled in Tortuga
 through the installation and activation of the AWS resource adapter kit.
@@ -18,7 +18,7 @@ Policy Engine_, it allows for user-defined policy to automatically add (and
 remove) AWS-based compute nodes based on user-defined metrics (such as cluster
 load).
 
-### Installing the AWS resource adapter kit
+## Installing the AWS resource adapter kit
 
 The AWS Adapter Kit installs as a standard kit using `install-kit`:
 
@@ -57,7 +57,7 @@ After installing the AWS Adapter Kit and enabling the management component, the 
          enable-component -p awsadapter-6.3.1-0 management-6.3.1 --no-sync
          enable-component -p base-6.3.1-0 dns-6.3.1
 
-### Creating AWS Hardware Profile
+## Creating AWS Hardware Profile
 
 To create an AWS hardware profile using the default hardware profile template,
 an additional step is necessary:
@@ -72,7 +72,7 @@ For advanced installations, it may be desirable to set the "cost" of the
 cloud-based instances to be higher and/or lower if the installation has
 multiple AWS hardware profiles associated with different instance types.
 
-### Updating AWS resource adapter configuration
+## Updating AWS resource adapter configuration
 
 Use the command-line tool `adapter-mgmt update` to update an existing resource
 adapter configuration.
@@ -85,7 +85,7 @@ configuration profile:
 See the [AWS resource adapter configuration reference](#aws_cfg_reference)
 for valid settings for the AWS resource adapter.
 
-### AWS resource adapter configuration reference {#aws_cfg_reference}
+## AWS resource adapter configuration reference {#aws_cfg_reference}
 
 This section lists the valid settings for the AWS resource adapter.
 
@@ -96,6 +96,10 @@ This section lists the valid settings for the AWS resource adapter.
   Paravirtual (PV) and hardware virtual machine (PVM) AMIs are supported,
   however PVM AMIs are recommended for better performance. 64-bit AMIs
   must be used in either instance.
+
+- `associate_public_ip_address`
+
+    Ensure instances have an associated public IP address. This setting can be set globally for the VPC subnet. Unless explicitly set, the default setting will be used.
 
 - `awsAccessKey` and `awsSecretKey`
 
@@ -263,7 +267,7 @@ Refer to the Advanced Topics section below for further discussion on
 supporting multiple clouds. This capability can also be used to support
 different instance types for different hardware profiles.
 
-### AMI Requirements
+## AMI Requirements
 
 All AMIs for Amazon EC2 used for deploying Tortuga compute nodes must contain
 a Tortuga-compatible operating system and have [cloud-init][cloud_init]
@@ -275,7 +279,7 @@ applications and/or datasets would be optimal. When creating custom AMIs, be
 sure to be aware of operating system state (ie. host name) contained within
 image snapshots used to create the AMI.
 
-#### Amazon EC2
+### Amazon EC2
 
 Red Hat Enterprise Linux and CentOS both offer access to AMIs through the [AWS
 Marketplace][]. In either case, there is no additional charge for the software
@@ -286,7 +290,7 @@ Third-party AMIs (created by vendors other than Red Hat and CentOS) may also be
 used, as well as custom AMIs as long as they meet [`cloud-init`][cloud_init]
 requirements.
 
-### Security Group Requirements
+## Security Group Requirements
 
 The recommended configuration for AWS-based clouds is a security group which
 grants _full_ access to all other instances running in the same security group.
@@ -296,7 +300,7 @@ If this configuration is not possible, see the _Firewall Configuration_ section
 in Tortuga Installation and Installation Guide for a list of ports which must
 allow ingress in the security group.
 
-### DNS and AWS {#dns_and_aws}
+## DNS and AWS {#dns_and_aws}
 
 In an on-premise Tortuga installer (hybrid installation) scenario, Tortuga
 will automatically generate host names for AWS instances. These generated host
@@ -306,7 +310,7 @@ names and using a custom DNS suffix. This functionality is provided in addition
 to the [Amazon VPC][] functionality that allows for custom name servers and DNS
 domain.
 
-#### How do I use a custom DNS suffix for compute node instances?
+### How do I use a custom DNS suffix for compute node instances?
 
 Through the use of the built-in support for a Tortuga-managed DNS server, it
 is possible to have a custom DNS domain assigned to your compute nodes.
@@ -320,7 +324,7 @@ The following steps are required to enable a custom DNS suffix:
     Use `set-private-dns-zone` without any argument to display the current
     private DNS zone.
 
-1.  Update hardware profile(s) name format
+2.  Update hardware profile(s) name format
 
         update-hardware-profile --name execd --name-format aws-#NN
 
@@ -331,7 +335,7 @@ The following steps are required to enable a custom DNS suffix:
         aws-03.cloud.univa.com
         ...
 
-1.  Enable DNS server on Tortuga
+3.  Enable DNS server on Tortuga
 
         enable-component -p dns
 
@@ -340,13 +344,13 @@ The following steps are required to enable a custom DNS suffix:
         service sgemaster.tortuga stop
         service sgemaster.tortuga start
 
-1.  Apply settings to AWS resource adapter
+4.  Apply settings to AWS resource adapter
 
         adapter-mgmt update -r aws -p default \
             -s override_dns_domain=true \
             -s use_instance_hostname=false
 
-#### How do I specify custom DNS options, search spec and/or nameservers for compute node instances?
+### How do I specify custom DNS options, search spec and/or nameservers for compute node instances?
 
 Enable managed `/etc/resolv.conf` and specify `dns_options`, `dns_search`,
 and/or `dns_nameservers`. For example:
@@ -374,9 +378,9 @@ the Tortuga installer. Use customized DNS configuration on the
 Tortuga installer and let the built-in DNS server propagate those
 settings to the compute nodes.
 
-### AWS resource adapter usage
+## AWS resource adapter usage
 
-#### Supported Node Operations
+### Supported Node Operations
 
 The AWS adapter supports the following Tortuga node management commands:
 
@@ -394,14 +398,14 @@ The AWS adapter _does not_ support the following node operation commands as they
 - `checkpoint-node`
 - `migrate-node`
 
-#### Networking Considerations
+### Networking Considerations
 
 To enable a _true_ hybrid environment with local compute nodes (physical and/or
 virtual) and cloud-based compute nodes, the network subnet used for the VPN
 needs to be the same as the network where the local compute nodes are
 connected.
 
-#### Adding Nodes
+### Adding Nodes
 
 Nodes are added using the Tortuga `add-nodes` command. Specifying an
 AWS-enabled hardware profile (hardware profile with resource adapter set to
@@ -413,9 +417,9 @@ profile `Compute` and hardware profile `AWS`:
 
     add-nodes --count 4 --software-profile Compute --hardware-profile AWS
 
-### Best Practices
+## Best Practices
 
-#### Amazon Virtual Private Cloud (VPC)
+### Amazon Virtual Private Cloud (VPC)
 
 Using an [Amazon VPC][], allows an administrator more control over their compute instances. This includes allowing setting of instance IP addresses, network address space, routing, DNS, etc.
 
@@ -426,9 +430,9 @@ Ensure the setting `subnet_id` is applied when using an [Amazon VPC][]:
 
 Please refer to [Amazon VPC][] documentation for further information.
 
-### EC2 Spot Instance support
+## EC2 Spot Instance support
 
-#### Overview
+### Overview
 
 Tortuga EC2 Spot Instance support allows Tortuga to manage spot instances requested through the Tortuga provided command-line interfaces.
 
@@ -455,7 +459,7 @@ The basic workflow is as follows:
 
 **Note:** spot instance requests made within the AWS Management Console or through AWS command-line interfaces are not known to Tortuga and will not automatically join the Tortuga-managed cluster.
 
-#### Prerequisites
+### Prerequisites
 
 - Tortuga must either be hosted on AWS or using an externally managed VPN
 
@@ -466,7 +470,7 @@ The basic workflow is as follows:
   Ensure `add-nodes` works against the "default" AWS resource adapter
   configuration profile prior to attempting to use spot instance support.
 
-#### Setting up EC2 Spot Instance support
+### Setting up EC2 Spot Instance support
 
 EC2 Spot Instance support is not enabled by default in Tortuga. The EC2 Spot
 Instance support daemon (`awsspotd`) must be manually enabled and started
@@ -502,7 +506,7 @@ before it is capable of requesting and monitoring spot instance requests.
     If spot instances are marked for termination/terminated, nodes will be
     automatically removed from the cluster.
 
-#### Configuration
+### Configuration
 
 For example, to change the AWS region to `us-west-2`, add the following line to
 `/etc/puppetlabs/code/environments/production/modules/tortuga_kit_awsadapter/files/awsspotd.sysconfig` as follows:
@@ -511,7 +515,7 @@ For example, to change the AWS region to `us-west-2`, add the following line to
 AWSSPOTD_OPTIONS="--region us-west-2"
 ```
 
-#### Troubleshooting
+### Troubleshooting
 
 - Use AWS management console or AWS CLI to query spot instance requests.
 
@@ -520,7 +524,7 @@ AWSSPOTD_OPTIONS="--region us-west-2"
 
 - Use `systemctl status awsspotd` (or `service awsspotd status` on RHEL/CentOS 6) to ensure spot instance support daemon is running. Use `journalctl -u awsspotd` to see any console output from the daemon on RHEL/CentOS 7.
 
-#### EC2 Spot Instance limitations/known issues
+### EC2 Spot Instance limitations/known issues
 
 - Logging/debugging/troubleshooting
 
@@ -539,9 +543,9 @@ AWSSPOTD_OPTIONS="--region us-west-2"
 
   EC2 Spot Fleets are not currently supported in this release.
 
-### Advanced Topics
+## Advanced Topics
 
-#### Instance type to VCPU mapping {#instance_mapping}
+### Instance type to VCPU mapping {#instance_mapping}
 
 The AWS platform does not provide the ability to automatically query instance
 type metadata, so it is necessary to provide a mapping mechanism.
@@ -555,7 +559,7 @@ followed by a comma and the number of VCPUs for that instance type. Some
 commonly used instance type to VCPUs mappings are included in the default
 installation.
 
-#### AWS instance block device mapping
+### AWS instance block device mapping
 
 AWS allows setting various parameters on the block devices (virtual hard drives) associated with an instance. This includes setting the root device size, the disk type (ie. standard or SSD), # of IOPS, and encryption.
 
@@ -567,7 +571,7 @@ Note: not all block device mappings are valid for all instance types. Not all in
 
 As with all configuration options, adding to the `[default]` section will change the setting for all AWS instances managed by Tortuga. These options can be set on hardware profile specific sections as well. Substitute `[default]` in the following examples as necessary.
 
-##### Example: set root device (`/dev/sda`) size to 60GB
+#### Example: set root device (`/dev/sda`) size to 60GB
 
     adapter-mgmt update --resource-adapter aws --profile default \
         --setting block_device_map=/dev/sda=:60
@@ -576,7 +580,7 @@ Note the leading ':' is necessary to delineate the first argument (`snapshot_id`
 
 The root device name can be obtained by displaying details of the AMI. For official RHEL/CentOS 6 AMIs, it is usually `/dev/sda` or `/dev/sda1` and for official RHEL/CentOS 7 AMIs, it is `/dev/xvda`.
 
-##### Example: use SSD root device
+#### Example: use SSD root device
 
 - General purpose SSD:
 
@@ -598,12 +602,12 @@ same syntax. _Note_: if is not possible to change the device type of an
 ephemeral volume. Refer to EC2 documentation regarding the disk type associated
 with instance types that support ephemeral disks.
 
-##### Example: Use 20GB SSD-backed root device
+#### Example: Use 20GB SSD-backed root device
 
         adapter-mgmt update --resource-adapter aws --profile default \
             setting block_device_map=/dev/sda1=:60::gp2
 
-##### Example: add an ephemeral disk
+#### Example: add an ephemeral disk
 
     adapter-mgmt update --resource-adapter aws --profile default \
         --setting block_device_map=/dev/xvdb=ephemeral0
@@ -614,14 +618,14 @@ separate the block device mappings using commas:
     adapter-mgmt update --resource-adapter aws --profile default \
         --setting block_device_map=/dev/xvdb=ephemeral0,/dev/xvdc=ephemeral1
 
-##### Example: set root device size and add an ephemeral disk
+#### Example: set root device size and add an ephemeral disk
 
 Separate device mappings with a comma.
 
     adapter-mgmt update --resource-adapter aws --profile default \
         --setting block_device_map=/dev/sda=:60,/dev/sdb=ephemeral0
 
-##### Example: add EBS (data) volume
+#### Example: add EBS (data) volume
 
 Create 100GB EBS volume attached on `/dev/xvdc` and marked for deletion on
 termination.
@@ -629,7 +633,7 @@ termination.
     adapter-mgmt update --resource-adapter aws --profile default \
         --setting block_device_map=/dev/xvdc=:100:true
 
-#### Using Amazon EC2-assigned instance host names
+### Using Amazon EC2-assigned instance host names
 
 By default, Tortuga will automatically assign host names to managed Amazon EC2
 instances using the name format defined in the EC2-enabled hardware profile.
@@ -658,7 +662,7 @@ profiles to allow use of EC2 assigned host names.
 **Note:** Failure to update AWS-enabled hardware profiles will result in errors
 when attempting to add AWS nodes.
 
-#### Compute instances without Internet access
+### Compute instances without Internet access
 
 For security purposes, especially when using [Amazon VPC][], it is often
 desirable to disallow instances from accessing the Internet. In the context of
@@ -671,7 +675,7 @@ Tortuga assumes compute instances will have unrestricted Internet access. This
 script template **must** be modified by the end-user to properly retrieve
 package dependencies from the Tortuga installer or other infrastructure node.
 
-#### Multiple AWS-compatible Clouds
+### Multiple AWS-compatible Clouds
 
 By default, the AWS adapter supports a single AWS-compatible cloud. However, it
 is possible to configure it to support multiple clouds simultaneously, such as
@@ -707,7 +711,7 @@ Add nodes to EC2:
 Remember, if the resource adapter configuration profile is not specified, the
 `default` is used.
 
-### Identity &amp; Access Mangagement (IAM) Policy Requirements {#iam_policy}
+## Identity &amp; Access Mangagement (IAM) Policy Requirements {#iam_policy}
 
 If using IAM when the Tortuga installer is hosted on Amazon EC2, minimally, the
 following IAM role policy **must** contain the following actions:
@@ -727,7 +731,7 @@ following IAM role policy **must** contain the following actions:
 - ec2:CreateTags
 - ec2:DescribeTags
 
-#### IAM Role Usage
+### IAM Role Usage
 
 The IAM role must be specified as a parameter when launching the EC2 instance
 that is acting as the Tortuga installer. This applies to the official Tortuga
@@ -740,7 +744,7 @@ IAM role. This means EC2 instances launched by Tortuga will not be able to
 Refer to [AWS Identity &amp; Access Management][aws iam] documentation for
 further details.
 
-### Troubleshooting
+## Troubleshooting
 
 Troubleshooting AWS issues can be tedious. Check `/var/log/tortuga` and output
 of `get-node-requests` for any immediately obvious errors. In the case of AWS
