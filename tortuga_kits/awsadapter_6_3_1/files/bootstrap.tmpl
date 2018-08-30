@@ -20,7 +20,6 @@ import itertools
 import subprocess
 import random
 import urllib2
-import platform
 import time
 import base64
 import json
@@ -176,12 +175,24 @@ def main():
 
     tryCommand('setenforce permissive')
 
-    vals = platform.dist()
-
-    vers = vals[1].split('.')[0]
-
+    # append /etc/hosts entry for installer
     with open('/etc/hosts', 'a+') as fp:
         fp.write('%s\t%s\n' % (installerIpAddress, installerHostName))
+
+    # check distro and version
+    result = tryCommand(
+        'rpm --query --queryformat %{VENDOR} system-release |'
+	' grep --quiet --ignore-case --line-regexp Amazon.com'
+    )
+    if result == 0:
+        # amazon linux
+        vers = 6
+    else:
+        import platform
+
+        vals = platform.dist()
+
+        vers = vals[1].split('.')[0]
 
     installPuppet(vers)
 
