@@ -22,7 +22,9 @@ load).
 
 The AWS Adapter Kit installs as a standard kit using `install-kit`:
 
-    install-kit kit-awsadapter-6.3.1-0.tar.bz2
+```shell
+install-kit kit-awsadapter-6.3.1-0.tar.bz2
+```
 
 After installing the AWS Adapter Kit and enabling the management component, the following changes are made within Tortuga:
 
@@ -80,7 +82,9 @@ adapter configuration.
 For example, to change the instance type for "default" resource adapter
 configuration profile:
 
-    adapter-mgmt update -r aws -p default -s instancetype=XXXXXXXX
+```shell
+adapter-mgmt update -r aws -p default -s instancetype=XXXXXXXX
+```
 
 See the [AWS resource adapter configuration reference](#aws_cfg_reference)
 for valid settings for the AWS resource adapter.
@@ -98,6 +102,8 @@ This section lists the valid settings for the AWS resource adapter.
   must be used in either instance.
 
 - `associate_public_ip_address`
+
+    Valid values: _true_ or _false_
 
     Ensure instances have an associated public IP address. This setting can be set globally for the VPC subnet. Unless explicitly set, the default setting will be used.
 
@@ -190,8 +196,8 @@ This section lists the valid settings for the AWS resource adapter.
 
   For example, to use zone "us-east-1e", set the following:
 
-            region = us-east-1
-            zone = us-east-1e
+        region = us-east-1
+        zone = us-east-1e
 
   Specify "zone" and/or "placementgroup" to further customize exact
   location where compute node instances will be launched.
@@ -355,20 +361,24 @@ The following steps are required to enable a custom DNS suffix:
 Enable managed `/etc/resolv.conf` and specify `dns_options`, `dns_search`,
 and/or `dns_nameservers`. For example:
 
-    adapter-mgmt update -r aws -p default \
-        -s override_dns_domain=true \
-        -s dns_options="timeout:2 attempts:5" \
-        -s dns_nameservers="8.8.8.8 8.8.4.4" \
-        -s dns_search="cloud.mydomain.com mydomain.com"
+```shell
+adapter-mgmt update -r aws -p default \
+    -s override_dns_domain=true \
+    -s dns_options="timeout:2 attempts:5" \
+    -s dns_nameservers="8.8.8.8 8.8.4.4" \
+    -s dns_search="cloud.mydomain.com mydomain.com"
+```
 
 The resulting `/etc/resolv.conf` on the compute node instance would be
 similar to as follows:
 
-    options timeout:2 attempts:5
-    search cloud.mydomain.com mydomain.com
-    nameserver W.X.Y.Z
-    nameserver 8.8.8.8
-    nameserver 8.8.4.4
+```shell
+options timeout:2 attempts:5
+search cloud.mydomain.com mydomain.com
+nameserver W.X.Y.Z
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+```
 
 where `W.X.Y.Z` is the IP address of the Tortuga (DNS) server.
 
@@ -415,7 +425,9 @@ manage the nodes.
 For example, the following command-line will add 4 AWS nodes to the software
 profile `Compute` and hardware profile `AWS`:
 
-    add-nodes --count 4 --software-profile Compute --hardware-profile AWS
+```shell
+add-nodes --count 4 --software-profile Compute --hardware-profile AWS
+```
 
 ## Best Practices
 
@@ -425,8 +437,10 @@ Using an [Amazon VPC][], allows an administrator more control over their compute
 
 Ensure the setting `subnet_id` is applied when using an [Amazon VPC][]:
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting subnet_id=<subnet-XXXXXXXX>
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting subnet_id=<subnet-XXXXXXXX>
+```
 
 Please refer to [Amazon VPC][] documentation for further information.
 
@@ -448,8 +462,10 @@ The basic workflow is as follows:
 
   Request 6 spot instances at the price of $0.0299/hour (2.99 cents per hour). Nodes will be added to the software and hardware profile "execd", respectively:
 
-        request-spot-instances --price 0.0299 --software-profile execd \
-            --hardware-profile execd --count 6
+```shell
+    request-spot-instances --price 0.0299 --software-profile execd \
+        --hardware-profile execd --count 6
+```
 
   Nodes do not appear in output of `get-node-status` until the spot instance requests have been fulfilled.
 
@@ -511,7 +527,7 @@ before it is capable of requesting and monitoring spot instance requests.
 For example, to change the AWS region to `us-west-2`, add the following line to
 `/etc/puppetlabs/code/environments/production/modules/tortuga_kit_awsadapter/files/awsspotd.sysconfig` as follows:
 
-```
+```shell
 AWSSPOTD_OPTIONS="--region us-west-2"
 ```
 
@@ -573,8 +589,10 @@ As with all configuration options, adding to the `[default]` section will change
 
 #### Example: set root device (`/dev/sda`) size to 60GB
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting block_device_map=/dev/sda=:60
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting block_device_map=/dev/sda=:60
+```
 
 Note the leading ':' is necessary to delineate the first argument (`snapshot_id`) from the second (`size`).
 
@@ -604,34 +622,44 @@ with instance types that support ephemeral disks.
 
 #### Example: Use 20GB SSD-backed root device
 
-        adapter-mgmt update --resource-adapter aws --profile default \
-            setting block_device_map=/dev/sda1=:60::gp2
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    setting block_device_map=/dev/sda1=:60::gp2
+```
 
 #### Example: add an ephemeral disk
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting block_device_map=/dev/xvdb=ephemeral0
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting block_device_map=/dev/xvdb=ephemeral0
+```
 
 For Amazon EC2 instance types that have the option of multiple ephemeral disks,
 separate the block device mappings using commas:
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting block_device_map=/dev/xvdb=ephemeral0,/dev/xvdc=ephemeral1
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting block_device_map=/dev/xvdb=ephemeral0,/dev/xvdc=ephemeral1
+```
 
 #### Example: set root device size and add an ephemeral disk
 
 Separate device mappings with a comma.
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting block_device_map=/dev/sda=:60,/dev/sdb=ephemeral0
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting block_device_map=/dev/sda=:60,/dev/sdb=ephemeral0
+```
 
 #### Example: add EBS (data) volume
 
 Create 100GB EBS volume attached on `/dev/xvdc` and marked for deletion on
 termination.
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting block_device_map=/dev/xvdc=:100:true
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting block_device_map=/dev/xvdc=:100:true
+```
 
 ### Using Amazon EC2-assigned instance host names
 
@@ -651,13 +679,17 @@ profiles. To enable this feature for all hardware profiles, and therefore, all
 Tortuga-managed instances, the `[default]` section would be configured as
 follows:
 
-    adapter-mgmt update --resource-adapter aws --profile default \
-        --setting use_instance_hostname=true
+```shell
+adapter-mgmt update --resource-adapter aws --profile default \
+    --setting use_instance_hostname=true
+```
 
 Once this setting has been enabled, it is necessary to configure the hardware
 profiles to allow use of EC2 assigned host names.
 
-    update-hardware-profile --name <hardwareprofilename> --name-format '*'
+```shell
+update-hardware-profile --name <hardwareprofilename> --name-format '*'
+```
 
 **Note:** Failure to update AWS-enabled hardware profiles will result in errors
 when attempting to add AWS nodes.
@@ -685,7 +717,9 @@ Each AWS configuration is associated with a single hardware profile. To create
 an additional AWS-compatible hardware profile, copy the pre-defined AWS profile
 as follows:
 
-    copy-hardware-profile --src AWS --dst <NAME>
+```shell
+copy-hardware-profile --src AWS --dst <NAME>
+```
 
 If desired, update the new profile using `update-hardware-profile` to specify a
 different description, different modules, node name format, etc.
@@ -697,16 +731,20 @@ configuration profiles for different instance types, availability zones, etc.
 In this example, the AWS resource adapter configuration profiles might look as
 follows:
 
-    adapter-mgmt create --resource-adapter aws --profile default \
-        --setting awsAccessKey=XXXXXXXXXXXXXXXX \
-        --setting awsSecretKey=YYYYYYYYYYYYYYYY \
-        --setting ami=ami-XXXXXXXX
+```shell
+adapter-mgmt create --resource-adapter aws --profile default \
+    --setting awsAccessKey=XXXXXXXXXXXXXXXX \
+    --setting awsSecretKey=YYYYYYYYYYYYYYYY \
+    --setting ami=ami-XXXXXXXX
+```
 
 Add nodes to EC2:
 
-    add-nodes --count 3 \
-        --software-profile <swprofile> \
-        --hardware-profile <hwprofile>
+```shell
+add-nodes --count 3 \
+    --software-profile <swprofile> \
+    --hardware-profile <hwprofile>
+```
 
 Remember, if the resource adapter configuration profile is not specified, the
 `default` is used.
