@@ -567,7 +567,7 @@ The AWS platform does not provide the ability to automatically query instance
 type metadata, so it is necessary to provide a mapping mechanism.
 
 This mapping is contained within the comma-separted value formatted file
-`$TORTUGA_ROOT/config/aws-instance-sizes.csv` to allow Tortuga to
+`$TORTUGA_ROOT/config/aws-instances.csv` to allow Tortuga to
 automatically set UGE exechost slots.
 
 This file can be modified by the end-user. The file is the AWS instance type
