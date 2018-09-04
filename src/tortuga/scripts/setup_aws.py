@@ -81,7 +81,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
          profile):
     ec2_metadata = get_ec2_metadata()
 
-    print(bright_white('Configuring Tortuga AWS resource adapter'))
+    print('Configuring Tortuga AWS resource adapter')
 
     if unattended:
         ignore_iam = False
@@ -155,7 +155,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
             else:
                 _, iam_profile_name = iam_user_policy.split('/', 1)
 
-            print(bright_white(iam_profile_name))
+            print(iam_profile_name)
 
             if not assumed_role:
                 print(colorama.Style.BRIGHT + colorama.Fore.YELLOW +
@@ -552,16 +552,12 @@ def error_message(msg, *args):
         format_string_with_arg(msg, *args, forecolour=colorama.Fore.RED))
 
 
-def bright_white(msg):
-    return colorama.Fore.WHITE + colorama.Style.BRIGHT + msg + \
-        colorama.Style.RESET_ALL
-
-
 def format_string_with_arg(msg, *args, **kwargs):
     forecolour = kwargs['forecolour'] \
         if 'forecolour' in kwargs else colorama.Fore.GREEN
 
-    fmtarg = bright_white(args[0]) + colorama.Fore.GREEN if args else ''
+    fmtarg = colorama.Style.RESET_ALL + \
+        args[0] + colorama.Style.BRIGHT + colorama.Fore.GREEN if args else ''
 
     return forecolour + colorama.Style.BRIGHT + \
         msg.format(fmtarg) + colorama.Style.RESET_ALL
