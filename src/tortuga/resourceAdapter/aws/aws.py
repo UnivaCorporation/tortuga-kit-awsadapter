@@ -19,7 +19,6 @@ import itertools
 import json
 import os
 import random
-import shlex
 import socket
 import sys
 import xml.etree.cElementTree as ET
@@ -27,6 +26,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing.io import TextIO
+
+from sqlalchemy.orm.session import Session
 
 import boto
 import boto.ec2
@@ -37,8 +38,6 @@ import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
-from sqlalchemy.orm.session import Session
-
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
@@ -55,11 +54,12 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
-from tortuga.resourceAdapterConfiguration import settings
 from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
-from .helpers import _get_encoded_list, ec2_get_root_block_devices
+from .helpers import (_get_encoded_list, ec2_get_root_block_devices,
+                      parse_cfg_tags)
 from .launchRequest import LaunchRequest, init_node_request_queue
 
 
@@ -398,17 +398,11 @@ class Aws(ResourceAdapter):
         # Parse user-defined tags
         #
         if 'tags' in config and config['tags']:
-            tags = {}
             #
             # Support tag names/values containing spaces and tags without a
             # value.
             #
-            for tagdef in shlex.split(config['tags']):
-                key, value = tagdef.rsplit('=', 1) \
-                    if '=' in tagdef else (tagdef, '')
-                tags[key] = value
-
-            config['tags'] = tags
+            config['tags'] = parse_cfg_tags(config['tags'])
             config['use_tags'] = True
 
         #

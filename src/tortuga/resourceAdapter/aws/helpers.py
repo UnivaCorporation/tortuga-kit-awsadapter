@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import shlex
+from typing import Dict
+
 
 def ec2_get_root_block_devices(ami):
     # Helper function for determining the root block device for an AMI
@@ -23,3 +26,14 @@ def _get_encoded_list(items):
     """Return Python list encoded in a string"""
     return '[' + ', '.join(['\'%s\'' % (item) for item in items]) + ']' \
         if items else '[]'
+
+
+def parse_cfg_tags(value: str) -> Dict[str, str]:
+    tags = {}
+
+    for tagdef in shlex.split(value):
+        key, value = tagdef.rsplit('=', 1) \
+            if '=' in tagdef else (tagdef, '')
+        tags[key] = value
+
+    return tags

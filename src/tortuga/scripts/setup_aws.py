@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+from typing import Optional
 
 import boto3
 import botocore
@@ -26,6 +27,7 @@ import colorama
 from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
+from tortuga.resourceAdapter.aws.helpers import parse_cfg_tags
 from tortuga.resourceAdapterConfiguration.api import \
     ResourceAdapterConfigurationApi
 
@@ -450,6 +452,8 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
     aws_adapter_cfg = os.path.join(
         ConfigManager().getKitConfigBase(), 'aws', 'adapter.ini')
 
+    tags: str = ''
+
     if os.path.exists(aws_adapter_cfg):
         cfg = configparser.ConfigParser()
         cfg.read(aws_adapter_cfg)
@@ -462,6 +466,9 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
                 user_data_script_template = cfg.get(
                     'aws', 'user_data_script_template'
                 )
+
+            if cfg.has_option('aws', 'tags'):
+                tags = cfg.get('aws', 'tags')
 
     if not user_data_script_template and not cloud_init_script_template:
         user_data_script_template = 'bootstrap.tmpl'
@@ -479,13 +486,17 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         adapter_cfg['awsAccessKey'] = access_key
         adapter_cfg['awsSecretKey'] = secret_key
 
+    # parse tags to determine if 'Name' has been defined
+    if 'Name' not in parse_cfg_tags(tags):
+        tags = 'Name=\"Tortuga compute node\"'
+
     override_adapter_cfg = {
         'keypair': keypair,
         'ami': ami_id,
         'instancetype': instance_type,
         'securitygroup': ','.join(group_id.split('\n')),
         'subnet_id': subnet_id,
-        'tags': 'Name=\"UGE compute node\"',
+        'tags': tags,
         'region': region,
     }
 
