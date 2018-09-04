@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+from typing import Optional
 
 import boto3
 import botocore
@@ -26,6 +27,7 @@ import colorama
 from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
+from tortuga.resourceAdapter.aws.helpers import parse_cfg_tags
 from tortuga.resourceAdapterConfiguration.api import \
     ResourceAdapterConfigurationApi
 
@@ -79,7 +81,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
          profile):
     ec2_metadata = get_ec2_metadata()
 
-    print(bright_white('Configuring Tortuga AWS resource adapter'))
+    print('Configuring Tortuga AWS resource adapter')
 
     if unattended:
         ignore_iam = False
@@ -153,7 +155,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
             else:
                 _, iam_profile_name = iam_user_policy.split('/', 1)
 
-            print(bright_white(iam_profile_name))
+            print(iam_profile_name)
 
             if not assumed_role:
                 print(colorama.Style.BRIGHT + colorama.Fore.YELLOW +
@@ -450,6 +452,8 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
     aws_adapter_cfg = os.path.join(
         ConfigManager().getKitConfigBase(), 'aws', 'adapter.ini')
 
+    tags: str = ''
+
     if os.path.exists(aws_adapter_cfg):
         cfg = configparser.ConfigParser()
         cfg.read(aws_adapter_cfg)
@@ -462,6 +466,9 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
                 user_data_script_template = cfg.get(
                     'aws', 'user_data_script_template'
                 )
+
+            if cfg.has_option('aws', 'tags'):
+                tags = cfg.get('aws', 'tags')
 
     if not user_data_script_template and not cloud_init_script_template:
         user_data_script_template = 'bootstrap.tmpl'
@@ -479,13 +486,17 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         adapter_cfg['awsAccessKey'] = access_key
         adapter_cfg['awsSecretKey'] = secret_key
 
+    # parse tags to determine if 'Name' has been defined
+    if 'Name' not in parse_cfg_tags(tags):
+        tags = 'Name=\"Tortuga compute node\"'
+
     override_adapter_cfg = {
         'keypair': keypair,
         'ami': ami_id,
         'instancetype': instance_type,
         'securitygroup': ','.join(group_id.split('\n')),
         'subnet_id': subnet_id,
-        'tags': 'Name=\"UGE compute node\"',
+        'tags': tags,
         'region': region,
     }
 
@@ -541,16 +552,12 @@ def error_message(msg, *args):
         format_string_with_arg(msg, *args, forecolour=colorama.Fore.RED))
 
 
-def bright_white(msg):
-    return colorama.Fore.WHITE + colorama.Style.BRIGHT + msg + \
-        colorama.Style.RESET_ALL
-
-
 def format_string_with_arg(msg, *args, **kwargs):
     forecolour = kwargs['forecolour'] \
         if 'forecolour' in kwargs else colorama.Fore.GREEN
 
-    fmtarg = bright_white(args[0]) + colorama.Fore.GREEN if args else ''
+    fmtarg = colorama.Style.RESET_ALL + \
+        args[0] + colorama.Style.BRIGHT + colorama.Fore.GREEN if args else ''
 
     return forecolour + colorama.Style.BRIGHT + \
         msg.format(fmtarg) + colorama.Style.RESET_ALL
