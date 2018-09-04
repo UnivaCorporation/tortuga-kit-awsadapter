@@ -36,6 +36,8 @@ DEFAULT_AWS_REGION = 'us-east-1'
 
 DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME = 'default'
 
+DEFAULT_INSTANCE_TYPE = 'm5.large'
+
 
 def get_ec2_metadata():
     cmd = '/opt/puppetlabs/bin/facter --json ec2_metadata'
@@ -312,18 +314,6 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         print('Aborted by user.')
         sys.exit(1)
 
-    # query default compute instance type
-    instance_type = 'm4.large'
-    while not instance_type:
-        response = input('Default compute instance type [m4.large]: ')
-        if not response:
-            instance_type = 'm4.large'
-            break
-
-        instance_type = response
-
-    # TODO: validate instance type (???)
-
     # get values from EC2 metadata
     subnet_id = None
     group_id = None
@@ -335,46 +325,58 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
             subnet_id = values['subnet-id']
             group_id = values['security-group-ids']
             vpc_id = values['vpc-id']
+
+            print(colorama.Style.BRIGHT + colorama.Fore.GREEN +
+                  'Detected subnet [' +
+                  colorama.Style.RESET_ALL + subnet_id +
+                  colorama.Style.BRIGHT + colorama.Fore.GREEN +
+                  '] (VPC [' + colorama.Style.RESET_ALL + vpc_id +
+                  colorama.Style.BRIGHT + colorama.Fore.GREEN + '])')
+
+            print_statement('Detected security group [{}]', group_id)
+
             break
 
     # subnet_id
-    subnets = ec2.describe_subnets()
-    while not subnet_id:
-        response = input('Subnet ID [? for list]: ')
-        if not response:
-            continue
+    if not subnet_id:
+        subnets = ec2.describe_subnets()
 
-        if response.startswith('?'):
+        while not subnet_id:
+            response = input('Subnet ID [? for list]: ')
+            if not response:
+                continue
+
+            if response.startswith('?'):
+                for subnet in subnets['Subnets']:
+                    name = get_resource_name_from_tag(subnet)
+
+                    buf = colorama.Fore.YELLOW + colorama.Style.BRIGHT + \
+                        subnet['SubnetId'] + colorama.Style.RESET_ALL + \
+                        colorama.Style.DIM
+
+                    if name:
+                        buf += ' ' + name
+
+                    buf += ' ({0}) (VPC ID: {1})'.format(subnet['CidrBlock'],
+                                                         subnet['VpcId']) + \
+                        colorama.Style.RESET_ALL
+
+                    print('    ' + buf)
+
+                continue
+
             for subnet in subnets['Subnets']:
-                name = get_resource_name_from_tag(subnet)
+                if subnet['SubnetId'] == response:
+                    subnet_id = response
+                    vpc_id = subnet['VpcId']
+                    break
+            else:
+                # print('Error: invalid subnet ID')
+                error_message('Error: invalid subnet ID')
 
-                buf = colorama.Fore.YELLOW + colorama.Style.BRIGHT + \
-                    subnet['SubnetId'] + colorama.Style.RESET_ALL + \
-                    colorama.Style.DIM
+                continue
 
-                if name:
-                    buf += ' ' + name
-
-                buf += ' ({0}) (VPC ID: {1})'.format(subnet['CidrBlock'],
-                                                     subnet['VpcId']) + \
-                    colorama.Style.RESET_ALL
-
-                print('    ' + buf)
-
-            continue
-
-        for subnet in subnets['Subnets']:
-            if subnet['SubnetId'] == response:
-                subnet_id = response
-                vpc_id = subnet['VpcId']
-                break
-        else:
-            # print('Error: invalid subnet ID')
-            error_message('Error: invalid subnet ID')
-
-            continue
-
-        break
+            break
 
     # security group(s)
     while not group_id:
@@ -444,6 +446,44 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
             continue
 
         break
+
+    # query default compute instance type
+    for instance_type in (DEFAULT_INSTANCE_TYPE, 'm4.large', 'm3.large'):
+        if instance_type != DEFAULT_INSTANCE_TYPE:
+            print(colorama.Style.BRIGHT + colorama.Fore.YELLOW +
+                  'Falling back to [' + colorama.Style.RESET_ALL +
+                  instance_type +
+                  colorama.Style.BRIGHT + colorama.Fore.YELLOW + ']...')
+
+            sys.stdout.flush()
+
+        print(
+            colorama.Style.BRIGHT + colorama.Fore.GREEN +
+            'Attempting to validate instance type [' +
+            colorama.Style.RESET_ALL +
+            instance_type +
+            colorama.Style.BRIGHT +
+            colorama.Fore.GREEN + ']... ' +
+            colorama.Style.RESET_ALL, end=''
+        )
+
+        sys.stdout.flush()
+
+        # validate user-provided instance type
+        result = validate_instance_type(
+            ec2, instance_type, subnet_id, debug=debug)
+        if result:
+            print(colorama.Style.BRIGHT + colorama.Fore.GREEN +
+                  'done.' + colorama.Style.RESET_ALL)
+            break
+
+        print(colorama.Style.BRIGHT + colorama.Fore.RED +
+              'failed.' + colorama.Style.RESET_ALL)
+    else:
+        # unable to determine valid instance type
+        error_message('\nUnable to determine valid instance type')
+
+        sys.exit(1)
 
     # determine which bootstrap/cloud-init script template to use
     cloud_init_script_template = None
@@ -612,3 +652,47 @@ def get_resource_name_from_tag(subnet):
     name = tags[0] if tags else None
 
     return name
+
+
+def get_amazon_linux_image_id(client) -> Optional[str]:
+    """
+    Return a valid Amazon Linux AMI ID for specified region
+    """
+
+    result = client.describe_images(Owners=['amazon'], Filters=[
+        {'Name': 'name', 'Values': ['amzn*']},
+        {'Name': 'architecture', 'Values': ['x86_64']}])
+
+    if 'Images' not in result or not result['Images']:
+        return None
+
+    return result['Images'][0]['ImageId']
+
+
+def validate_instance_type(client, instance_type: str, subnet_id: str, *,
+                           debug: bool = False) -> Optional[bool]:
+    image_id = get_amazon_linux_image_id(client)
+    if not image_id:
+        return None
+
+    try:
+        client.run_instances(
+            ImageId=image_id,
+            InstanceType=instance_type,
+            SubnetId=subnet_id,
+            MaxCount=1,
+            MinCount=1,
+            DryRun=True
+        )
+    except botocore.exceptions.ClientError as exc:
+        if debug:
+            print(exc.response)
+
+        if exc.response['Error']['Code'] == 'DryRunOperation':
+            # success!
+            return True
+
+        if exc.response['Error']['Code'] == 'InvalidParameterValue':
+            return False
+
+    return None
