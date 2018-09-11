@@ -630,11 +630,10 @@ class Aws(ResourceAdapter):
         launch_request.softwareprofile = dbSoftwareProfile
         launch_request.addNodesRequest = addNodesRequest
 
-        cfgname = addNodesRequest.get('resource_adapter_configuration')
-        if cfgname is None or cfgname == 'default':
-            # use default resource adapter configuration, if set
-            cfgname = dbHardwareProfile.default_resource_adapter_config.name \
-                if dbHardwareProfile.default_resource_adapter_config else None
+        # resource_adapter_configuration is set through the validation API;
+        # ensure sane default is used
+        cfgname = addNodesRequest.get(
+            'resource_adapter_configuration', 'default')
 
         launch_request.configDict = self.getResourceAdapterConfig(cfgname)
 
@@ -951,18 +950,17 @@ class Aws(ResourceAdapter):
         """
         Ensure arguments to start() instances are valid
 
-        Raises:
-            InvalidArgument
-            ConfigurationError
+        :raises InvalidArgument:
+        :raises ConfigurationError:
         """
 
-        cfgname = addNodesRequest.get('resource_adapter_configuration')
-        if cfgname is None or cfgname == 'default':
-            # use default resource adapter configuration, if set
-            cfgname = dbHardwareProfile.default_resource_adapter_config.name \
-                if dbHardwareProfile.default_resource_adapter_config else None
+        super().validate_start_arguments(
+            addNodesRequest, dbHardwareProfile, dbSoftwareProfile
+        )
 
-        configDict = self.getResourceAdapterConfig(cfgname)
+        configDict = self.getResourceAdapterConfig(
+            addNodesRequest['resource_adapter_configuration']
+        )
 
         # Must specify number of nodes for EC2
         if 'count' not in addNodesRequest or addNodesRequest['count'] < 1:
