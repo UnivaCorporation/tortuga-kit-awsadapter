@@ -423,8 +423,10 @@ class Aws(ResourceAdapter):
             # Ensure 'dns_nameservers' defaults to the Tortuga installer
             # as the DNS nameserver
             #
-            config['dns_nameservers'] = config.get(
-                'dns_nameservers', []).append(config['installer_ip'])
+            config['dns_nameservers'] = config.get('dns_nameservers', [])
+
+            if config['installer_ip'] not in config['dns_nameservers']:
+                config['dns_nameservers'].append(config['installer_ip'])
 
         #
         # Attempt to use DNS setting from DHCP Option Set associated with VPC
