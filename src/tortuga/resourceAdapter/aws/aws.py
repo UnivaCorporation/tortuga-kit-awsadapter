@@ -951,9 +951,8 @@ class Aws(ResourceAdapter):
         """
         Ensure arguments to start() instances are valid
 
-        Raises:
-            InvalidArgument
-            ConfigurationError
+        :raises InvalidArgument:
+        :raises ConfigurationError:
         """
 
         cfgname = addNodesRequest.get('resource_adapter_configuration')
