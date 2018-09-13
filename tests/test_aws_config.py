@@ -31,78 +31,98 @@ def minimal_configDict():
 def test_invalid_adapter_configuration(dbm):
     """Ensure exception is raissed from missing required settings"""
 
-    with pytest.raises(ConfigurationError):
+    with dbm.session() as session:
+        with pytest.raises(ConfigurationError):
+            with patch.object(
+                    ResourceAdapter, '_load_config_from_database', return_value={}):
+                adapter = Aws()
+                adapter.session = session
+
+                adapter.getResourceAdapterConfig()
+
+
+def test_minimal_config(dbm, minimal_configDict):
+    with dbm.session() as session:
         with patch.object(
-                ResourceAdapter, '_load_config_from_database', return_value={}):
-            Aws().getResourceAdapterConfig()
+                ResourceAdapter, '_load_config_from_database',
+                return_value=minimal_configDict):
+            adapter = Aws()
+            adapter.session = session
+
+            config = adapter.getResourceAdapterConfig()
+
+            assert 'ami' in config
+
+            assert config['ami'] == 'ami-XXXXXXXX'
+
+            assert isinstance(config['override_dns_domain'], bool)
+
+            assert not config['override_dns_domain']
 
 
-def test_minimal_config(minimal_configDict):
-    with patch.object(
-            ResourceAdapter, '_load_config_from_database',
-            return_value=minimal_configDict):
-        config = Aws().getResourceAdapterConfig()
-
-        assert 'ami' in config
-
-        assert config['ami'] == 'ami-XXXXXXXX'
-
-        assert isinstance(config['override_dns_domain'], bool)
-
-        assert not config['override_dns_domain']
-
-
-def test_override_dns_domain_enabled():
+def test_override_dns_domain_enabled(dbm):
     configDict = {
         'ami': 'ami-XXXXXXXX',
         'override_dns_domain': 'true',
     }
 
-    with patch.object(
-            ResourceAdapter, '_load_config_from_database',
-            return_value=configDict):
-        config = Aws().getResourceAdapterConfig()
+    with dbm.session() as session:
+        with patch.object(
+                ResourceAdapter, '_load_config_from_database',
+                return_value=configDict):
+            adapter = Aws()
+            adapter.session = session
 
-        assert isinstance(config['override_dns_domain'], bool)
+            config = adapter.getResourceAdapterConfig()
 
-        assert config['override_dns_domain']
+            assert isinstance(config['override_dns_domain'], bool)
 
-        # when 'dns_domain' is not specified in the resource adapter
-        # configuration, the current private DNS zone is used. We don't
-        # care what the value is as long as there is one.
-        assert isinstance(config['dns_domain'], str)
-        assert config['dns_domain']
+            assert config['override_dns_domain']
+
+            # when 'dns_domain' is not specified in the resource adapter
+            # configuration, the current private DNS zone is used. We don't
+            # care what the value is as long as there is one.
+            assert isinstance(config['dns_domain'], str)
+            assert config['dns_domain']
 
 
-def test_override_dns_domain_enabled_with_dns_domain():
+def test_override_dns_domain_enabled_with_dns_domain(dbm):
     configDict = {
         'ami': 'ami-XXXXXXXX',
         'override_dns_domain': 'true',
         'dns_domain': 'mydomain',
     }
 
-    with patch.object(
-            ResourceAdapter, '_load_config_from_database',
-            return_value=configDict):
-        config = Aws().getResourceAdapterConfig()
+    with dbm.session() as session:
+        with patch.object(
+                ResourceAdapter, '_load_config_from_database',
+                return_value=configDict):
+            adapter = Aws()
+            adapter.session = session
 
-        assert isinstance(config['override_dns_domain'], bool)
+            config = adapter.getResourceAdapterConfig()
 
-        assert config['override_dns_domain']
+            assert isinstance(config['override_dns_domain'], bool)
 
-        assert config['dns_domain'] == 'mydomain'
+            assert config['override_dns_domain']
+
+            assert config['dns_domain'] == 'mydomain'
 
 
 @mock.patch.object(Aws, '_load_config_from_database')
-def test_missing_ami_setting(load_config_dict_mock):
+def test_missing_ami_setting(load_config_dict_mock, dbm):
     load_config_dict_mock.return_value = {}
 
-    with pytest.raises(ConfigurationError):
-        Aws().getResourceAdapterConfig()
+    with dbm.session() as session:
+        with pytest.raises(ConfigurationError):
+            adapter = Aws()
+            adapter.session = session
+
+            adapter.getResourceAdapterConfig()
 
 
 @mock.patch.object(Aws, '_load_config_from_database')
-def test_use_instance_hostname(load_config_dict_mock):
+def test_use_instance_hostname(load_config_dict_mock, dbm):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXX',
         'override_dns_domain': 'true',
@@ -110,45 +130,53 @@ def test_use_instance_hostname(load_config_dict_mock):
         'use_instance_hostname': 'false',
     }
 
-    adapter = Aws()
+    with dbm.session() as session:
+        adapter = Aws()
+        adapter.session = session
 
-    result = adapter.getResourceAdapterConfig()
+        result = adapter.getResourceAdapterConfig()
 
-    assert result['dns_domain'] == 'cloud.example.com'
+        assert result['dns_domain'] == 'cloud.example.com'
 
 
 @mock.patch.object(Aws, '_load_config_from_database')
-def test_defaults(load_config_dict_mock):
+def test_defaults(load_config_dict_mock, dbm):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXXXX',
     }
 
-    adapter = Aws()
+    with dbm.session() as session:
+        adapter = Aws()
+        adapter.session = session
 
-    result = adapter.getResourceAdapterConfig()
+        result = adapter.getResourceAdapterConfig()
 
-    assert result['ami'] == 'ami-XXXXXXXX'
+        assert result['ami'] == 'ami-XXXXXXXX'
 
-    assert result['use_instance_hostname']
+        assert result['use_instance_hostname']
 
-    assert result['associate_public_ip_address']
+        assert result['associate_public_ip_address']
 
-    assert not result['cloud_init']
+        assert not result['cloud_init']
 
-    assert not result.get('override_dns_domain', None)
+        assert not result.get('override_dns_domain', None)
 
-    assert not result.get('use_domain_from_dhcp_option_set', None)
+        assert not result.get('use_domain_from_dhcp_option_set', None)
 
-    assert result['region'] == 'us-east-1'
+        assert result['region'] == 'us-east-1'
 
 
 @mock.patch.object(Aws, '_load_config_from_database')
-def test_invalid_settings(load_config_dict_mock):
+def test_invalid_settings(load_config_dict_mock, dbm):
     load_config_dict_mock.return_value = {
         'ami': 'ami-XXXXXXXX',
         'unrecognized': 'setting',
         'another_bad_setting': 'value',
     }
 
-    with pytest.raises(ConfigurationError):
-        Aws().getResourceAdapterConfig()
+    with dbm.session() as session:
+        with pytest.raises(ConfigurationError):
+            adapter = Aws()
+            adapter.session = session
+
+            adapter.getResourceAdapterConfig()

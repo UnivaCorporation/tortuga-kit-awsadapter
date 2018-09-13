@@ -22,7 +22,7 @@ from tortuga.config.configManager import ConfigManager, getfqdn
 from tortuga.db import (adminDbApi, globalParameterDbApi, hardwareProfileDbApi,
                         kitDbApi, networkDbApi, nodeDbApi,
                         softwareProfileDbApi)
-from tortuga.db.dbManager import DbManagerBase
+from tortuga.db.dbManager import DbManager
 from tortuga.db.models.admin import Admin
 from tortuga.db.models.component import Component
 from tortuga.db.models.hardwareProfile import HardwareProfile
@@ -57,23 +57,10 @@ Aws.settings['cloud_init_script_template'].must_exist = False
 Aws.settings['user_data_script_template'].must_exist = False
 
 
+
 @pytest.fixture(autouse=True)
 def disable_DbManager(monkeypatch, dbm):
-    def mockreturn():
-        return dbm
-
-    # Patch "DbManager" in all *DbApi modules to use fixture
-    monkeypatch.setattr(adminDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(globalParameterDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(hardwareProfileDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(nodeDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(softwareProfileDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(networkDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(kitDbApi, 'DbManager', mockreturn)
-    monkeypatch.setattr(nodeManager, 'DbManager', mockreturn)
-    monkeypatch.setattr(tortuga.resourceAdapter.resourceAdapter, 'DbManager', mockreturn)
-    monkeypatch.setattr(tortuga.resourceAdapter.aws.aws, 'DbManager', mockreturn)
-
+    monkeypatch.setattr(tortuga.db.dbManager, 'DbManager', lambda: dbm)
 
 
 @pytest.fixture(scope='session')
@@ -88,7 +75,7 @@ def cm_class(request, cm):
 
 @pytest.fixture(scope='session')
 def dbm():
-    dbmgr = DbManagerBase(create_engine('sqlite:///:memory:', echo=False))
+    dbmgr = DbManager(create_engine('sqlite:///:memory:', echo=False))
 
     dbmgr.init_database()
 
