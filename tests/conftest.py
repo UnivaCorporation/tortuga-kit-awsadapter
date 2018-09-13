@@ -16,8 +16,10 @@ import pytest
 from passlib.hash import pbkdf2_sha256
 from sqlalchemy import create_engine
 
+import boto.ec2
 import tortuga.resourceAdapter
 import tortuga.resourceAdapter.aws.aws
+from moto import mock_ec2_deprecated
 from tortuga.config.configManager import ConfigManager, getfqdn
 from tortuga.db import (adminDbApi, globalParameterDbApi, hardwareProfileDbApi,
                         kitDbApi, networkDbApi, nodeDbApi,
@@ -27,6 +29,7 @@ from tortuga.db.models.admin import Admin
 from tortuga.db.models.component import Component
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.hardwareProfileNetwork import HardwareProfileNetwork
+from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.kit import Kit
 from tortuga.db.models.network import Network
 from tortuga.db.models.networkDevice import NetworkDevice
@@ -42,7 +45,6 @@ from tortuga.db.models.tag import Tag
 from tortuga.deployer.dbUtility import init_global_parameters, primeDb
 from tortuga.node import nodeManager
 from tortuga.objects import osFamilyInfo, osInfo
-from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.resourceAdapter.aws import Aws
 
 
@@ -74,6 +76,7 @@ def cm_class(request, cm):
 
 
 @pytest.fixture(scope='session')
+@mock_ec2_deprecated
 def dbm():
     dbmgr = DbManager(create_engine('sqlite:///:memory:', echo=False))
 
@@ -216,9 +219,14 @@ def dbm():
             description='Example default resource adapter configuration'
         )
 
-        aws_adapter_cfg.configuration.append(
-            ResourceAdapterSetting(key='ami', value='ami-abcd1234')
-        )
+        with mock_ec2_deprecated():
+            ec2_conn = boto.ec2.connect_to_region('us-east-1')
+
+            amis = ec2_conn.get_all_images()
+
+            aws_adapter_cfg.configuration.append(
+                ResourceAdapterSetting(key='ami', value=amis[0].id)
+            )
 
         aws_adapter.resource_adapter_config.append(aws_adapter_cfg)
 
