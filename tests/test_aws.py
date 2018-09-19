@@ -110,8 +110,6 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
         # override default sleep time
         adapter.LAUNCH_INITIAL_SLEEP_TIME = 0.0
 
-        adapter.TEST_MODE = True
-
         addNodesRequest = {
             'count': 2,
         }
