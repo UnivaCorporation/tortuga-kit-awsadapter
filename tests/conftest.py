@@ -21,9 +21,6 @@ import tortuga.resourceAdapter
 import tortuga.resourceAdapter.aws.aws
 from moto import mock_ec2_deprecated
 from tortuga.config.configManager import ConfigManager, getfqdn
-from tortuga.db import (adminDbApi, globalParameterDbApi, hardwareProfileDbApi,
-                        kitDbApi, networkDbApi, nodeDbApi,
-                        softwareProfileDbApi)
 from tortuga.db.dbManager import DbManager
 from tortuga.db.models.admin import Admin
 from tortuga.db.models.component import Component
@@ -43,7 +40,6 @@ from tortuga.db.models.resourceAdapterSetting import ResourceAdapterSetting
 from tortuga.db.models.softwareProfile import SoftwareProfile
 from tortuga.db.models.tag import Tag
 from tortuga.deployer.dbUtility import init_global_parameters, primeDb
-from tortuga.node import nodeManager
 from tortuga.objects import osFamilyInfo, osInfo
 from tortuga.resourceAdapter.aws import Aws
 
@@ -286,7 +282,8 @@ def dbm():
         aws_hwprofile2.mappedsoftwareprofiles.append(compute_swprofile)
 
         # create 'localiron' hardware profile
-        localiron_hwprofile = HardwareProfile(name='localiron', nameFormat='compute-#NN')
+        localiron_hwprofile = HardwareProfile(
+            name='localiron', nameFormat='compute-#NN')
         localiron_hwprofile.resourceadapter = default_adapter
         localiron_hwprofile.mappedsoftwareprofiles.append(compute_swprofile)
         localiron_hwprofile.mappedsoftwareprofiles.append(compute2_swprofile)
@@ -365,15 +362,15 @@ def dbm():
         session.add(hwprofile2)
 
         # create arbitrary software profiles
-        swprofile1 = SoftwareProfile(name='swprofile1',
-                                     os=os_,
-                                     type='compute',
-                                     tags=[all_tags[0]])
+        SoftwareProfile(name='swprofile1',
+                        os=os_,
+                        type='compute',
+                        tags=[all_tags[0]])
 
-        swprofile2 = SoftwareProfile(name='swprofile2',
-                                     os=os_,
-                                     type='compute',
-                                     tags=[all_tags[1]])
+        SoftwareProfile(name='swprofile2',
+                        os=os_,
+                        type='compute',
+                        tags=[all_tags[1]])
 
         session.commit()
 
