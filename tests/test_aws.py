@@ -90,7 +90,7 @@ def test_deleteNode(load_config_dict_mock, dbm):
 @mock.patch.object(Aws, '_load_config_from_database')
 @mock_ec2_deprecated
 def test_start(load_config_dict_mock, pre_add_host_mock,
-               fire_provisioned_even_mock, dbm):
+               fire_provisioned_even_mock, dbm, valid_ami):
     """
     Test ResourceAdapter.start() workflow
     """
@@ -99,7 +99,7 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
         'awsAccessKey': 'the_key',
         'awsSecretKey': 'the_secret',
         'keypair': 'the_keypair',
-        'ami': 'ami-abcd1234',
+        'ami': valid_ami,
         'use_instance_hostname': 'true',
         'instancetype': 'the_instancetype'
     }
@@ -109,8 +109,6 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
 
         # override default sleep time
         adapter.LAUNCH_INITIAL_SLEEP_TIME = 0.0
-
-        adapter.TEST_MODE = True
 
         addNodesRequest = {
             'count': 2,
@@ -147,11 +145,11 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
 @mock.patch.object(Aws, '_load_config_from_database')
 @mock_ec2_deprecated
 def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
-                           fire_provisioned_event_mock, dbm):
+                           fire_provisioned_event_mock, dbm, valid_ami):
     configDict = {
         'awsAccessKey': 'the_key',
         'awsSecretKey': 'the_secret',
-        'ami': 'ami-abcd1234',
+        'ami': valid_ami,
         'use_instance_hostname': 'true',
     }
 

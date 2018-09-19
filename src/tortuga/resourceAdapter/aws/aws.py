@@ -72,8 +72,6 @@ class Aws(ResourceAdapter):
 
     LAUNCH_INITIAL_SLEEP_TIME = 10.0
 
-    TEST_MODE = False
-
     settings = {
         #
         # Authentication
@@ -1963,54 +1961,53 @@ fqdn: %s
 
             result = block_device_map
 
-        if not self.TEST_MODE:
-            ami = conn.get_image(image_id)
+        ami = conn.get_image(image_id)
 
-            # determine root device name
-            root_block_devices = ec2_get_root_block_devices(ami)
+        # determine root device name
+        root_block_devices = ec2_get_root_block_devices(ami)
 
-            if root_block_devices:
-                root_block_device = root_block_devices[0]
+        if root_block_devices:
+            root_block_device = root_block_devices[0]
 
-                if not result or root_block_device not in iter(result.keys()):
-                    # block device map previously undefined. Add entry for root
-                    # device
-                    if not result:
-                        bdm = boto.ec2.blockdevicemapping.BlockDeviceMapping()
+            if not result or root_block_device not in iter(result.keys()):
+                # block device map previously undefined. Add entry for root
+                # device
+                if not result:
+                    bdm = boto.ec2.blockdevicemapping.BlockDeviceMapping()
 
-                        result = bdm
-                    else:
-                        bdm = result
+                    result = bdm
+                else:
+                    bdm = result
 
-                    # Add block device mapping entry for root disk
-                    bdt = boto.ec2.blockdevicemapping.BlockDeviceType()
-                    bdm[root_block_device] = bdt
+                # Add block device mapping entry for root disk
+                bdt = boto.ec2.blockdevicemapping.BlockDeviceType()
+                bdm[root_block_device] = bdt
 
-                # Mark root block device for deletion on termination
-                result[root_block_device].delete_on_termination = True
-            else:
-                self.getLogger().warning(
-                    'Unable to determine root device name for'
-                    ' AMI [%s]' % (ami.id))
+            # Mark root block device for deletion on termination
+            result[root_block_device].delete_on_termination = True
+        else:
+            self.getLogger().warning(
+                'Unable to determine root device name for'
+                ' AMI [%s]' % (ami.id))
 
-                self.getLogger().warning(
-                    'Delete on termination flag cannot be set')
+            self.getLogger().warning(
+                'Delete on termination flag cannot be set')
 
-            for device, bd in result.items():
-                logmsg = 'BDM: device=[{0}], size=[{1}]'.format(
-                    device, bd.size if bd.size else '<default>')
+        for device, bd in result.items():
+            logmsg = 'BDM: device=[{0}], size=[{1}]'.format(
+                device, bd.size if bd.size else '<default>')
 
-                if bd.ephemeral_name:
-                    logmsg += ', ephemeral_name=[{0}]'.format(
-                        bd.ephemeral_name)
+            if bd.ephemeral_name:
+                logmsg += ', ephemeral_name=[{0}]'.format(
+                    bd.ephemeral_name)
 
-                logmsg += ', delete_on_termination=[{0}]'.format(
-                    bd.delete_on_termination)
+            logmsg += ', delete_on_termination=[{0}]'.format(
+                bd.delete_on_termination)
 
-                if bd.volume_type:
-                    logmsg += ', volume_type=[{0}]'.format(bd.volume_type)
+            if bd.volume_type:
+                logmsg += ', volume_type=[{0}]'.format(bd.volume_type)
 
-                self.getLogger().debug(logmsg)
+            self.getLogger().debug(logmsg)
 
         return result
 
