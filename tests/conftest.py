@@ -59,6 +59,20 @@ Aws.settings['cloud_init_script_template'].must_exist = False
 Aws.settings['user_data_script_template'].must_exist = False
 
 
+@pytest.fixture()
+@mock_ec2_deprecated
+def valid_ami():
+    """
+    Return valid Moto AMI ID
+    """
+
+    with mock_ec2_deprecated():
+        ec2_conn = boto.ec2.connect_to_region('us-east-1')
+
+        amis = ec2_conn.get_all_images()
+
+        return amis[0].id
+
 
 @pytest.fixture(autouse=True)
 def disable_DbManager(monkeypatch, dbm):
