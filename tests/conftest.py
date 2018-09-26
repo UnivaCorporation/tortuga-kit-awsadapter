@@ -221,7 +221,7 @@ def dbm():
         default_adapter.kit = kit
 
         # create resource adapter
-        aws_adapter = ResourceAdapter(name='aws')
+        aws_adapter = ResourceAdapter(name='AWS')
         aws_adapter.kit = ra_kit
 
         aws_adapter_cfg = ResourceAdapterConfig(
@@ -249,8 +249,8 @@ def dbm():
 
         session.add(aws_adapter)
 
-        # create 'aws' hardware profile
-        aws_hwprofile = HardwareProfile(name='aws')
+        # create 'AWS' hardware profile
+        aws_hwprofile = HardwareProfile(name='AWS')
         aws_hwprofile.location = 'remote'
         aws_hwprofile.resourceadapter = aws_adapter
 
@@ -277,7 +277,7 @@ def dbm():
                                              components=[core_component],
                                              type='compute')
 
-        # map 'aws' to 'compute'
+        # map 'AWS' to 'compute'
         aws_hwprofile.mappedsoftwareprofiles.append(compute_swprofile)
         aws_hwprofile2.mappedsoftwareprofiles.append(compute_swprofile)
 

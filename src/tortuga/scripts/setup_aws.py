@@ -34,7 +34,7 @@ from tortuga.resourceAdapterConfiguration.api import \
 
 DEFAULT_AWS_REGION = 'us-east-1'
 
-DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME = 'default'
+DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME = 'Default'
 
 DEFAULT_INSTANCE_TYPE = 'm5.large'
 
@@ -620,7 +620,7 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
     # check for resource adapter configuration
     with DbManager().session() as session:
         try:
-            api.get(session, 'aws', profile_name)
+            api.get(session, 'AWS', profile_name)
 
             print_statement(
                 'Updating AWS resource adapter configuration profile [{0}]',
@@ -636,13 +636,13 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
                     'key': 'user_data_script_template', 'value': None
                 })
 
-            api.update(session, 'aws', profile_name, normalized_cfg)
+            api.update(session, 'AWS', profile_name, normalized_cfg)
         except ResourceNotFound:
             print_statement(
                 'Creating AWS resource adapter configuration profile [{0}]',
                 profile_name)
 
-            api.create(session, 'aws', profile_name, normalized_cfg)
+            api.create(session, 'AWS', profile_name, normalized_cfg)
 
 
 def get_resource_name_from_tag(subnet):

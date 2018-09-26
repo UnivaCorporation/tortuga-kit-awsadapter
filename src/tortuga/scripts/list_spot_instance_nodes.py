@@ -34,6 +34,6 @@ def main():
     with DbManager().session() as session:
         for node in NodesDbHandler().getNodeList(session):
             if node.hardwareprofile.resourceadapter and \
-                    node.hardwareprofile.resourceadapter.name == 'aws':
+                    node.hardwareprofile.resourceadapter.name == 'AWS':
                 if node.name in spot_instances:
                     print(node.name)

@@ -22,4 +22,4 @@ class AWSKitInstaller(ResourceAdapterMixin, KitInstallerBase):
         'aws-instances.csv',
     ]
     puppet_modules = ['univa-tortuga_kit_awsadapter']
-    resource_adapter_name = 'aws'
+    resource_adapter_name = 'AWS'

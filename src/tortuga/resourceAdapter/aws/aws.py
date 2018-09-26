@@ -68,7 +68,7 @@ class Aws(ResourceAdapter):
     AWS resource adapter
 
     """
-    __adaptername__ = 'aws'
+    __adaptername__ = 'AWS'
 
     LAUNCH_INITIAL_SLEEP_TIME = 10.0
 
