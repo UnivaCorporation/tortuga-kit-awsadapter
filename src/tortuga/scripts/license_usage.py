@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import json
 import boto3
 import logging
 
@@ -63,11 +64,13 @@ class LicenseUsageCLI(TortugaCli):
 
         with open(path, 'w') as f:
             for row in self._get_data(start, end):
-                f.write(str(row))
+                f.write(
+                    json.dumps(row)
+                )
 
     def _string_to_date(self) -> Tuple[date]:
         """
-        Convert the arguments to date 
+        Convert the arguments to date
         objects.
 
         :returns: Tuple Date Date
@@ -78,7 +81,7 @@ class LicenseUsageCLI(TortugaCli):
         except AttributeError:  # Above method only in 3.7.
             split_start: Tuple[str] = self.getArgs().start.split('-')
             split_end: Tuple[str] = self.getArgs().end.split('-')
-            
+
             split_start: Tuple[int] = map(int, split_start)
             split_end: Tuple[int] = map(int, split_end)
 
