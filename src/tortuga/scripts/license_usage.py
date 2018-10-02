@@ -115,7 +115,10 @@ class LicenseUsageCLI(TortugaCli):
                 Metrics=['UsageQuantity'],
                 GroupBy=[{
                     'Type': 'DIMENSION',
-                    'Key': 'SERVICE'
+                    'Key': 'SERVICE',
+                }, {
+                    'Type': 'DIMENSION',
+                    'Key': 'INSTANCE_TYPE'
                 }],
                 Filter={
                     'Dimensions': {
