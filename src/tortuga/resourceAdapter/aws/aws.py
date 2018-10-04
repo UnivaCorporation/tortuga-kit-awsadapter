@@ -448,7 +448,7 @@ class Aws(ResourceAdapter):
                 'Using DNS domain {0} for compute nodes'.format(
                     config['dns_domain']))
 
-    def __get_vpc_default_domain(self, config: dict) -> str: \
+    def __get_vpc_default_domain(self, config: Dict[str, Any]) -> str: \
             # pylint: disable=no-self-use
         """Returns custom DNS domain associated with DHCP option set,
         otherwise returns None
