@@ -649,7 +649,7 @@ class Aws(ResourceAdapter):
 
         nodes = self.__add_active_nodes(dbSession, launch_request) \
             if dbSoftwareProfile and not dbSoftwareProfile.isIdle else \
-                self.__add_idle_nodes(dbSession, launch_request)
+            self.__add_idle_nodes(dbSession, launch_request)
 
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
