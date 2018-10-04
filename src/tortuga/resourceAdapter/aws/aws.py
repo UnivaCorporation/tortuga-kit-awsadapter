@@ -873,21 +873,17 @@ class Aws(ResourceAdapter):
     def __get_request_spot_instance_args(self, conn: EC2Connection,
                                          addNodesRequest: dict,
                                          configDict: dict,
-                                         security_group_ids: List[str],
                                          node: Optional[Node] = None):
         """
         Create dict of args for boto request_spot_instances() API
         """
 
-        user_data = self.__get_user_data(configDict, node=node) \
-            if configDict['cloud_init'] else None
-
         # Get common AWS launch args
         args = self.__get_common_launch_args(
             conn,
             configDict,
-            security_group_ids=security_group_ids,
-            user_data=user_data)
+            node=node
+        )
 
         args['count'] = 1 if node else addNodesRequest['count']
 
@@ -1158,19 +1154,11 @@ fqdn: %s
         # log information about request
         self.__common_prelaunch(launch_request)
 
-        user_data = self.__get_user_data(launch_request.configDict) \
-            if launch_request.configDict['cloud_init'] else None
-
-        security_group_ids: Union[List[str], None] = \
-            self.__get_security_group_ids(
-                launch_request.configDict, launch_request.conn)
-
         try:
             reservation = self.__launchEC2(
                 launch_request.conn, launch_request.configDict,
-                nodeCount=launch_request.addNodesRequest['count'],
-                security_group_ids=security_group_ids,
-                userData=user_data)
+                count=launch_request.addNodesRequest['count']
+            )
         except Exception as exc:
             # AWS error, unable to proceed
             self.getLogger().exception('AWS error launching instances')
@@ -1227,21 +1215,12 @@ fqdn: %s
         # log information about request
         self.__common_prelaunch(launch_request)
 
-        security_group_ids: Union[List[str], None] = \
-            self.__get_security_group_ids(configDict, conn)
-
         try:
             for node_request in launch_request.node_request_queue:
-                userData = self.__get_user_data(
-                    configDict, node=node_request['node']) \
-                    if configDict['cloud_init'] else None
-
                 # Launch instance
                 try:
-                    node_request['instance'] = self.__launchEC2(
-                        conn, configDict,
-                        security_group_ids=security_group_ids,
-                        userData=userData).instances[0]
+                    node_request['instance'] = \
+                        self.__launchEC2(conn, configDict).instances[0]
 
                     node_request['status'] = 'launched'
 
@@ -1819,8 +1798,7 @@ fqdn: %s
 
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],
-            security_group_ids: Optional[List[str]] = None,
-            user_data: Optional[str] = None) -> Dict[str, Any]:
+            node: Optional[Node] = None) -> Dict[str, Any]:
         """
         Return key-value pairs of arguments for passing to launch API
         """
@@ -1832,8 +1810,8 @@ fqdn: %s
             'placement_group': configDict.get('placementgroup', None),
         }
 
-        if user_data:
-            args['user_data'] = user_data
+        args['user_data'] = self.__get_user_data(configDict, node=node) \
+            if configDict['cloud_init'] else None
 
         if 'aki' in configDict and configDict['aki']:
             # Override kernel used for new instances
@@ -1870,7 +1848,7 @@ fqdn: %s
             # VPC. Handle the security group differently.
             primary_nic = NetworkInterfaceSpecification(
                 subnet_id=subnet_id,
-                groups=security_group_ids,
+                groups=configDict.get('securitygroup'),
                 associate_public_ip_address=configDict[
                     'associate_public_ip_address'],
             )
@@ -1883,65 +1861,33 @@ fqdn: %s
 
         return args
 
-    def __launchEC2(self, conn: EC2Connection, configDict: dict,
-                    nodeCount: int = 1,
-                    security_group_ids: List[str] = None,
-                    userData: str = None):
+    def __launchEC2(self, conn: EC2Connection, configDict: Dict[str, Any],
+                    *, count: int = 1, node: Optional[Node] = None):
         """
-        Launch one or more EC2 instances
+        Launch EC2 instances. If 'node' is specified, Tortuga node
+        record exists at time of instance creation.
 
-        Raises:
-            CommandFailed
+        :raises CommandFailed:
         """
 
         self._validate_ec2_launch_args(conn, configDict)
 
         runArgs = self.__get_common_launch_args(
             conn,
-            configDict, security_group_ids=security_group_ids,
-            user_data=userData)
-
-        runArgs['max_count'] = nodeCount
+            configDict,
+            node=node
+        )
 
         try:
-            return conn.run_instances(configDict['ami'], **runArgs)
+            return conn.run_instances(
+                configDict['ami'], max_count=count, **runArgs
+            )
         except boto.exception.EC2ResponseError as ex:
             extErrMsg = self.__parseEC2ResponseError(ex)
 
             # Pass the exception message through for status message
             # aesthetic purposes
             raise CommandFailed('AWS error: %s' % (extErrMsg))
-
-    def __get_security_group_ids(self, configDict: dict,
-                                 conn: EC2Connection) \
-            -> Union[List[str], None]:
-        """
-        Convert list of security group names into list of security
-        group ids. Returns None if VPC not being used.
-        """
-
-        if 'subnet_id' not in configDict or not configDict['subnet_id']:
-            return None
-
-        security_group_ids: List[str] = []
-
-        for groupname in configDict.get('securitygroup', []):
-            if groupname.startswith('sg-'):
-                security_group_ids.append(groupname)
-
-                continue
-
-            # Look up security group by name
-            security_group = self.__get_security_group_by_name(
-                conn, groupname)
-
-            if security_group is None:
-                raise CommandFailed(
-                    'Invalid security group [%s]' % (groupname))
-
-            security_group_ids.append(security_group.id)
-
-        return security_group_ids
 
     def __build_block_device_map(self, conn: EC2Connection,
                                  block_device_map, image_id: str):
@@ -2068,25 +2014,17 @@ fqdn: %s
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
-        userData = self.__get_user_data(
-            launch_request.configDict, node=node) \
-            if launch_request.configDict['cloud_init'] else None
-
         launch_request.node_request_queue = init_node_request_queue([node])
 
         # log information about request
         self.__common_prelaunch(launch_request)
 
-        security_group_ids: Union[List[str], None] = \
-            self.__get_security_group_ids(
-                launch_request.configDict, launch_request.conn)
-
         for node_request in launch_request.node_request_queue:
-            # We now have the data needed to launch the instance
+            # these nodes must be launched individually because of
+            # node-specific user data
             node_request['instance'] = self.__launchEC2(
-                launch_request.conn, launch_request.configDict,
-                security_group_ids=security_group_ids,
-                userData=userData).instances[0]
+                launch_request.conn, launch_request.configDict, node=node
+            ).instances[0]
 
             node_request['status'] = 'launched'
 
