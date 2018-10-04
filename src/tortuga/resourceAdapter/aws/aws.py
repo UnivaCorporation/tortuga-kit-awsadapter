@@ -495,12 +495,6 @@ class Aws(ResourceAdapter):
         except boto.exception.EC2ResponseError as exc:
             raise ConfigurationError('AWS error: {0}'.format(exc.message))
 
-    def __convert_to_bool(self, value: str,
-                          default: Optional[bool] = None) -> bool: \
-            # pylint: disable=no-self-use
-        return value.lower().startswith('t') \
-            if value is not None else default
-
     def __process_block_device_map(self, cfg_block_device_map: str) \
             -> boto.ec2.blockdevicemapping.BlockDeviceMapping:
         """
