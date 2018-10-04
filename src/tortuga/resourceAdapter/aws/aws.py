@@ -983,11 +983,9 @@ class Aws(ResourceAdapter):
         dbHardwareProfile = launch_request.hardwareprofile
         dbSoftwareProfile = launch_request.softwareprofile
 
-        nodeCount = addNodesRequest['count']
-
         nodes = []
 
-        for _ in range(nodeCount):
+        for _ in range(addNodesRequest['count']):
             addNodeRequest = {}
 
             addNodeRequest['addHostSession'] = self.addHostSession
@@ -1775,7 +1773,7 @@ fqdn: %s
         #                 extErrMsg or '<no reason provided>'))
 
         # Create placement group if needed.
-        if configDict.get('placementgroup', None):
+        if configDict.get('placementgroup'):
             try:
                 self._logger.debug(
                     'Attempting to create placement group [%s]' % (
