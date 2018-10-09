@@ -882,7 +882,8 @@ class Aws(ResourceAdapter):
         args = self.__get_common_launch_args(
             conn,
             configDict,
-            node=node
+            node=node,
+            addNodesRequest=addNodesRequest
         )
 
         args['count'] = 1 if node else addNodesRequest['count']
@@ -1155,7 +1156,8 @@ fqdn: %s
         try:
             reservation = self.__launchEC2(
                 launch_request.conn, launch_request.configDict,
-                count=launch_request.addNodesRequest['count']
+                count=launch_request.addNodesRequest['count'],
+                addNodesRequest=launch_request.addNodesRequest,
             )
         except Exception as exc:
             # AWS error, unable to proceed
@@ -1218,7 +1220,11 @@ fqdn: %s
                 # Launch instance
                 try:
                     node_request['instance'] = \
-                        self.__launchEC2(conn, configDict).instances[0]
+                        self.__launchEC2(
+                            conn,
+                            configDict,
+                            addNodesRequest=addNodesRequest
+                        ).instances[0]
 
                     node_request['status'] = 'launched'
 
@@ -1796,7 +1802,8 @@ fqdn: %s
 
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],
-            node: Optional[Node] = None) -> Dict[str, Any]:
+            node: Optional[Node] = None, *,
+            addNodesRequest: Optional[dict] = None) -> Dict[str, Any]:
         """
         Return key-value pairs of arguments for passing to launch API
         """
@@ -1842,6 +1849,16 @@ fqdn: %s
                 configDict['subnet_id'] is not None:
             subnet_id = configDict['subnet_id']
 
+            private_ip_address = get_private_ip_address_argument(
+                addNodesRequest
+            )
+
+            if private_ip_address:
+                self.getLogger().debug(
+                    'Assigning ip address [%s] to new instance',
+                    private_ip_address
+                )
+
             # If "subnet_id" is defined, we know the instance belongs to a
             # VPC. Handle the security group differently.
             primary_nic = NetworkInterfaceSpecification(
@@ -1849,6 +1866,7 @@ fqdn: %s
                 groups=configDict.get('securitygroup'),
                 associate_public_ip_address=configDict[
                     'associate_public_ip_address'],
+                private_ip_address=private_ip_address,
             )
 
             args['network_interfaces'] = \
@@ -1859,8 +1877,11 @@ fqdn: %s
 
         return args
 
+
+
     def __launchEC2(self, conn: EC2Connection, configDict: Dict[str, Any],
-                    *, count: int = 1, node: Optional[Node] = None):
+                    *, count: int = 1, node: Optional[Node] = None,
+                    addNodesRequest: Optional[dict] = None):
         """
         Launch EC2 instances. If 'node' is specified, Tortuga node
         record exists at time of instance creation.
@@ -1873,7 +1894,8 @@ fqdn: %s
         runArgs = self.__get_common_launch_args(
             conn,
             configDict,
-            node=node
+            node=node,
+            addNodesRequest=addNodesRequest
         )
 
         try:
@@ -2439,3 +2461,22 @@ def get_primary_nic(nics: List[Nic]) -> Nic:
         raise NicNotFound('Provisioning nic not found')
 
     return result[0]
+
+
+def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) -> str:
+    """
+    Parse ip address argument from addNodesRequest
+    """
+
+    if addNodesRequest and addNodesRequest['count'] == 1 and \
+            'nodeDetails' in addNodesRequest:
+        node_spec = addNodesRequest['nodeDetails'][0]
+
+        if 'nics' in node_spec and \
+                node_spec['nics'] and \
+                'ip' in node_spec['nics'][0]:
+            private_ip_address = node_spec['nics'][0]['ip']
+    else:
+        private_ip_address = None
+
+    return private_ip_address
