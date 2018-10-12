@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import redis
 import shlex
 from typing import Dict
+from subprocess import check_output
 
 
 def ec2_get_root_block_devices(ami):
@@ -37,3 +38,26 @@ def parse_cfg_tags(value: str) -> Dict[str, str]:
         tags[key] = value
 
     return tags
+
+
+FACTER_PATH = '/opt/puppetlabs/bin/facter'
+
+
+def get_redis_client():
+    try:
+        uri = check_output(
+            [FACTER_PATH, 'redis_url']
+        ).strip().decode()
+    except:
+        uri = None
+
+    if not uri:
+        uri = 'localhost:6379'
+
+    host, port = uri.split(':')
+
+    return redis.StrictRedis(
+        host=host,
+        port=int(port),
+        db=0
+    )

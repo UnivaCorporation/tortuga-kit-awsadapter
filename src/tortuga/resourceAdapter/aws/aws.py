@@ -22,6 +22,7 @@ import random
 import socket
 import sys
 import xml.etree.cElementTree as ET
+from base64 import b64encode
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -32,6 +33,7 @@ from sqlalchemy.orm.session import Session
 import boto
 import boto.ec2
 import boto.vpc
+import boto3
 import gevent
 import gevent.queue
 import zmq
@@ -59,7 +61,7 @@ from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import (_get_encoded_list, ec2_get_root_block_devices,
-                      parse_cfg_tags)
+                      parse_cfg_tags, get_redis_client)
 from .launchRequest import LaunchRequest, init_node_request_queue
 
 
@@ -340,6 +342,11 @@ class Aws(ResourceAdapter):
             default='5',
             advanced=True
         ),
+        'fleet_role': settings.StringSetting(
+            display_name='Fleet role',
+            description='IAM spot fleet role',
+            advanced=True
+        ),
         'aki': settings.StringSetting(advanced=True),
         'ari': settings.StringSetting(advanced=True),
     }
@@ -488,7 +495,7 @@ class Aws(ResourceAdapter):
             # Default EC2 assigned domain depends on region
             ec2_default_domain = 'ec2.internal' \
                 if config['region'] == 'us-east-1' else \
-                '{0}.compute.internal'.format(config['region'].name)
+                '{0}.compute.internal'.format(config['region'])
 
             return default_domain \
                 if default_domain != ec2_default_domain else None
@@ -637,6 +644,16 @@ class Aws(ResourceAdapter):
         if 'spot_instance_request' in addNodesRequest:
             return self.request_spot_instances(
                 dbSession, launch_request)
+
+        if 'spot_fleet_request' in addNodesRequest:
+            nodes = self.request_spot_fleet_instances(
+                addNodesRequest,
+                dbSession,
+                dbHardwareProfile,
+                dbSoftwareProfile
+            )
+
+            return nodes
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
@@ -932,6 +949,120 @@ class Aws(ResourceAdapter):
 
     def cancel_spot_instance_requests(self):
         """TODO"""
+
+    def request_spot_fleet_instances(self, addNodesRequest, dbSession,
+                                     dbHardwareProfile, dbSoftwareProfile) -> List:
+        """
+        Request spot fleet instances.
+
+        :returns: None
+        """
+        cfgname = addNodesRequest['resource_adapter_configuration'] \
+            if 'resource_adapter_configuration' in addNodesRequest else \
+            None
+
+        configDict = self.getResourceAdapterConfig(cfgname)
+
+        conn = boto3.client(
+            'ec2',
+            aws_access_key_id=configDict['awsAccessKey'],
+            aws_secret_access_key=configDict['awsSecretKey'],
+            region_name=configDict['region']
+        )
+
+        request_config = {
+            'IamFleetRole': configDict['fleet_role'],
+            'TargetCapacity': addNodesRequest['count'],
+            'AllocationStrategy': 'diversified',
+            'LaunchSpecifications': []
+        }
+
+        if addNodesRequest['count'] <= 250:
+            request_config['TargetCapacity'] = addNodesRequest['count']
+        else:
+            request_config['TargetCapacity'] = 250  # Glide to target.
+
+        if addNodesRequest['spot_fleet_request']['price']:
+            request_config['SpotPrice'] = '{:0.2f}'.format(
+               addNodesRequest['spot_fleet_request']['price'])
+
+        for instance in configDict['instancetype'].split(','):
+            try:
+                instance_type, weight = instance.split(':')
+            except ValueError:
+                instance_type = instance
+                weight = 1
+            spec = {
+                'UserData': b64encode(
+                    self.__get_user_data(configDict).encode()).decode(),
+                'ImageId': configDict['ami'],
+                'SubnetId': configDict['subnet_id'],
+                'InstanceType': instance_type.strip(),
+                'WeightedCapacity': float(weight),
+                'KeyName': configDict['keypair'],
+                'SecurityGroups': [{
+                    'GroupId': configDict['securitygroup'][0]
+                }]
+            }
+
+            request_config['LaunchSpecifications'].append(spec)
+
+        response = conn.request_spot_fleet(
+            DryRun=False,
+            SpotFleetRequestConfig=request_config
+        )
+
+        self.__post_add_spot_fleet_instance_request(
+            response['SpotFleetRequestId'],
+            addNodesRequest['count'],
+            dbHardwareProfile,
+            dbSoftwareProfile,
+            cfgname
+        )
+
+        if configDict['use_instance_hostname']:
+            return []
+
+        else:
+            return self.__create_nodes(
+                dbHardwareProfile,
+                dbSoftwareProfile,
+                count=addNodesRequest['count'],
+                initial_state='Allocated'
+            )
+
+    def __post_add_spot_fleet_instance_request(
+            self,
+            sfr_id: str,
+            target: int,
+            dbHardwareProfile: HardwareProfile,
+            dbSoftwareProfile: SoftwareProfile,
+            cfgname: Optional[str] = None) -> None:
+        """
+        Notify awsspotd of nodes.
+
+        :returns: None
+        """
+        redis_client = get_redis_client()
+        pubsub = redis_client.pubsub()
+        pubsub.subscribe('tortuga-aws-spot-fleet-d')
+
+        request = {
+            'action': 'add',
+            'spot_fleet_request_id': sfr_id,
+            'target': target,
+            'softwareprofile': dbSoftwareProfile.name,
+            'hardwareprofile': dbHardwareProfile.name,
+        }
+
+        if cfgname:
+            request['resource_adapter_configuration'] = \
+                cfgname
+
+        redis_client.publish(
+            'tortuga-aws-spot-fleet-d',
+            json.dumps(request)
+        )
 
     def validate_start_arguments(self, addNodesRequest: Dict[str, Any],
                                  dbHardwareProfile: HardwareProfile,

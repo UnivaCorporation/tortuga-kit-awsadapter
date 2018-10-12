@@ -62,15 +62,18 @@ setup(
         'colorama',
         'daemonize',
         'Jinja2',
+        'redis',
     ],
     entry_points={
         'console_scripts': [
             'awsspotd=tortuga.scripts.awsspotd:main',
+            'awsspotfleetd=tortuga.scripts.awsspotfleetd:main',
             'cancel-spot-instance-requests=tortuga.scripts.cancel_spot_instance_requests:main',
             'get-current-spot-instance-price=tortuga.scripts.get_current_spot_instance_price:main',
             'list-spot-instance-nodes=tortuga.scripts.list_spot_instance_nodes:main',
             'list-spot-instance-requests=tortuga.scripts.list_spot_instance_requests:main',
             'request-spot-instances=tortuga.scripts.request_spot_instances:main',
+            'request-spot-fleet=tortuga.scripts.request_spot_fleet:main',
             'setup-aws=tortuga.scripts.setup_aws:main',
         ]
     }

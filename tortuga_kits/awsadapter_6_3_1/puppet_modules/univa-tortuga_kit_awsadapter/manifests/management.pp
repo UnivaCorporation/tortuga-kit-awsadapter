@@ -87,12 +87,21 @@ class tortuga_kit_awsadapter::management::service {
   require tortuga_kit_awsadapter::management::config
 
   if versioncmp($::operatingsystemmajrelease, '7') < 0 {
-    $svcname = 'awsspotd'
+    $spotd_service_name = 'awsspotd'
+    $spotfleetd_service_name = 'awsspotfleetd'
   } else {
-    $svcname = 'awsspotd.service'
+    $spotd_service_name = 'awsspotd.service'
+    $spotfleetd_service_name = 'awsspotfleetd.service'
   }
 
-  service { $svcname:
+  service { $spotd_service_name:
+    # ensure     => running,
+    # enable     => true,
+    hasstatus  => true,
+    hasrestart => true,
+  }
+
+    service { $spotfleetd_service_name:
     # ensure     => running,
     # enable     => true,
     hasstatus  => true,
