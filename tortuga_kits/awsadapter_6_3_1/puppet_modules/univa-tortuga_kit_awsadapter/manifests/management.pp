@@ -76,6 +76,16 @@ class tortuga_kit_awsadapter::management::config {
       command     => '/bin/systemctl daemon-reload',
       refreshonly => true,
     }
+
+    file { '/usr/lib/systemd/system/awsspotfleetd.service':
+      content => template('tortuga_kit_awsadapter/awsspotfleetd.service.erb'),
+      mode    => '0644',
+    } ~>
+    exec { 'refresh_after_installing_awsspotfleetd_service':
+      command     => '/bin/systemctl daemon-reload',
+      refreshonly => true,
+    }
+
   }
 
   file { '/etc/sysconfig/awsspotd':
