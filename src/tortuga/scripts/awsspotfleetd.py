@@ -165,7 +165,7 @@ def spot_fleet_listener(logger, ec2_client) -> None:
                     glide_thread.start()
 
 
-class FleetSpotdAppClass(object):
+class SpotFleetdAppClass(object):
     def __init__(self, region: str) -> None:
         self.region = region
 
@@ -173,13 +173,13 @@ class FleetSpotdAppClass(object):
 
     def run(self) -> list:
         # Ensure logger is instantiated _after_ process is daemonized
-        self.logger = logging.getLogger('tortuga.aws.fleetspotd')
+        self.logger = logging.getLogger('tortuga.aws.spotfleetd')
 
         self.logger.setLevel(logging.DEBUG)
 
         # create console handler and set level to debug
         ch = logging.handlers.TimedRotatingFileHandler(
-            '/var/log/tortuga_fleetspotd',
+            '/var/log/tortuga_spotfleetd',
             when='midnight'
         )
 
@@ -276,7 +276,7 @@ def main() -> None:
                 args.region))
         sys.exit(1)
 
-    cls = FleetSpotdAppClass(args.region)
+    cls = SpotFleetdAppClass(args.region)
 
     daemon = Daemonize(
         app='spotfleetd',
