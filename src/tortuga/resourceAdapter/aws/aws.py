@@ -965,8 +965,8 @@ class Aws(ResourceAdapter):
 
         conn = boto3.client(
             'ec2',
-            aws_access_key_id=configDict['awsAccessKey'],
-            aws_secret_access_key=configDict['awsSecretKey'],
+            aws_access_key_id=configDict.get('awsAccessKey', None),
+            aws_secret_access_key=configDict.get('awsSecretKey', None),
             region_name=configDict['region']
         )
 
