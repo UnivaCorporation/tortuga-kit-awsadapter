@@ -42,6 +42,17 @@ def parse_cfg_tags(value: str) -> Dict[str, str]:
 
 FACTER_PATH = '/opt/puppetlabs/bin/facter'
 
+def get_region() -> str:
+    az = check_output(
+        [
+            FACTER_PATH,
+            '--no-external-facts',
+            'ec2_metadata.placement.availability-zone'
+        ]
+    ).strip().decode()
+
+    return az[:-1]
+
 
 def get_redis_client():
     try:
