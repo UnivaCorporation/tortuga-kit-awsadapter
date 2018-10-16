@@ -988,39 +988,39 @@ class Aws(ResourceAdapter):
 
         iam_instance_profile = None
         if configDict.get('iam_instance_profile_name'):
-            iam_instance_profile = {'Name' : configDict.get('iam_instance_profile_name') }
+            iam_instance_profile = {'Name' : configDict.get('iam_instance_profile_name')}
+        else:
+            iam_instance_profile = {}
 
         # Process block device mappings...
-        block_device_mappings = None
+        block_device_mappings = []
         if configDict.get('block_device_map'):
-            bmap = configDict.get('block_device_map')
-            block_device_mappings = []
             for k, v in configDict.get('block_device_map').items():
-                map = {
+                ebs_map: dict = {
                     'DeviceName' : k,
                     'Ebs' : {
-                     }
+                    }
                 }
-                if v.volume_type != None:
-                    map['Ebs']['VolumeType'] = v.volume_type
-                if v.size != None:
-                    map['Ebs']['VolumeSize'] = int(v.size)
-                if v.iops != None:
-                    map['Ebs']['Iops'] = int(v.iops)
-                if v.encrypted != None:
-                    map['Ebs']['Encrypted'] = v.encrypted
-                if v.delete_on_termination != None:
-                    map['Ebs']['DeleteOnTermination'] = v.delete_on_termination
-                if v.snapshot_id != None:
-                    map['Ebs']['SnapshotId'] = v.snapshot_id
-                if v.ephemeral_name != None:
-                    map['Ebs']['VirtualName'] = v.ephemeral_name,
+                if v.volume_type is not None:
+                    ebs_map['Ebs']['VolumeType'] = v.volume_type
+                if v.size is not None:
+                    ebs_map['Ebs']['VolumeSize'] = int(v.size)
+                if v.iops is not None:
+                    ebs_map['Ebs']['Iops'] = int(v.iops)
+                if v.encrypted is not None:
+                    ebs_map['Ebs']['Encrypted'] = v.encrypted
+                if v.delete_on_termination is not None:
+                    ebs_map['Ebs']['DeleteOnTermination'] = v.delete_on_termination
+                if v.snapshot_id is not None:
+                    ebs_map['Ebs']['SnapshotId'] = v.snapshot_id
+                if v.ephemeral_name is not None:
+                    ebs_map['Ebs']['VirtualName'] = v.ephemeral_name,
 
-                block_device_mappings.append(map)
+                block_device_mappings.append(ebs_map)
 
         tag_map = None
         if configDict.get('tags'):
-            tag_map = { "ResourceType" : "instance" }
+            tag_map = {'ResourceType': 'instance'}
             tags = []
             for k,v in configDict.get('tags').items():
                 tag = {

@@ -20,8 +20,6 @@ import argparse
 import sys
 import threading
 import redis
-import boto
-import boto.ec2
 import boto3
 
 from time import sleep
@@ -30,36 +28,15 @@ from subprocess import check_output
 from tortuga.exceptions.nodeAlreadyExists import NodeAlreadyExists
 from tortuga.wsapi.addHostWsApi import AddHostWsApi
 
+from ..resourceAdapter.aws.helpers import get_redis_client, get_region
+
 
 PIDFILE = '/var/log/spotfleetd.pid'
-
-FACTER_PATH = '/opt/puppetlabs/bin/facter'
 
 BACKOFF = {
     'seed': 5,
     'max': 60
 }
-
-
-def get_redis_client():
-    try:
-        uri = check_output(
-            [FACTER_PATH, 'redis_url']
-        ).strip().decode()
-    except Exception:
-        uri = None
-
-    if not uri:
-        uri = 'localhost:6379'
-
-    host, port = uri.split(':')
-
-    return redis.StrictRedis(
-        host=host,
-        port=int(port),
-        db=0
-    )
-
 
 REDIS_CLIENT = get_redis_client()
 
@@ -150,6 +127,10 @@ def spot_fleet_listener(logger, ec2_client) -> None:
             )
 
             if 'spot_fleet_request_id' in data:
+                REDIS_CLIENT.sadd(
+                    'tortuga-aws-splot-fleet-ids',
+                    data['spot_fleet_request_id']
+                )
                 if data['target'] > 250:
                     glide_thread = threading.Thread(
                         target=glide_to_target,
@@ -165,7 +146,7 @@ def spot_fleet_listener(logger, ec2_client) -> None:
                     glide_thread.start()
 
 
-class SpotFleetdAppClass(object):
+class SpotFleetdAppClass():
     def __init__(self, region: str) -> None:
         self.region = region
 
@@ -252,23 +233,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    try:
-        if not args.region:
-            az = check_output(
-                [
-                    FACTER_PATH,
-                    '--no-external-facts',
-                    'ec2_metadata.placement.availability-zone'
-                ]
-            ).strip().decode()
+    if not args.region:
+        args.region = get_region()
 
-            args.region = az[:-1]
-
-    except Exception:
-        args.region = 'us-west-1'
-
-    result_ = [region for region in boto.ec2.regions()
-               if region.name == args.region]
+    ec2 = boto3.client('ec2', region_name='us-east-1')
+    result_ = [region for region in ec2.describe_regions()['Regions']
+                if region['RegionName'] == args.region]
 
     if not result_:
         sys.stderr.write(
