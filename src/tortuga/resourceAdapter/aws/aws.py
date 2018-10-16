@@ -986,6 +986,50 @@ class Aws(ResourceAdapter):
             request_config['SpotPrice'] = '{:0.2f}'.format(
                addNodesRequest['spot_fleet_request']['price'])
 
+        iam_instance_profile = None
+        if configDict.get('iam_instance_profile_name'):
+            iam_instance_profile = {'Name' : configDict.get('iam_instance_profile_name') }
+
+        # Process block device mappings...
+        block_device_mappings = None
+        if configDict.get('block_device_map'):
+            bmap = configDict.get('block_device_map')
+            block_device_mappings = []
+            for k, v in configDict.get('block_device_map').items():
+                map = {
+                    'DeviceName' : k,
+                    'Ebs' : {
+                     }
+                }
+                if v.volume_type != None:
+                    map['Ebs']['VolumeType'] = v.volume_type
+                if v.size != None:
+                    map['Ebs']['VolumeSize'] = int(v.size)
+                if v.iops != None:
+                    map['Ebs']['Iops'] = int(v.iops)
+                if v.encrypted != None:
+                    map['Ebs']['Encrypted'] = v.encrypted
+                if v.delete_on_termination != None:
+                    map['Ebs']['DeleteOnTermination'] = v.delete_on_termination
+                if v.snapshot_id != None:
+                    map['Ebs']['SnapshotId'] = v.snapshot_id
+                if v.ephemeral_name != None:
+                    map['Ebs']['VirtualName'] = v.ephemeral_name,
+
+                block_device_mappings.append(map)
+
+        tag_map = None
+        if configDict.get('tags'):
+            tag_map = { "ResourceType" : "instance" }
+            tags = []
+            for k,v in configDict.get('tags').items():
+                tag = {
+                    'Key' : k,
+                    'Value' : v
+                }
+                tags.append(tag)
+            tag_map['Tags'] = tags
+
         for instance in configDict['instancetype'].split(','):
             try:
                 instance_type, weight = instance.split(':')
@@ -1002,8 +1046,12 @@ class Aws(ResourceAdapter):
                 'KeyName': configDict['keypair'],
                 'SecurityGroups': [{
                     'GroupId': configDict['securitygroup'][0]
-                }]
+                }],
+                'IamInstanceProfile' : iam_instance_profile,
+                'BlockDeviceMappings' : block_device_mappings,
             }
+            if tag_map != None:
+                spec['TagSpecifications'] = [ tag_map ]
 
             request_config['LaunchSpecifications'].append(spec)
 
