@@ -999,21 +999,21 @@ class Aws(ResourceAdapter):
                 ebs_map: dict = {
                     'DeviceName' : k,
                     'Ebs' : {
-                     }
+                    }
                 }
-                if v.volume_type:
+                if v.volume_type is not None:
                     ebs_map['Ebs']['VolumeType'] = v.volume_type
-                if v.size:
+                if v.size is not None:
                     ebs_map['Ebs']['VolumeSize'] = int(v.size)
-                if v.iops:
+                if v.iops is not None:
                     ebs_map['Ebs']['Iops'] = int(v.iops)
-                if v.encrypted:
+                if v.encrypted is not None:
                     ebs_map['Ebs']['Encrypted'] = v.encrypted
-                if v.delete_on_termination:
+                if v.delete_on_termination is not None:
                     ebs_map['Ebs']['DeleteOnTermination'] = v.delete_on_termination
-                if v.snapshot_id:
+                if v.snapshot_id is not None:
                     ebs_map['Ebs']['SnapshotId'] = v.snapshot_id
-                if v.ephemeral_name:
+                if v.ephemeral_name is not None:
                     ebs_map['Ebs']['VirtualName'] = v.ephemeral_name,
 
                 block_device_mappings.append(ebs_map)
