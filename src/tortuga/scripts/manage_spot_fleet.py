@@ -93,6 +93,7 @@ def main():
         '-d', '--delete',
         type=str,
         default=None,
+        metavar='SPOT FLEET REQUEST ID',
         help='Delete spot fleet request'
     )
 
