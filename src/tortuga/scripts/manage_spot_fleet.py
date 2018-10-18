@@ -116,36 +116,31 @@ class ManageSpotFleet():
 def main():
     parser = argparse.ArgumentParser()
 
-    aws_group = parser.add_argument_group('aws', 'AWS Options')
+    global_group = parser.add_argument_group('global', 'Global Options')
 
-    aws_group.add_argument(
+    global_group.add_argument(
         '--region',
         default=None,
         help='AWS region to manage Spot Instances in'
     )
 
-    parser.add_argument(
-        '-l', '--list',
-        action='store_true',
-        default=False,
-        help='List all active spot fleet requests'
+    commands = parser.add_subparsers(
+        title='sub commands',
+        dest='subparser'
     )
 
-    parser.add_argument(
-        '-s', '--set',
-        default=None,
-        nargs=2,
-        metavar='[SPOT FLEET REQUEST ID] [TARGET]',
-        help='Set spot fleet request target'
+    commands.add_parser('list')
+
+    set_parser = commands.add_parser('set')
+    set_parser.add_argument('spot_fleet_request_id')
+    set_parser.add_argument(
+        'target',
+        type=int,
+        help='Target instances for spot fleet request'
     )
 
-    parser.add_argument(
-        '-d', '--delete',
-        type=str,
-        default=None,
-        metavar='[SPOT FLEET REQUEST ID]',
-        help='Delete spot fleet request'
-    )
+    delete_parser = commands.add_parser('delete')
+    delete_parser.add_argument('spot_fleet_request_id')
 
     args = parser.parse_args()
 
@@ -162,17 +157,17 @@ def main():
 
     cli = ManageSpotFleet(args.region)
 
-    if args.list:
+    if args.subparser == 'list':
         cli.list()
 
-    elif args.set:
+    elif args.subparser == 'set':
         cli.set(
-            args.set[0],
-            int(args.set[1])
+            args.spot_fleet_request_id,
+            args.target
         )
 
-    elif args.delete:
-        cli.delete(args.delete)
+    elif args.subparser == 'delete':
+        cli.delete(args.spot_fleet_request_id)
 
 
 if __name__ == '__main__':
