@@ -180,16 +180,16 @@ def dbm():
         # create 'base' kit
         kit = Kit()
         kit.name = 'base'
-        kit.version = '7.0.0'
+        kit.version = '6.3.1'
         kit.iteration = '0'
         kit.description = 'Sample base kit'
 
-        installer_component = Component(name='installer', version='7.0')
+        installer_component = Component(name='installer', version='6.3')
         installer_component.family = [rhel7_os_family]
         installer_component.kit = kit
 
         core_component = Component(name='core',
-                                   version='7.0',
+                                   version='6.3',
                                    description='Compute component')
         core_component.family = [rhel7_os_family]
         core_component.kit = kit
