@@ -81,6 +81,11 @@ def glide_to_target(spot_fleet_request_id, initial, target, logger,
                         SpotFleetRequestId=spot_fleet_request_id,
                         TargetCapacity=current
                     )
+                    REDIS_CLIENT.hset(
+                        'tortuga-aws-splot-fleet-requests',
+                        spot_fleet_request_id,
+                        current
+                    )
                 except Exception as e:
                     logger.warning(
                         'AWS API error ({}), sleeping for {}'.format(
@@ -127,9 +132,10 @@ def spot_fleet_listener(logger, ec2_client) -> None:
             )
 
             if 'spot_fleet_request_id' in data:
-                REDIS_CLIENT.sadd(
-                    'tortuga-aws-splot-fleet-ids',
-                    data['spot_fleet_request_id']
+                REDIS_CLIENT.hset(
+                    'tortuga-aws-splot-fleet-requests',
+                    data['spot_fleet_request_id'],
+                    data['target']
                 )
                 if data['target'] > 250:
                     glide_thread = threading.Thread(
