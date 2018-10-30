@@ -16,14 +16,14 @@
 import os
 import json
 import boto3
-import logging
+import argparse
 
 from datetime import date
-from tortuga.cli.tortugaCli import TortugaCli
+from tortuga.cli.base import Argument, Command
 from typing import Any, Optional, Generator, Dict, Tuple
 
 
-class LicenseUsageCLI(TortugaCli):
+class LicenseUsageCommand(Command):
     """
     Grab the usage between 2 dates
     and write to CSV file.
@@ -31,34 +31,59 @@ class LicenseUsageCLI(TortugaCli):
     IAM permission 'ce:GetCostAndUsage'
     is required to gather the data.
     """
+    name = 'usage'
+    help = 'Create usage report'
+
+    arguments = [
+        Argument(
+            '--start',
+            help='YYYY-MM-DD',
+            required=True
+        ),
+        Argument(
+            '--end',
+            help='YYYY-MM-DD',
+            required=True
+        ),
+        Argument(
+            '-o',
+            '--output',
+            help='Specify output file path',
+            type=str,
+            default=None
+        )
+    ]
+
     def __init__(self) -> None:
         """
         Initialise client and logger.
 
         :returns: None
         """
-        super(LicenseUsageCLI, self).__init__()
+        super(LicenseUsageCommand, self).__init__()
+        self._args = None
         self._client = boto3.client('ce')
-        self._logger = logging.getLogger('tortuga.console')
 
-    def __call__(self) -> None:
+    def execute(self, args: argparse.Namespace) -> None:
         """
         Iterate over each row and write to file.
 
         :returns: None
         """
+        self._args = args
+
         start, end = self._string_to_date()
 
-        if self.getArgs().output:
+        if self._args.output:
             path: str = os.path.abspath(
-                self.getArgs().output
+                self._args.output
             )
         else:
             path: str = os.path.join(
                 os.path.expanduser('~'),
                 '{}_{}.json'.format(
-                    self.getArgs().start,
-                    self.getArgs().end
+                    self._args.start,
+                    self._args.end
                 )
             )
 
@@ -76,11 +101,11 @@ class LicenseUsageCLI(TortugaCli):
         :returns: Tuple Date Date
         """
         try:
-            start: date = date.fromisoformat(self.getArgs().start)
-            end: date = date.fromisoformat(self.getArgs().end)
+            start: date = date.fromisoformat(self._args.start)
+            end: date = date.fromisoformat(self._args.end)
         except AttributeError:  # Above method only in 3.7.
-            split_start: Tuple[str] = self.getArgs().start.split('-')
-            split_end: Tuple[str] = self.getArgs().end.split('-')
+            split_start: Tuple[str] = self._args.start.split('-')
+            split_end: Tuple[str] = self._args.end.split('-')
 
             split_start: Tuple[int] = map(int, split_start)
             split_end: Tuple[int] = map(int, split_end)
@@ -141,30 +166,3 @@ class LicenseUsageCLI(TortugaCli):
             page_token = response.get('NextPageToken', None)
             if not page_token:
                 break
-
-    def parseArgs(self, usage=None) -> None:
-        """
-        Define CLI arguemnts.
-
-        :returns: None
-        """
-        self.addOption('--start', help='YYYY-MM-DD', required=True)
-        self.addOption('--end', help='YYYY-MM-DD', required=True)
-        self.addOption('-o', '--output', help='Specify output file path', type=str, default=None)
-
-        super(LicenseUsageCLI, self).parseArgs(usage=usage)
-
-    def runCommand(self) -> None:
-        """
-        :returns: None
-        """
-        self.parseArgs()
-        self.__call__()
-
-
-def main():
-    LicenseUsageCLI().run()
-
-
-if __name__ == '__main__':
-    main()
