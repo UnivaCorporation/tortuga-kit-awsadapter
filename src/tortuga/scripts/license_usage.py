@@ -127,10 +127,10 @@ class LicenseUsageCLI(TortugaCli):
                             'Amazon Elastic Compute Cloud - Compute'
                         ]
                     },
-                #    'Tags': {
-                #        'Key': 'tortuga',
-                #        'Values': ['installer_hostname']
-                #    }
+                    'Tags': {
+                        'Key': 'tortuga',
+                        'Values': ['installer_hostname']
+                    }
                 },
                 **kwargs
             )
