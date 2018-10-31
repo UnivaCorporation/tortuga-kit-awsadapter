@@ -689,7 +689,18 @@ class Aws(ResourceAdapter):
             # Create node records before instances
             self.__add_hosts(session, launch_request)
 
-        return self.__process_node_request_queue(session, launch_request)
+        nodes = self.__process_node_request_queue(session, launch_request)
+
+        vcpus = \
+            self.get_instance_size_mapping(
+                launch_request.configDict['instancetype']) \
+            if 'vcpus' not in launch_request.configDict else \
+            launch_request.configDict['vcpus']
+
+        for node in nodes:
+            node.vcpus =vcpus
+
+        return nodes
 
     def __insert_nodes(self, session: Session,
                        launch_request: LaunchRequest) -> List[Node]:
