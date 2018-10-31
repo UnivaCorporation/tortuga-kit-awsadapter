@@ -988,11 +988,6 @@ class Aws(ResourceAdapter):
             'LaunchSpecifications': []
         }
 
-        if addNodesRequest['count'] <= 250:
-            request_config['TargetCapacity'] = addNodesRequest['count']
-        else:
-            request_config['TargetCapacity'] = 250  # Glide to target.
-
         if addNodesRequest['spot_fleet_request']['price']:
             request_config['SpotPrice'] = '{:0.2f}'.format(
                addNodesRequest['spot_fleet_request']['price'])
