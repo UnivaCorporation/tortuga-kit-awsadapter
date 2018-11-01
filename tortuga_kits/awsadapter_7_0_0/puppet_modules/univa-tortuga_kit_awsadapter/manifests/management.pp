@@ -18,7 +18,12 @@ class tortuga_kit_awsadapter::management::package {
 
   include tortuga::config
 
-  ensure_packages(['unzip'], {'ensure' => 'installed'})
+  $pkgs = [
+    'unzip',
+    'zeromq3',
+  ]
+
+  ensure_packages($pkgs, {'ensure' => 'installed'})
 
   if $::osfamily == 'RedHat' {
     if versioncmp($facts['os']['release']['major'], '7') < 0 {
