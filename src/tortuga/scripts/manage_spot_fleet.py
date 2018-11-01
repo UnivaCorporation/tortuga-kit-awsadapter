@@ -19,6 +19,7 @@ import argparse
 
 from subprocess import check_output
 
+from tortuga.wsapi.addHostWsApi import AddHostWsApi
 from ..resourceAdapter.aws.helpers import get_redis_client, get_region
 
 
@@ -36,11 +37,30 @@ class ManageSpotFleet():
         :param region: String
         :returns: None
         """
-        self._key = 'tortuga-aws-splot-fleet-ids'
+        self._key = 'tortuga-aws-splot-fleet-requests'
         self._ec2 = boto3.client(
             'ec2',
             region_name=region
         )
+
+    def create(self,
+            hardware_profile: str,
+            software_profile: str,
+            resource_adapter_configuration: str,
+            price: float,
+            count: str) -> None:
+        """
+        Create a spot fleet
+        request.
+
+        :param hardware_profile: String
+        :param software_profile: String
+        :param resource_adapter_configuration: String
+        :param price: Float
+        :param cost: Integer
+        :returns: None
+        """
+        pass
 
     def list(self) -> None:
         """
@@ -49,14 +69,35 @@ class ManageSpotFleet():
 
         :returns: None
         """
-        for sfr_id in REDIS_CLIENT.smembers(self._key):
-            print(sfr_id.decode())
+        for sfr_id in REDIS_CLIENT.hkeys(self._key):
+            target: str = REDIS_CLIENT.hget(self._key, sfr_id)
+            print(f'ID: {sfr_id.decode()} TARGET: {target.decode()}')
+
+    def set(self, spot_fleet_request_id: str, target: int) -> None:
+        """
+        Set the target instances
+        of a spot fleet request.
+
+        :param spot_fleet_request_id: String
+        :param target: Integer
+        :returns: None
+        """
+        self._ec2.modify_spot_fleet_request(
+            SpotFleetRequestId=spot_fleet_request_id,
+            TargetCapacity=target
+        )
+        REDIS_CLIENT.hset(
+            'tortuga-aws-splot-fleet-requests',
+            spot_fleet_request_id,
+            target
+        )
 
     def delete(self, spot_fleet_request_id: str) -> None:
         """
         Delete an active
         spot fleet request.
 
+        :param spot_fleet_request_id: String
         :returns: None
         """
         self._ec2.cancel_spot_fleet_requests(
@@ -66,36 +107,40 @@ class ManageSpotFleet():
             ],
             TerminateInstances=True
         )
-        REDIS_CLIENT.srem(
+        REDIS_CLIENT.hdel(
             self._key,
             spot_fleet_request_id
         )
 
+
 def main():
     parser = argparse.ArgumentParser()
 
-    aws_group = parser.add_argument_group('aws', 'AWS Options')
+    global_group = parser.add_argument_group('global', 'Global Options')
 
-    aws_group.add_argument(
+    global_group.add_argument(
         '--region',
         default=None,
         help='AWS region to manage Spot Instances in'
     )
 
-    parser.add_argument(
-        '-l', '--list',
-        action='store_true',
-        default=False,
-        help='List all active spot fleet requests'
+    commands = parser.add_subparsers(
+        title='sub commands',
+        dest='subparser'
     )
 
-    parser.add_argument(
-        '-d', '--delete',
-        type=str,
-        default=None,
-        metavar='SPOT FLEET REQUEST ID',
-        help='Delete spot fleet request'
+    commands.add_parser('list')
+
+    set_parser = commands.add_parser('set')
+    set_parser.add_argument('spot_fleet_request_id')
+    set_parser.add_argument(
+        'target',
+        type=int,
+        help='Target instances for spot fleet request'
     )
+
+    delete_parser = commands.add_parser('delete')
+    delete_parser.add_argument('spot_fleet_request_id')
 
     args = parser.parse_args()
 
@@ -112,11 +157,17 @@ def main():
 
     cli = ManageSpotFleet(args.region)
 
-    if args.list:
+    if args.subparser == 'list':
         cli.list()
 
-    elif args.delete:
-        cli.delete(args.delete)
+    elif args.subparser == 'set':
+        cli.set(
+            args.spot_fleet_request_id,
+            args.target
+        )
+
+    elif args.subparser == 'delete':
+        cli.delete(args.spot_fleet_request_id)
 
 
 if __name__ == '__main__':

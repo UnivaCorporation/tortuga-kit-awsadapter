@@ -41,62 +41,6 @@ BACKOFF = {
 REDIS_CLIENT = get_redis_client()
 
 
-def glide_to_target(spot_fleet_request_id, initial, target, logger,
-                    ec2_client) -> None:
-    current = initial
-    backoff = BACKOFF['seed']
-    while current < target:
-        try:
-            request = ec2_client.describe_spot_fleet_requests(
-                SpotFleetRequestIds=[spot_fleet_request_id]
-            )['SpotFleetRequestConfigs'][0]
-        except Exception as e:
-            logger.warning(
-                'AWS API error ({}), sleeping for {}'.format(
-                    e, backoff))
-            sleep(backoff)
-            if backoff < BACKOFF['max']:
-                backoff *= 2
-            if backoff > BACKOFF['max']:
-                backoff = BACKOFF['max']
-        else:
-            backoff = BACKOFF['seed']
-
-        if request['SpotFleetRequestState'] == 'active':
-            if (target - current) >= 250:
-                current += 250
-            else:
-                current += (target - current)
-
-            logger.debug(
-                'Increasing spot fleet request to {} of {}'.format(
-                    current,
-                    target
-                )
-            )
-
-            while True:
-                try:
-                    ec2_client.modify_spot_fleet_request(
-                        SpotFleetRequestId=spot_fleet_request_id,
-                        TargetCapacity=current
-                    )
-                except Exception as e:
-                    logger.warning(
-                        'AWS API error ({}), sleeping for {}'.format(
-                            e, backoff))
-                    sleep(backoff)
-                    if backoff < BACKOFF['max']:
-                        backoff *= 2
-                    if backoff > BACKOFF['max']:
-                        backoff = BACKOFF['max']
-                else:
-                    backoff = BACKOFF['max']
-                    break
-
-        sleep(5)
-
-
 def spot_fleet_listener(logger, ec2_client) -> None:
     logger.info('Starting spot fleet listener thread')
 
@@ -127,23 +71,11 @@ def spot_fleet_listener(logger, ec2_client) -> None:
             )
 
             if 'spot_fleet_request_id' in data:
-                REDIS_CLIENT.sadd(
-                    'tortuga-aws-splot-fleet-ids',
-                    data['spot_fleet_request_id']
+                REDIS_CLIENT.hset(
+                    'tortuga-aws-splot-fleet-requests',
+                    data['spot_fleet_request_id'],
+                    data['target']
                 )
-                if data['target'] > 250:
-                    glide_thread = threading.Thread(
-                        target=glide_to_target,
-                        args=(
-                            data['spot_fleet_request_id'],
-                            250,
-                            data['target'],
-                            logger,
-                            ec2_client
-                        ),
-                        daemon=True
-                    )
-                    glide_thread.start()
 
 
 class SpotFleetdAppClass():
