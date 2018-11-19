@@ -21,6 +21,16 @@ from setuptools import find_packages, setup
 version = '7.0.0'
 
 
+if os.getenv('RELEASE'):
+    requirements_file = 'requirements.txt'
+else:
+    requirements_file = 'requirements-dev.txt'
+
+
+with open(requirements_file) as fp:
+    requirements = [buf.rstrip() for buf in fp.readlines()]
+
+
 def get_git_revision():
     cmd = 'git rev-parse --short HEAD'
 
@@ -53,16 +63,7 @@ setup(
         'tortuga.resourceAdapter'
     ],
     zip_safe=False,
-    install_requires=[
-        'boto',
-        'boto3',
-        'gevent<1.3.2',
-        'awscli',
-        'click',
-        'colorama',
-        'daemonize',
-        'Jinja2',
-    ],
+    install_requires=requirements,
     entry_points={
         'console_scripts': [
             'awsspotd=tortuga.scripts.awsspotd:main',
