@@ -193,11 +193,6 @@ class Aws(ResourceAdapter):
             group_order=3,
             default='True'
         ),
-        'vpc_gateway': settings.StringSetting(
-            display_name='VPC gateway',
-            group='Networking',
-            group_order=3
-        ),
 
         #
         # Instances
