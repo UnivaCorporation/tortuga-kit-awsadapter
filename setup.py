@@ -62,6 +62,7 @@ setup(
         'colorama',
         'daemonize',
         'Jinja2',
+        'zmq'
     ],
     entry_points={
         'console_scripts': [

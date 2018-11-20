@@ -20,6 +20,7 @@ import boto.vpc
 
 from tortuga.cli.tortugaCli import TortugaCli
 from tortuga.resourceAdapter.aws import Aws
+from tortuga.resourceAdatper.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
 
 
 class AppClass(TortugaCli):
@@ -29,7 +30,7 @@ class AppClass(TortugaCli):
     def parseArgs(self, usage=None):
         self.addOption(
             '--resource-adapter-configuration', '-A',
-            default='default', metavar='<value>',
+            default=DEFAULT_CONFIGURATION_PROFILE_NAME, metavar='<value>',
             help='Specify resource adapter configuration for operation')
 
         self.addOption(
