@@ -20,6 +20,7 @@ import argparse
 
 from datetime import date
 from tortuga.cli.base import Argument, Command
+from tortuga.config.configManager import ConfigManager
 from typing import Any, Optional, Generator, Dict, Tuple
 
 
@@ -63,6 +64,7 @@ class LicenseUsageCommand(Command):
         super(LicenseUsageCommand, self).__init__()
         self._args = None
         self._client = boto3.client('ce')
+        self._cm = ConfigManager()
 
     def execute(self, args: argparse.Namespace) -> None:
         """
@@ -146,15 +148,9 @@ class LicenseUsageCommand(Command):
                     'Key': 'INSTANCE_TYPE'
                 }],
                 Filter={
-                    'Dimensions': {
-                        'Key': 'SERVICE',
-                        'Values': [
-                            'Amazon Elastic Compute Cloud - Compute'
-                        ]
-                    },
                     'Tags': {
-                        'Key': 'tortuga',
-                        'Values': ['installer_hostname']
+                        'Key': 'tortuga:installer_hostname',
+                        'Values': [self._cm.getHost()]
                     }
                 },
                 **kwargs
