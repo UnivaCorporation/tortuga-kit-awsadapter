@@ -54,7 +54,8 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter, \
+    DEFAULT_CONFIGURATION_PROFILE_NAME
 from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
@@ -622,7 +623,8 @@ class Aws(ResourceAdapter):
         # resource_adapter_configuration is set through the validation API;
         # ensure sane default is used
         cfgname = addNodesRequest.get(
-            'resource_adapter_configuration', 'default')
+            'resource_adapter_configuration',
+            DEFAULT_CONFIGURATION_PROFILE_NAME)
 
         launch_request.configDict = self.getResourceAdapterConfig(cfgname)
 

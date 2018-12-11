@@ -28,13 +28,12 @@ from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.resourceAdapter.aws.helpers import parse_cfg_tags
+from tortuga.resourceAdatper.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
 from tortuga.resourceAdapterConfiguration.api import \
     ResourceAdapterConfigurationApi
 
 
 DEFAULT_AWS_REGION = 'us-east-1'
-
-DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME = 'Default'
 
 DEFAULT_INSTANCE_TYPE = 'm5.large'
 
@@ -77,8 +76,8 @@ def disable_colour(ctx, param, value): \
 @click.option('--profile',
               help=('Resource adapter configuration profile name'
                     ' (default: {0})'.format(
-                        DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME)),
-              default=DEFAULT_RESOURCE_ADAPTER_CONFIGURATION_PROFILE_NAME)
+                        DEFAULT_CONFIGURATION_PROFILE_NAME)),
+              default=DEFAULT_CONFIGURATION_PROFILE_NAME)
 def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
          profile):
     ec2_metadata = get_ec2_metadata()
