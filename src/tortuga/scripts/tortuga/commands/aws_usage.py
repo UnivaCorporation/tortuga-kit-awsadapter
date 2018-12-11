@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import sys
 import json
 import boto3
 import argparse
@@ -80,16 +81,11 @@ class LicenseUsageCommand(Command):
             path: str = os.path.abspath(
                 self._args.output
             )
+            writer = PathWriter(path)
         else:
-            path: str = os.path.join(
-                os.path.expanduser('~'),
-                '{}_{}.json'.format(
-                    self._args.start,
-                    self._args.end
-                )
-            )
+            writer = StreamWriter()
 
-        with open(path, 'w') as f:
+        with writer as f:
             for row in self._get_data(start, end):
                 f.write(
                     json.dumps(row)
@@ -172,3 +168,36 @@ class LicenseUsageCommand(Command):
             page_token = response.get('NextPageToken', None)
             if not page_token:
                 break
+
+class StreamWriter():
+    """
+    Handle 'with' for streams you don't want to close
+    """
+
+    def __init__(self) -> None:
+        self._f = sys.stdout
+
+    def __enter__(self):
+        return self._f
+
+    def __exit__(self, *args) -> None:
+        pass
+
+class PathWriter():
+    """
+    Handle 'with' semantics for normal paths
+    """
+
+    def __init__(self, path: str) -> None:
+        self._p = path
+        self._f = None
+
+    def __enter__(self):
+        self._f = open(self._p, 'w')
+        return self._f
+
+    def __exit__(self, *args) -> None:
+        if self._f:
+            self._f.__exit__(*args)
+            # Just to be safe... multiple closes are OK
+            self._f.close()
