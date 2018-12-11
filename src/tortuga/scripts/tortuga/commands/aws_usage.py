@@ -148,10 +148,20 @@ class LicenseUsageCommand(Command):
                     'Key': 'INSTANCE_TYPE'
                 }],
                 Filter={
-                    'Tags': {
-                        'Key': 'tortuga:installer_hostname',
-                        'Values': [self._cm.getHost()]
-                    }
+                    'And' : [
+                        {
+                            'Tags': {
+                                'Key': 'tortuga:installer_hostname',
+                                'Values': [self._cm.getHost()]
+                            }
+                        },
+                        {
+                            'Dimensions' : {
+                                'Key' : 'USAGE_TYPE_GROUP',
+                                'Values': ['EC2: Running Hours']
+                            }
+                        }
+                    ]
                 },
                 **kwargs
             )
