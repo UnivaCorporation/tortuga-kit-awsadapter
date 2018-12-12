@@ -28,7 +28,7 @@ from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.resourceAdapter.aws.helpers import parse_cfg_tags
-from tortuga.resourceAdatper.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
+from tortuga.resourceAdapter.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
 from tortuga.resourceAdapterConfiguration.api import \
     ResourceAdapterConfigurationApi
 
