@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+import socket
 import sys
 import itertools
 import subprocess
@@ -172,6 +172,10 @@ def main():
 
             for dns_nameserver in dns_nameservers:
                 fp.write('nameserver %s\n' % (dns_nameserver))
+
+            fqdn = socket.getfqdn().split('.', 1)[0] + '.' + dns_domain
+
+            runCommand('hostnamectl set-hostname --static %s' % (fqdn))
 
     tryCommand('setenforce permissive')
 
