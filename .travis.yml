@@ -6,16 +6,11 @@ services:
 env:
 - TORTUGA_BUILD_DOCKER="true"
 before_install:
-- docker pull puppet/puppet-agent
+- docker pull univa/tortuga-build-kit:master-latest
 
 install:
-- pip install tox
-- git clone https://github.com/UnivaCorporation/tortuga.git tortuga-base
-- cd tortuga-base/
-- pip install -r requirements.txt
-- paver build
-- cd ../
-- build-kit
+- chmod -R a-w .
+- docker run --rm -it -v `pwd`:/kit-src univa/tortuga-build-kit:master-latest
 script:
 - echo "Done"
 deploy:
