@@ -380,7 +380,7 @@ class Aws(ResourceAdapter):
             config['installer_ip'] = self.installer_public_ipaddress
 
         #
-        # Set clould_init if required
+        # Set cloud_init if required
         #
         if config.get('user_data_script_template', None) or \
                 config.get('cloud_init_script_template', None):
@@ -1231,6 +1231,7 @@ fqdn: %s
                         self.__launchEC2(
                             conn,
                             configDict,
+                            node=node_request['node'],
                             addNodesRequest=addNodesRequest
                         ).instances[0]
 
@@ -1885,8 +1886,6 @@ fqdn: %s
             args['security_groups'] = configDict.get('securitygroup', [])
 
         return args
-
-
 
     def __launchEC2(self, conn: EC2Connection, configDict: Dict[str, Any],
                     *, count: int = 1, node: Optional[Node] = None,
