@@ -180,7 +180,7 @@ def dbm():
         # create 'base' kit
         kit = Kit()
         kit.name = 'base'
-        kit.version = '7.0.0'
+        kit.version = '7.0.2'
         kit.iteration = '0'
         kit.description = 'Sample base kit'
 
