@@ -175,7 +175,7 @@ def main():
 
             fqdn = socket.getfqdn().split('.', 1)[0] + '.' + dns_domain
 
-            runCommand('hostnamectl set-hostname --static %s' % (fqdn))
+            tryCommand('hostnamectl set-hostname --static %s' % (fqdn))
 
     tryCommand('setenforce permissive')
 
