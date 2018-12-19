@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 class tortuga_kit_awsadapter::params {
   $major_version = '7.0'
 
-  $minor_version = '0'
-
-  $version = "${major_version}.${minor_version}"
+  $version = '7.0.2'
 
   $iteration = '0'
 
