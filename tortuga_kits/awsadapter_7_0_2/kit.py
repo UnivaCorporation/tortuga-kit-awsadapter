@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from tortuga.kit.installer import KitInstallerBase
+from tortuga.kit.mixins import ResourceAdapterMixin
 
-class tortuga_kit_awsadapter::params {
-  $major_version = '7.0'
 
-  $minor_version = '0'
-
-  $version = "${major_version}.${minor_version}"
-
-  $iteration = '0'
-
-  $kitdescr = "awsadapter-${version}-${iteration}"
-}
+class AWSKitInstaller(ResourceAdapterMixin, KitInstallerBase):
+    config_files = [
+        'bootstrap.tmpl',
+        'aws-instances.csv',
+        'aws-bootstrap-offline.tmpl',
+    ]
+    puppet_modules = ['univa-tortuga_kit_awsadapter']
+    resource_adapter_name = 'AWS'

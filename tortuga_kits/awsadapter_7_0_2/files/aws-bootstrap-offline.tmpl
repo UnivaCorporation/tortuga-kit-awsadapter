@@ -73,20 +73,6 @@ def _isPackageInstalled(pkgName):
 
 
 def installPuppet(vers):
-    pkgname = 'puppet5-release'
-
-    url = 'http://yum.puppetlabs.com/puppet5/%s-el-%s.noarch.rpm' % (pkgname, vers)
-
-    bRepoInstalled = _isPackageInstalled(pkgname)
-
-    if not bRepoInstalled:
-        retval = tryCommand('rpm -ivh %s' % (url), retry_limit=5)
-        if retval != 0:
-            sys.stderr.write(
-                'Error: unable to install package \"{0}\"\n'.format(pkgname))
-
-            sys.exit(1)
-
     # Attempt to install puppet
     if not _isPackageInstalled('puppet-agent'):
         _installPackage('puppet-agent')
@@ -160,6 +146,31 @@ def bootstrapPuppet():
 
 
 def main():
+    # disable all existing YUM repositories. This may not be the desired
+    # behaviour, so modify accordingly.
+    tryCommand('yum-config-manager --disable \'*\'')
+
+    # create OS repository configuration. This may not be required and/or
+    # necessary depending on the installation environment.
+    with open('/etc/yum.repos.d/tortuga-offline-centos.repo', 'w') as fp:
+        fp.write('''\
+[tortuga-offline-centos]
+name=tortuga-offline-centos
+baseurl=http://%s:8008/compute-os-repo/
+gpgcheck=0
+enabled=1
+''' % (installerHostName))
+
+    # create Tortuga off-line dependencies configuration
+    with open('/etc/yum.repos.d/tortuga-offline-deps.repo', 'w') as fp:
+        fp.write('''\
+[tortuga-offline-deps]
+name=tortuga-offline-deps
+baseurl=http://%s:8008/offline-deps/rpms/
+gpgcheck=0
+enabled=1
+''' % (installerHostName))
+
     if override_dns_domain:
         with open('/etc/resolv.conf', 'w') as fp:
             fp.write('# Created by Tortuga\n')
@@ -175,7 +186,7 @@ def main():
 
             fqdn = socket.getfqdn().split('.', 1)[0] + '.' + dns_domain
 
-            runCommand('hostnamectl set-hostname --static %s' % (fqdn))
+            tryCommand('hostnamectl set-hostname --static %s' % (fqdn))
 
     tryCommand('setenforce permissive')
 
