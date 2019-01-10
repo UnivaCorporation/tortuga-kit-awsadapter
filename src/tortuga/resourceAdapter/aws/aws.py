@@ -350,6 +350,10 @@ class Aws(ResourceAdapter):
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
+        """
+        :raises ConfigurationError: invalid AWS region specified
+        """
+
         connectionArgs = dict(
             aws_access_key_id=configDict.get('awsAccessKey', None),
             aws_secret_access_key=configDict.get('awsSecretKey', None),
@@ -369,8 +373,17 @@ class Aws(ResourceAdapter):
             if 'proxy_pass' in configDict:
                 connectionArgs['proxy_pass'] = configDict['proxy_pass']
 
-        return boto.ec2.connect_to_region(configDict['region'],
-                                          **connectionArgs)
+        ec2_conn = boto.ec2.connect_to_region(
+            configDict['region'],
+            **connectionArgs,
+        )
+
+        if ec2_conn is None:
+            raise ConfigurationError(
+                'Invalid AWS region [{}]'.format(configDict['region'])
+            )
+
+        return ec2_conn
 
     def process_config(self, config: Dict[str, Any]):
         #
