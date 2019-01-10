@@ -259,7 +259,8 @@ class Aws(ResourceAdapter):
             description='AWS region',
             group='Instances',
             group_order=0,
-            default='us-east-1'
+            default='us-east-1',
+            values=[region.name for region in boto.ec2.regions()],
         ),
         'zone': settings.StringSetting(
             display_name='Zone',
