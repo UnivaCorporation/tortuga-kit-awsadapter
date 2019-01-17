@@ -15,7 +15,6 @@
 # limitations under the License.
 
 import configparser
-import logging
 import os.path
 import sys
 
@@ -32,8 +31,6 @@ class CancelSpotInstanceRequestsCLI(TortugaCli):
         super(CancelSpotInstanceRequestsCLI, self).__init__(validArgCount=1)
 
         self.nodeApi = NodeApi()
-
-        self._logger = logging.getLogger('tortuga.console')
 
     def parseArgs(self, usage=None):
         self.addOption('--all', action='store_true', default=False,

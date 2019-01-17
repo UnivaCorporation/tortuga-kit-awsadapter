@@ -32,8 +32,10 @@ from daemonize import Daemonize
 from tortuga.exceptions.nodeAlreadyExists import NodeAlreadyExists
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.hardwareprofile.hardwareProfileApi import HardwareProfileApi
+from tortuga.logging import RESOURCE_ADAPTER_NAMESPACE
 from tortuga.node.nodeApi import NodeApi
 from tortuga.node import state
+from tortuga.resourceAdapter.aws.aws import Aws
 from tortuga.wsapi.addHostWsApi import AddHostWsApi
 
 
@@ -127,35 +129,33 @@ class AWSSpotdAppClass(object):
         self.options = options
         self.args = args
 
-        self.logger = None
+        self._logger = None
 
     def run(self):
+        #
         # Ensure logger is instantiated _after_ process is daemonized
-        self.logger = logging.getLogger('tortuga.aws.awsspotd')
+        #
+        self._logger = logging.getLogger(
+            '{}.{}.spotd'.format(RESOURCE_ADAPTER_NAMESPACE,
+                                 Aws.__adaptername__)
+        )
+        self._logger.setLevel(logging.DEBUG)
 
-        self.logger.setLevel(logging.DEBUG)
-
-        # create console handler and set level to debug
         ch = logging.handlers.TimedRotatingFileHandler(
             '/var/log/tortuga_awsspotd', when='midnight')
-        ch.setLevel(logging.DEBUG)
-
-        # create formatter
-        formatter = logging.Formatter(
+        fm = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setLevel(logging.DEBUG)
+        ch.setFormatter(fm)
 
-        # add formatter to ch
-        ch.setFormatter(formatter)
+        self._logger.addHandler(ch)
 
-        # add ch to logger
-        self.logger.addHandler(ch)
-
-        self.logger.info(
+        self._logger.info(
             'Starting... EC2 region [{0}]'.format(self.options.region))
 
         # Create thread for message queue requests from resource adapter
         listener_thread = threading.Thread(
-            target=listener, args=(self.logger,))
+            target=listener, args=(self._logger,))
         listener_thread.daemon = True
         listener_thread.start()
 
@@ -181,7 +181,7 @@ class AWSSpotdAppClass(object):
                 queue.join()
 
                 # Clean up
-                self.logger.info('Cleaning up...')
+                self._logger.info('Cleaning up...')
 
                 with spot_cache:
                     cfg = refresh_spot_instance_request_cache()
@@ -199,7 +199,7 @@ class AWSSpotdAppClass(object):
 
                         # Delete spot instance request cache entry
 
-                        self.logger.info(
+                        self._logger.info(
                             'Removing spot instance request [{0}]'.format(
                                 spot_instance_request['sir_id']))
 
@@ -209,9 +209,9 @@ class AWSSpotdAppClass(object):
                     # Rewrite spot instance request cache
                     write_spot_instance_request_cache(cfg)
             else:
-                self.logger.info('No spot instance requests to process')
+                self._logger.info('No spot instance requests to process')
 
-            self.logger.info('Sleeping for %ds' % (
+            self._logger.info('Sleeping for %ds' % (
                 self.options.polling_interval))
 
             time.sleep(self.options.polling_interval)
@@ -248,7 +248,7 @@ class AWSSpotdAppClass(object):
 
                 self.process_spot_instance_request(spot_instance_request)
             except Exception:
-                self.logger.exception(
+                self._logger.exception(
                     'Exception while processing spot instance request')
             finally:
                 queue.task_done()
@@ -276,7 +276,7 @@ class AWSSpotdAppClass(object):
 
             raise
 
-        self.logger.info(
+        self._logger.info(
             'sir: [{0}], state: [{1}],'
             ' status code: [{2}]'.format(
                 sir_id, result[0].state, result[0].status.code))
@@ -296,7 +296,7 @@ class AWSSpotdAppClass(object):
                     spot_instance_request, hwp)
         elif result[0].state == 'open':
             if result[0].status.code == 'pending-fulfillment':
-                self.logger.info('{0}'.format(result))
+                self._logger.info('{0}'.format(result))
             elif result[0].status.code == 'price-too-low':
                 #  request price-too-low
                 pass
@@ -323,7 +323,7 @@ class AWSSpotdAppClass(object):
         elif result[0].state == 'closed':
             if result[0].status.code == 'marked-for-termination':
                 # TODO: any hinting for Tortuga here?
-                self.logger.info(
+                self._logger.info(
                     'Instance {0} marked for termination'.format(
                         result[0].instance_id))
             elif result[0].status.code == 'instance-terminated-by-user':
@@ -390,7 +390,7 @@ class AWSSpotdAppClass(object):
         instance = resvs[0].instances[0]
 
         if instance.state not in ('pending', 'running'):
-            self.logger.info(
+            self._logger.info(
                 'Ignoring instance [{0}] in state [{1}]'.format(
                     instance.id, instance.state))
 
@@ -415,7 +415,7 @@ class AWSSpotdAppClass(object):
                 if hwp.getNameFormat() == '*' else None
 
         if create_node:
-            self.logger.info(
+            self._logger.info(
                 'Creating node for spot instance'
                 ' [{0}]'.format(instance.id))
 
@@ -452,21 +452,21 @@ class AWSSpotdAppClass(object):
                             .getStatus(session=addHostSession, getNodes=True)
 
                         if not response['running']:
-                            self.logger.debug('response: {0}'.format(response))
+                            self._logger.debug('response: {0}'.format(response))
                             node_name = response['nodes'][0]['name']
                             break
 
                         gevent.sleep(5)
             except gevent.timeout.Timeout:
-                self.logger.error(
+                self._logger.error(
                     'Timeout waiting for add nodes operation'
                     ' to complete')
             except NodeAlreadyExists:
-                self.logger.error(
+                self._logger.error(
                     'Error adding node [{0}]:'
                     ' already exists'.format(instance.private_dns_name))
         else:
-            self.logger.info(
+            self._logger.info(
                 'Updating existing node [{0}]'.format(
                     node_name))
 
@@ -492,7 +492,7 @@ class AWSSpotdAppClass(object):
 
             if not cfg.has_section(sir_id) or \
                     not cfg.has_option(sir_id, 'node'):
-                self.logger.warning(
+                self._logger.warning(
                     'Spot instance [{0}] does not have an'
                     ' associated node'.format(sir_id))
 
@@ -501,7 +501,7 @@ class AWSSpotdAppClass(object):
             spot_instance_node_mapping = cfg.get(sir_id, 'node')
 
             if spot_instance_node_mapping:
-                self.logger.info(
+                self._logger.info(
                     'Removing node [{0}] for spot instance'
                     ' request [{1}]'.format(
                         spot_instance_node_mapping, sir_id))
