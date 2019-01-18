@@ -1058,7 +1058,7 @@ class Aws(ResourceAdapter):
 
     def __get_common_user_data_settings(self, config: Dict[str, str],
                                         node: Optional[Node] = None) \
-            -> Dict[str, str]:
+            -> Dict[str, Optional[str]]:
         """
         Returns dict containing resource adapter configuration metadata
 
