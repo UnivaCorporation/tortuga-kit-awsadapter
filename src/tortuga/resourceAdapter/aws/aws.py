@@ -685,14 +685,13 @@ class Aws(ResourceAdapter):
 
         nodes = self.__process_node_request_queue(session, launch_request)
 
-        vcpus = \
-            self.get_instance_size_mapping(
-                launch_request.configDict['instancetype']) \
+        vcpus = self.get_instance_size_mapping(
+            launch_request.configDict['instancetype']) \
             if 'vcpus' not in launch_request.configDict else \
             launch_request.configDict['vcpus']
 
         for node in nodes:
-            node.vcpus =vcpus
+            node.vcpus = vcpus
 
         return nodes
 
@@ -875,10 +874,12 @@ class Aws(ResourceAdapter):
                     )
 
                     # Post 'add' message onto message queue
-                    self.__post_add_spot_instance_request(resv,
-                                                            dbHardwareProfile,
-                                                            dbSoftwareProfile,
-                                                            cfgname)
+                    self.__post_add_spot_instance_request(
+                        resv,
+                        dbHardwareProfile,
+                        dbSoftwareProfile,
+                        cfgname,
+                    )
 
                 # this may be redundant...
                 session.commit()
@@ -1089,7 +1090,7 @@ class Aws(ResourceAdapter):
 
     def __get_common_user_data_content(
             self, user_data_settings: Dict[str, str]) \
-            -> str: # pylint: disable=no-self-use
+            -> str:  # pylint: disable=no-self-use
         return """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
@@ -1460,7 +1461,7 @@ fqdn: %s
 
             try:
                 with gevent.Timeout(
-                    configDict['launch_timeout'], TimeoutError):
+                        configDict['launch_timeout'], TimeoutError):
                     self.process_item(launch_request, node_request)
 
                     self._logger.info(
@@ -2033,7 +2034,7 @@ fqdn: %s
         return 'Discovered'
 
     def __addTags(self, conn: EC2Connection, resource_ids: List[str],
-            keyvaluepairs: Dict[str, str]) -> None:
+                  keyvaluepairs: Dict[str, str]) -> None:
         """
         Create tags for resources
         """
