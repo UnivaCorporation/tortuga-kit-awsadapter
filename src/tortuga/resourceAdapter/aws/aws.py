@@ -24,10 +24,8 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Tuple
 from typing.io import TextIO
-
-from sqlalchemy.orm.session import Session
 
 import boto
 import boto.ec2
@@ -38,6 +36,7 @@ import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
+from sqlalchemy.orm.session import Session
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
@@ -347,8 +346,6 @@ class Aws(ResourceAdapter):
         # Initialize internal flags
         self.__runningOnEc2 = None
         self.__installer_ip: Optional[str] = None
-
-        self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         """
@@ -1448,8 +1445,9 @@ fqdn: %s
             # Clean up instance cache
             session.delete(node.instance)
 
-    def __wait_for_instance_coroutine(self, launch_request: LaunchRequest,
-                                      dbSession: Session):
+    def __wait_for_instance_coroutine(
+            self, launch_request: LaunchRequest, dbSession: Session,
+            queue: gevent.queue.JoinableQueue) -> NoReturn:
         """
         Process one node request from queue
         """
@@ -1457,7 +1455,7 @@ fqdn: %s
         configDict = launch_request.configDict
 
         while True:
-            node_request = self.__launch_wait_queue.get()
+            node_request = queue.get()
 
             try:
                 with gevent.Timeout(
@@ -1488,19 +1486,21 @@ fqdn: %s
                 # Terminate instance
                 self.__failed_launch_cleanup_handler(dbSession, node_request)
             finally:
-                self.__launch_wait_queue.task_done()
+                queue.task_done()
 
     def __wait_for_instances(self, dbSession: Session,
                              launch_request: LaunchRequest) -> None:
         """
-        Raises:
-            ConfigurationError
-            NicNotFound
+        :raises ConfigurationError:
+        :raises NicNotFound:
         """
 
         self._logger.info(
             'Waiting for session [%s] to complete...', self.addHostSession,
         )
+
+        # Initialize workqueue
+        queue = gevent.queue.JoinableQueue()
 
         # Create coroutines to wait for instances to reach running state.
         #
@@ -1511,14 +1511,15 @@ fqdn: %s
                 self.__wait_for_instance_coroutine,
                 launch_request,
                 dbSession,
+                queue,
             )
 
         # Enqueue node requests
         for node_request in launch_request.node_request_queue:
-            self.__launch_wait_queue.put(node_request)
+            queue.put(node_request)
 
         # Process queue
-        self.__launch_wait_queue.join()
+        queue.join()
 
     def __post_launch_action(self, dbSession: Session,
                              launch_request: LaunchRequest,
