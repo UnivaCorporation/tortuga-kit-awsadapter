@@ -1499,16 +1499,19 @@ fqdn: %s
         """
 
         self._logger.info(
-            'Waiting for session [{0}] to complete...'.format(
-                self.addHostSession))
+            'Waiting for session [%s] to complete...', self.addHostSession,
+        )
 
-        launch_requests = len(launch_request.node_request_queue)
-        coroutine_count = 10 if launch_requests > 10 else launch_requests
-
-        # Create coroutines
-        for _ in range(coroutine_count):
+        # Create coroutines to wait for instances to reach running state.
+        #
+        # Process only 10 instances at a time to prevent triggering AWS
+        # API rate limiting.
+        for _ in range(min(len(launch_request.node_request_queue), 10)):
             gevent.spawn(
-                self.__wait_for_instance_coroutine, launch_request, dbSession)
+                self.__wait_for_instance_coroutine,
+                launch_request,
+                dbSession,
+            )
 
         # Enqueue node requests
         for node_request in launch_request.node_request_queue:
