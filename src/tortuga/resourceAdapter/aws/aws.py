@@ -24,7 +24,7 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 from typing.io import TextIO
 
 from sqlalchemy.orm.session import Session
@@ -346,7 +346,7 @@ class Aws(ResourceAdapter):
 
         # Initialize internal flags
         self.__runningOnEc2 = None
-        self.__installer_ip: Union[str, None] = None
+        self.__installer_ip: Optional[str] = None
 
         self.__launch_wait_queue = gevent.queue.JoinableQueue()
 
@@ -603,7 +603,7 @@ class Aws(ResourceAdapter):
 
     def __get_instance_by_instance_id(self, conn: EC2Connection,
                                       instance_id: str) \
-            -> Union[boto.ec2.instance.Instance, None]:
+            -> Optional[boto.ec2.instance.Instance]:
         result = conn.get_only_instances(instance_ids=[instance_id])
         if not result:
             return None
@@ -817,7 +817,7 @@ class Aws(ResourceAdapter):
 
         self._validate_ec2_launch_args(conn, configDict)
 
-        security_group_ids: Union[List[str], None] = \
+        security_group_ids: Optional[List[str]] = \
             self.__get_security_group_ids(configDict, conn)
 
         try:
@@ -918,7 +918,7 @@ class Aws(ResourceAdapter):
     def __post_add_spot_instance_request(self, resv,
                                          dbHardwareProfile: HardwareProfile,
                                          dbSoftwareProfile: SoftwareProfile,
-                                         cfgname: Union[str, None] = None) \
+                                         cfgname: Optional[str] = None) \
             -> None:
         # Send message to awsspotd (using zeromq)
         context = zmq.Context()
