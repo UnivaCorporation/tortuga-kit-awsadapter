@@ -6,7 +6,7 @@ services:
 env:
 - TORTUGA_BUILD_DOCKER="true"
 before_install:
-- docker pull univa/tortuga-build-kit:master-latest
+- docker pull univa/tortuga-build-kit:7.0.3-devel-latest
 install:
 - chmod -R a-w .
 - docker run --rm -it -v `pwd`:/kit-src univa/tortuga-build-kit:master-latest
