@@ -35,8 +35,8 @@ After installing the AWS Adapter Kit and enabling the management component, the 
 1.  Create resource adapter configuration profile
 
         adapter-mgmt create --resource-adapter aws --profile default \
-            --setting awsAccessKey=<AWS access key> \
-            --setting awsSecretKey=<AWS secret key> \
+            --setting awsaccesskey=<AWS access key> \
+            --setting awssecretkey=<AWS secret key> \
             --setting keypair=<keypair name> \
             --setting ami=<ami-XXXXXXXX> \
             --setting instancetype=<AWS instance type> \
@@ -107,7 +107,7 @@ This section lists the valid settings for the AWS resource adapter.
 
     Ensure instances have an associated public IP address. This setting can be set globally for the VPC subnet. Unless explicitly set, the default setting will be used.
 
-- `awsAccessKey` and `awsSecretKey`
+- `awsaccesskey` and `awssecretkey`
 
   These are the API keys for the cloud user account under which instances
   should be managed. A pre-existing AWS account is required prior to using
@@ -733,8 +733,8 @@ follows:
 
 ```shell
 adapter-mgmt create --resource-adapter aws --profile default \
-    --setting awsAccessKey=XXXXXXXXXXXXXXXX \
-    --setting awsSecretKey=YYYYYYYYYYYYYYYY \
+    --setting awsaccesskey=XXXXXXXXXXXXXXXX \
+    --setting awssecretkey=YYYYYYYYYYYYYYYY \
     --setting ami=ami-XXXXXXXX
 ```
 

@@ -77,7 +77,7 @@ class Aws(ResourceAdapter):
         #
         # Authentication
         #
-        'awsAccessKey': settings.StringSetting(
+        'awsaccesskey': settings.StringSetting(
             secret=True,
             display_name='Access key',
             description='AWS API access key',
@@ -85,7 +85,7 @@ class Aws(ResourceAdapter):
             group_order=1,
             requires=['awsSecretKey']
         ),
-        'awsSecretKey': settings.StringSetting(
+        'awssecretkey': settings.StringSetting(
             secret=True,
             display_name='Secret key',
             description='AWS API secret key',
