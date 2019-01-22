@@ -17,21 +17,27 @@
 import datetime
 
 import boto.vpc
-
+from sqlalchemy.orm.session import Session
 from tortuga.cli.tortugaCli import TortugaCli
+from tortuga.db.dbManager import DbManager
 from tortuga.resourceAdapter.aws import Aws
-from tortuga.resourceAdatper.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
+from tortuga.resourceAdapter.resourceAdapter import \
+    DEFAULT_CONFIGURATION_PROFILE_NAME
 
 
 class AppClass(TortugaCli):
-    def __init__(self):
-        super(AppClass, self).__init__()
-
     def parseArgs(self, usage=None):
         self.addOption(
             '--resource-adapter-configuration', '-A',
             default=DEFAULT_CONFIGURATION_PROFILE_NAME, metavar='<value>',
             help='Specify resource adapter configuration for operation')
+
+        self.addOption(
+            '--instance-type',
+            metavar='INSTANCETYPE',
+            help='Override instance type from resource adapter configuration'
+                 'profile',
+        )
 
         self.addOption(
             '--availability-zone', metavar='<value>',
@@ -43,18 +49,24 @@ class AppClass(TortugaCli):
     def runCommand(self):
         self.parseArgs()
 
-        adapter = Aws()
+        with DbManager().session() as session:
+            adapter = Aws()
+            adapter.session = session
+
+            self._get_current_spot_price(adapter)
+
+    def _get_current_spot_price(self, adapter: Aws):
 
         configDict = adapter.getResourceAdapterConfig(
-            self.getOptions().resource_adapter_configuration)
+            self.getArgs().resource_adapter_configuration)
 
         conn = adapter.getEC2Connection(configDict)
 
         vpc_conn = boto.vpc.VPCConnection()
 
-        if self.getOptions().availability_zone:
+        if self.getArgs().availability_zone:
             # Command-line overrides configured availability zone
-            zone = self.getOptions().availability_zone
+            zone = self.getArgs().availability_zone
         elif 'zone' not in configDict or not configDict['zone']:
             # Determine availability zone from configured subnet
             if 'subnet_id' in configDict:
@@ -84,9 +96,13 @@ class AppClass(TortugaCli):
         else:
             zones = [zone]
 
+        instance_type = self.getArgs().instance_type \
+            if self.getArgs().instance_type else \
+            configDict['instancetype']
+
         for availability_zone in zones:
             for spot_price in conn.get_spot_price_history(
-                    instance_type=configDict['instancetype'],
+                    instance_type=instance_type,
                     product_description=product_description,
                     start_time=start_time, end_time=end_time,
                     availability_zone=availability_zone):
