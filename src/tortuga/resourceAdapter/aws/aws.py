@@ -27,8 +27,6 @@ from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing.io import TextIO
 
-from sqlalchemy.orm.session import Session
-
 import boto
 import boto.ec2
 import boto.vpc
@@ -38,6 +36,7 @@ import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
+from sqlalchemy.orm.session import Session
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
@@ -54,8 +53,8 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter, \
-    DEFAULT_CONFIGURATION_PROFILE_NAME
+from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
+                                                     ResourceAdapter)
 from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
@@ -83,7 +82,7 @@ class Aws(ResourceAdapter):
             description='AWS API access key',
             group='Authentication',
             group_order=1,
-            requires=['awsSecretKey']
+            requires=['awssecretkey']
         ),
         'awssecretkey': settings.StringSetting(
             secret=True,
@@ -91,7 +90,7 @@ class Aws(ResourceAdapter):
             description='AWS API secret key',
             group='Authentication',
             group_order=1,
-            requires=['awsAccessKey']
+            requires=['awsaccesskey']
         ),
         'iam_instance_profile_name': settings.StringSetting(
             display_name='IAM instance profile',
