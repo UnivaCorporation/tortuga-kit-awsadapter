@@ -51,6 +51,8 @@ After installing the AWS Adapter Kit and enabling the management component, the 
     - `bootstrap.debian.tmpl` for recent Debian/Ubuntu versions
     - `bootstrap.suse.tmpl` for SUSE Linux/openSUSE versions
 
+    **Note:** If you set the VPC, region, subnet, or security group to be different than that of the Tortuga Installer, it WILL NOT WORK by default, as additional networking setup will need to be done in AWS. The details of these configuration changes are highly case-specific, and thus are not covered in this document.
+
 1.  Before AWS instances can be managed in an AWS-based cloud, the AWS
     **management** component _must_ be enabled on the installer. The Tortuga
     **dns** component _must_ also be enabled to map Tortuga-assigned host names to
