@@ -114,6 +114,8 @@ class RequestSpotInstancesCLI(TortugaCli, SpotInstanceCommonMixin):
 
         addNodesRequest = {
             'count': self.getArgs().count,
+            'softwareProfile': self.getArgs().software_profile,
+            'hardwareProfile': self.getArgs().hardware_profile,
             'spot_instance_request': {
                 'type': 'one-time',
                 'price': price,
@@ -123,14 +125,6 @@ class RequestSpotInstancesCLI(TortugaCli, SpotInstanceCommonMixin):
         if self.getArgs().resource_adapter_configuration:
             addNodesRequest['resource_adapter_configuration'] = \
                 self.getArgs().resource_adapter_configuration
-
-        if self.getArgs().software_profile:
-            addNodesRequest['softwareProfile'] = \
-                self.getArgs().software_profile
-
-        if self.getArgs().hardware_profile:
-            addNodesRequest['hardwareProfile'] = \
-                self.getArgs().hardware_profile
 
         AddHostWsApi().addNodes(addNodesRequest)
 
