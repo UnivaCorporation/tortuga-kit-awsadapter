@@ -15,7 +15,6 @@
 from typing import Dict, List, Optional, Tuple
 
 import boto3
-from tortuga.cli.tortugaCli import TortugaCli
 from tortuga.wsapi.metadataWsApi import MetadataWsApi
 from tortuga.wsapi.nodeWsApi import NodeWsApi
 
@@ -116,8 +115,8 @@ class CancelSpotInstanceRequestsCLI(CommonSpotInstanceCLI):
             ]
 
             print(
-                'Cancelling {} spot instance requests in region [{}]'.format(
-                      len(sir_id_and_name_tuples), region_name
+                'Cancelling {} spot instance requests'.format(
+                      len(sir_id_and_name_tuples)
                 )
             )
 
