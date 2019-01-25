@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,21 +13,19 @@
 # limitations under the License.
 
 import datetime
+import sys
+from typing import Optional
 
-import boto.vpc
-from sqlalchemy.orm.session import Session
-from tortuga.cli.tortugaCli import TortugaCli
-from tortuga.db.dbManager import DbManager
-from tortuga.resourceAdapter.aws import Aws
-from tortuga.resourceAdapter.resourceAdapter import \
-    DEFAULT_CONFIGURATION_PROFILE_NAME
+import boto3
+
+from .commonSpotInstanceCli import CommonSpotInstanceCLI
 
 
-class AppClass(TortugaCli):
+class GetCurrentSpotInstancePriceCLI(CommonSpotInstanceCLI):
     def parseArgs(self, usage=None):
         self.addOption(
             '--resource-adapter-configuration', '-A',
-            default=DEFAULT_CONFIGURATION_PROFILE_NAME, metavar='<value>',
+            default='Default', metavar='<value>',
             help='Specify resource adapter configuration for operation')
 
         self.addOption(
@@ -44,43 +40,65 @@ class AppClass(TortugaCli):
             help='Get price for specific availability zone. Use \'all\''
                  ' to get prices for all availability zones')
 
-        super(AppClass, self).parseArgs(usage=usage)
+        super().parseArgs(usage=usage)
 
     def runCommand(self):
         self.parseArgs()
 
-        with DbManager().session() as session:
-            adapter = Aws()
-            adapter.session = session
+        self._get_current_spot_price()
 
-            self._get_current_spot_price(adapter)
+    def _get_current_spot_price(self):
+        adapter_cfg = self._get_adapter_cfg(
+            self.getArgs().resource_adapter_configuration
+        )
 
-    def _get_current_spot_price(self, adapter: Aws):
+        region = self._get_adapter_cfg_key(adapter_cfg, 'region')
 
-        configDict = adapter.getResourceAdapterConfig(
-            self.getArgs().resource_adapter_configuration)
+        session = boto3.session.Session(region_name=region)
 
-        conn = adapter.getEC2Connection(configDict)
+        conn = session.client('ec2')
 
-        vpc_conn = boto.vpc.VPCConnection()
+        subnet_id: Optional[str] = \
+            self._get_adapter_cfg_key(adapter_cfg, 'subnet_id')
+        instance_type: Optional[str] = None
+
+        instance_type: Optional[str] = self.getArgs().instance_type \
+            if self.getArgs().instance_type else \
+            self._get_adapter_cfg_key(adapter_cfg, 'instancetype')
+        if instance_type is None:
+            print('Error: instance type is not configured; unable to proceed',
+                  file=sys.stderr)
+
+            sys.exit(1)
 
         if self.getArgs().availability_zone:
             # Command-line overrides configured availability zone
             zone = self.getArgs().availability_zone
-        elif 'zone' not in configDict or not configDict['zone']:
-            # Determine availability zone from configured subnet
-            if 'subnet_id' in configDict:
-                vpc_subnet = vpc_conn.get_all_subnets(
-                    subnet_ids=[configDict['subnet_id']])
-
-                zone = vpc_subnet[0].availability_zone
-            else:
-                zone = None
         else:
-            zone = configDict['zone']
+            zone = self._get_adapter_cfg_key(adapter_cfg, 'zone')
+            if zone is None:
+                # Determine availability zone from configured subnet
+                if subnet_id is not None:
+                    response = conn.describe_subnets(
+                        Filters=[
+                            {
+                                'Name': 'subnet-id',
+                                'Values': [
+                                    subnet_id,
+                                ],
+                            },
+                        ],
+                    )
+
+                    zone = response['Subnets'][0]['AvailabilityZone']
+                else:
+                    print('Error: subnet_id is not configured; unable to'
+                          ' determine zone', file=sys.stderr)
+
+                    sys.exit(1)
 
         product_description = 'Linux/UNIX (Amazon VPC)' \
-            if 'subnet_id' in configDict else 'Linux/UNIX'
+            if subnet_id is not None else 'Linux/UNIX'
 
         start_time = None
         end_time = None
@@ -92,24 +110,29 @@ class AppClass(TortugaCli):
 
         if zone == 'all':
             # Query EC2 for all zones in configured region
-            zones = [zone_.name for zone_ in conn.get_all_zones()]
+            zones = [
+                zone_['ZoneName']
+                for zone_ in
+                conn.describe_availability_zones()['AvailabilityZones']
+            ]
         else:
             zones = [zone]
 
-        instance_type = self.getArgs().instance_type \
-            if self.getArgs().instance_type else \
-            configDict['instancetype']
-
         for availability_zone in zones:
-            for spot_price in conn.get_spot_price_history(
-                    instance_type=instance_type,
-                    product_description=product_description,
-                    start_time=start_time, end_time=end_time,
-                    availability_zone=availability_zone):
-                print(availability_zone, spot_price.instance_type,
-                      spot_price.price,
-                      spot_price.product_description)
+            response = conn.describe_spot_price_history(
+                AvailabilityZone=availability_zone,
+                InstanceTypes=[instance_type],
+                ProductDescriptions=[product_description],
+                StartTime=start_time, EndTime=end_time,
+            )
+
+            for price_history in response['SpotPriceHistory']:
+                print(
+                    availability_zone, price_history['InstanceType'],
+                    price_history['SpotPrice'],
+                    price_history['ProductDescription']
+                )
 
 
 def main():
-    AppClass().run()
+    GetCurrentSpotInstancePriceCLI().run()

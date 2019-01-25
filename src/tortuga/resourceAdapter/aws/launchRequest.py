@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.node import Node
 from tortuga.db.models.softwareProfile import SoftwareProfile
+from boto.ec2.connection import EC2Connection
 
 
 class LaunchRequest(object):
@@ -26,9 +27,9 @@ class LaunchRequest(object):
         self.hardwareprofile = hardwareprofile
         self.softwareprofile = softwareprofile
         self.node_request_queue: List[Dict[str, Any]] = []
-        self.addNodesRequest = None
-        self.configDict = None
-        self.conn = None
+        self.addNodesRequest: Optional[dict] = None
+        self.configDict: Optional[Dict[str, Any]] = None
+        self.conn: Optional[EC2Connection] = None
 
 
 def init_node_request_queue(nodes: List[Node]) -> List[Dict[str, Any]]:

@@ -446,45 +446,24 @@ Please refer to [Amazon VPC][] documentation for further information.
 
 ## EC2 Spot Instance support
 
-### Overview
+### Spot Instance Overview
 
-Tortuga EC2 Spot Instance support allows Tortuga to manage spot instances requested through the Tortuga provided command-line interfaces.
-
-The basic workflow is as follows:
-
-- Check current spot instance price using the Tortuga CLI `get-current-spot-instance-price`.
-
-  This utility uses the existing AWS resource adapter configuration to determine AWS region, availability zone, and instance type.
-
-  Use the `--resource-adapter-configuration` argument to specify a configuration profile other than "default".
-
-- Request spot instances to be added to specific software/hardware profile
-
-  Request 6 spot instances at the price of $0.0299/hour (2.99 cents per hour). Nodes will be added to the software and hardware profile "execd", respectively:
-
-```shell
-    request-spot-instances --price 0.0299 --software-profile execd \
-        --hardware-profile execd --count 6
-```
-
-  Nodes do not appear in output of `get-node-status` until the spot instance requests have been fulfilled.
-
-- Display existing spot instance requests known to Tortuga using `list-spot-instance-requests`.
-
-- Cancel spot instance requests using `cancel-spot-instance-requests`.
-
-**Note:** spot instance requests made within the AWS Management Console or through AWS command-line interfaces are not known to Tortuga and will not automatically join the Tortuga-managed cluster.
+Tortuga supports EC2 Spot Instances through a standalone companion service
+named `awsspotd`. This service **must** be started manually in order to
+activate support for EC2 spot instances.
 
 ### Prerequisites
 
 - Tortuga must either be hosted on AWS or using an externally managed VPN
 
-  This is necessary because of the need for AWS-assigned instance host names.
+    This is necessary because of the need for AWS-assigned instance host names.
+
+    Custom DNS host names for spot instances are **not** currently supported!
 
 - AWS resource adapter must be previously configured
 
-  Ensure `add-nodes` works against the "default" AWS resource adapter
-  configuration profile prior to attempting to use spot instance support.
+    Ensure `add-nodes` works against the "default" AWS resource adapter
+    configuration profile prior to attempting to use spot instance support.
 
 ### Setting up EC2 Spot Instance support
 
@@ -492,72 +471,234 @@ EC2 Spot Instance support is not enabled by default in Tortuga. The EC2 Spot
 Instance support daemon (`awsspotd`) must be manually enabled and started
 before it is capable of requesting and monitoring spot instance requests.
 
-1.  Configure AWS credentials
+1. Configure AWS credentials
 
     If not using [AWS Identity and Access Management](http://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html), it is necessary to configure a credentials file.
 
-    Create a `/root/.boto` file with these contents:
+    Create a `/root/.aws/credentials` file with these contents:
 
-        [Credentials]
-        aws_access_key_id = YOURACCESSKEY
-        aws_secret_access_key = YOURSECRETKEY
+    ```shell
+    [Credentials]
+    aws_access_key_id = YOURACCESSKEY
+    aws_secret_access_key = YOURSECRETKEY
+    ```
 
-1.  Enable and start `awsspotd` service
+1. Enable and start `awsspotd` service
 
     RHEL/CentOS 7
 
-        systemctl enable awsspotd
-        systemctl start awsspotd
+    ```shell
+    systemctl enable awsspotd
+    systemctl start awsspotd
+    ```
 
     RHEL/CentOS 6
 
-        chkconfig awsspotd on
-        service awsspotd start
+    ```shell
+    chkconfig awsspotd on
+    service awsspotd start
+    ```
 
-1.  Make spot instance requests
+#### Configuration
 
-    When spot instance requests are fulfilled, nodes will be automatically
-    added to the Tortuga environment.
+##### Region
 
-    If spot instances are marked for termination/terminated, nodes will be
-    automatically removed from the cluster.
+Change the AWS region used by changing the value of the `--region NAME`
+argument set by `AWSSPOTD_OPTIONS` in `/etc/sysconfig/awsspotd`. If no
+`--region` argument is specified, the default region is set to `us-east-1`.
 
-### Configuration
+The value of `--region` **must** match the region set in the resource
+adapter configuration.
 
-For example, to change the AWS region to `us-west-2`, add the following line to
-`/etc/puppetlabs/code/environments/production/modules/tortuga_kit_awsadapter/files/awsspotd.sysconfig` as follows:
+For example, to change the AWS region to `us-west-2`, add (or uncomment)
+the following line to `/etc/sysconfig/awsspotd` as follows:
 
 ```shell
 AWSSPOTD_OPTIONS="--region us-west-2"
 ```
 
+**Note:** it is necessary to restart `awsspotd` after making any changes
+to `/etc/sysconfig/awsspotd`.
+
+##### Polling interval
+
+The default polling interval for `awsspotd` is 60 seconds.
+
+Every 60 seconds, `awsspotd` will query the state of spot instance requests
+made using `request-spot-instances`. It is not recommended to set this
+interval too short as each spot instance request query makes multiple
+requests to the AWS EC2 backend.
+
+### Usage
+
+Use `request-spot-instances` to make requests for EC2 spot instances. In the
+following example, the spot instance bid price is the current spot price for
+the configured instance type:
+
+```shell
+[root@tortuga ~]# request-spot-instances \
+    --software-profile Navops_Demo-Compute \
+    --hardware-profile AWS \
+    --count 3
+Do you wish to request 3 t2.large spot instance(s) @ $0.027800/hour [N/y]? y
+[root@tortuga ~]#
+```
+
+Skip the confirmation prompt with the argument `--assume-yes` (`--yes`, for
+short).
+
+The price can be specified using `--price XXX`, where `XXX` is the price in
+dollars per hour:
+
+```shell
+[root@tortuga ~]# request-spot-instances \
+    --software-profile Navops_Demo-Compute \
+    --hardware-profile AWS \
+    --count 3 \
+    --price 0.0277
+Requesting 3 t2.large spot instance(s) @ $0.0277/hour
+[root@tortuga ~]#
+```
+
+#### Display existing spot instance requests
+
+Use `list-spot-instance-requests`:
+
+```shell
+[root@tortuga ~]# list-spot-instance-requests
+sir-9fb8675g open pending-fulfillment
+sir-hv684p4g active fulfilled
+sir-nnti4r1k active fulfilled
+[root@tortuga ~]#
+```
+
+The first column is the actual EC2 spot instance request id, which can be
+cross-referenced on the AWS Console or through the `aws ec2` CLI.
+
+The second column shows the state of the spot instance request.
+
+The third column shows the status code.
+
+Spot instances with associated nodes will display as follows:
+
+```shell
+[root@tortuga ~]# list-spot-instance-requests
+sir-9fb8675g (ip-10-241-0-184.ec2.internal) active fulfilled
+sir-hv684p4g (ip-10-241-0-249.ec2.internal) active fulfilled
+sir-nnti4r1k (ip-10-241-0-34.ec2.internal) active fulfilled
+[root@tortuga ~]#
+```
+
+`list-spot-instance-nodes` will show names of nodes that were added to Tortuga
+as a result of fulfilled spot instance requests:
+
+```shell
+[root@tortuga ~]# list-spot-instance-nodes
+ip-10-241-0-6.ec2.internal
+ip-10-241-0-244.ec2.internal
+ip-10-241-0-227.ec2.internal
+[root@tortuga ~]#
+```
+
+#### Cancelling spot instance requests
+
+The CLI `cancel-spot-instance-requests` is used to cancel spot instance
+requests made using `request-spot-instances`. It optionally takes the
+`--terminate` argument to terminate any instances that were started as a
+result of spot instance fulfillment:
+
+```shell
+[root@tortuga ~]# cancel-spot-instance-requests sir-9fb8675g
+Cancelling 1 spot instance requests
+[root@tortuga ~]#
+```
+
+Without the `--terminate` argument, the instance from this spot instance
+request fulfillment will remain running. This instance can be removed
+using `delete-node` in Tortuga.
+
+To cancel all spot instance requests and terminate instances, use the
+following:
+
+```shell
+[root@tortuga ~]# cancel-spot-instance-requests --all --terminate
+Cancelling 2 spot instance requests in region [Default]
+Deleting 2 node(s)
+[root@tortuga ~]#
+```
+
+#### Query current spot instance pricing
+
+Use the CLI `get-current-spot-instance-price` to query the current spot
+instance bid price.
+
+This uses the currently configured default resource adapter configuration
+profile:
+
+```shell
+[root@tortuga ~]# get-current-spot-instance-price
+us-east-1a t2.large 0.027800 Linux/UNIX (Amazon VPC)
+[root@tortuga ~]#
+```
+
+Use `--resource-adapter-configuration` to specify an alternate resource
+adapter configuration profile. For example, this is useful for alternate
+configurations where the instance type and/or availability zone is different.
+
+To display current spot instance prices for all availability zones, use
+`--availability-zone all`:
+
+```shell
+[root@tortuga ~]# get-current-spot-instance-price --availability-zone all
+us-east-1a t2.large 0.027800 Linux/UNIX (Amazon VPC)
+us-east-1b t2.large 0.027800 Linux/UNIX (Amazon VPC)
+us-east-1c t2.large 0.027800 Linux/UNIX (Amazon VPC)
+us-east-1d t2.large 0.027800 Linux/UNIX (Amazon VPC)
+us-east-1e t2.large 0.027800 Linux/UNIX (Amazon VPC)
+us-east-1f t2.large 0.027800 Linux/UNIX (Amazon VPC)
+[root@tortuga ~]#
+```
+
+**Hint:** set up a separate hardware profile and resource adapter
+configuration profile for each availability zone to allow full coverage of
+spot instances for your workload.
+
 ### Troubleshooting
 
-- Use AWS management console or AWS CLI to query spot instance requests.
+- Use AWS management console or AWS CLI `aws ec2` to manage spot instance
+  requests.
 
-- `awsspotd` (Tortuga AWS Spot Instance support service) also logs verbosely
-  to `/var/log/tortuga`.
+- Run daemon in debug/foreground mode
 
-- Use `systemctl status awsspotd` (or `service awsspotd status` on RHEL/CentOS 6) to ensure spot instance support daemon is running. Use `journalctl -u awsspotd` to see any console output from the daemon on RHEL/CentOS 7.
+    Stop the `awsspotd` daemon using `systemctl` (or `service`, on
+    RHEL/CentOS 6) and use `--debug` command-line argument to run
+    `awsspotd` in debug mode.
 
-### EC2 Spot Instance limitations/known issues
+- Use `systemctl status awsspotd` (or `service awsspotd status` on
+  RHEL/CentOS 6) to ensure spot instance support daemon is running. Use
+  `journalctl -u awsspotd --follow` to see any output from `awsspotd` on
+  RHEL/CentOS 7.
+
+### Known Issues
+
+- Custom DNS domain names cannot be used with spot instances
+
+- Spot instance requests must be made through `request-spot-instances`
+  instead of `add-nodes` with additional spot related arguments.
 
 - Logging/debugging/troubleshooting
 
-  EC2 Spot Instance operations may not be logged with sufficient verbosity to
-  assist with debugging.
-
-  Please contact Univa Support <support@univa.com> for assistance in
-  troubleshooting failed EC2 Spot Instance operations.
+    EC2 Spot Instance operations may not be logged with sufficient
+    verbosity to assist with debugging.
 
 - No support for multiple AWS accounts
 
-  Only the account credentials defined by the IAM profile (or Boto
-  credentials file) are currently used by the EC2 Spot Instance support.
+    Only the account credentials defined by the IAM profile (or AWS
+    credentials file) are currently used by the EC2 Spot Instance support.
 
 - Spot Fleets not currently supported
 
-  EC2 Spot Fleets are not currently supported in this release.
+    EC2 Spot Fleets are not currently supported in this release.
 
 ## Advanced Topics
 
