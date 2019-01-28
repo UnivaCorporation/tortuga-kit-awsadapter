@@ -36,10 +36,12 @@ import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
+from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.session import Session
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
+from tortuga.db.models.instanceMetadata import InstanceMetadata
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
 from tortuga.db.models.softwareProfile import SoftwareProfile
@@ -53,8 +55,8 @@ from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
-from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter, \
-    DEFAULT_CONFIGURATION_PROFILE_NAME
+from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
+                                                     ResourceAdapter)
 from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
@@ -76,21 +78,21 @@ class Aws(ResourceAdapter):
         #
         # Authentication
         #
-        'awsAccessKey': settings.StringSetting(
+        'awsaccesskey': settings.StringSetting(
             secret=True,
             display_name='Access key',
             description='AWS Access key ID',
             group='Authentication',
             group_order=1,
-            requires=['awsSecretKey']
+            requires=['awssecretkey']
         ),
-        'awsSecretKey': settings.StringSetting(
+        'awssecretkey': settings.StringSetting(
             secret=True,
             display_name='Secret key',
             description='AWS secret access key',
             group='Authentication',
             group_order=1,
-            requires=['awsAccessKey']
+            requires=['awsaccesskey']
         ),
         'iam_instance_profile_name': settings.StringSetting(
             display_name='IAM instance profile',
@@ -397,11 +399,8 @@ class Aws(ResourceAdapter):
         #
         # Set cloud_init if required
         #
-        if config.get('user_data_script_template', None) or \
-                config.get('cloud_init_script_template', None):
-            config['cloud_init'] = True
-        else:
-            config['cloud_init'] = False
+        config['cloud_init'] = config.get('user_data_script_template') or \
+            config.get('cloud_init_script_template')
 
         #
         # Parse user-defined tags
@@ -618,9 +617,7 @@ class Aws(ResourceAdapter):
         """
         Create one or more nodes
 
-        Raises:
-            InvalidArgument
-
+        :raises InvalidArgument:
         """
 
         self._logger.debug(
@@ -630,9 +627,10 @@ class Aws(ResourceAdapter):
                 dbSoftwareProfile.name if dbSoftwareProfile else '(none)'))
 
         # Get connection to AWS
-        launch_request = LaunchRequest()
-        launch_request.hardwareprofile = dbHardwareProfile
-        launch_request.softwareprofile = dbSoftwareProfile
+        launch_request = LaunchRequest(
+            hardwareprofile=dbHardwareProfile,
+            softwareprofile=dbSoftwareProfile,
+        )
         launch_request.addNodesRequest = addNodesRequest
 
         # resource_adapter_configuration is set through the validation API;
@@ -642,13 +640,18 @@ class Aws(ResourceAdapter):
             DEFAULT_CONFIGURATION_PROFILE_NAME)
 
         launch_request.configDict = self.getResourceAdapterConfig(cfgname)
+        if not launch_request.configDict:
+            raise InvalidArgument(
+                'Unable to get resource adapter configuration'
+            )
 
-        launch_request.conn = self.getEC2Connection(
-            launch_request.configDict)
+        launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
         if 'spot_instance_request' in addNodesRequest:
-            return self.request_spot_instances(
-                dbSession, launch_request)
+            # handle EC2 spot instance request
+            return self.__request_spot_instances(
+                dbSession, launch_request
+            )
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
@@ -657,7 +660,11 @@ class Aws(ResourceAdapter):
                     'ec2_instance_id' in \
                     addNodesRequest['nodeDetails'][0]['metadata']:
                 # inserting nodes based on metadata
-                return self.__insert_nodes(dbSession, launch_request)
+                nodes = self.__insert_nodes(dbSession, launch_request)
+
+                dbSession.commit()
+
+                return nodes
 
         nodes = self.__add_active_nodes(dbSession, launch_request) \
             if dbSoftwareProfile and not dbSoftwareProfile.isIdle else \
@@ -705,89 +712,176 @@ class Aws(ResourceAdapter):
         AWS instance exists before the Tortuga associated node record.
         """
 
-        self._logger.debug(
-            'Inserting {} node(s)'.format(
-                len(launch_request.addNodesRequest['nodeDetails']))
+        self._logger.info(
+            'Inserting %d node(s)',
+            len(launch_request.addNodesRequest['nodeDetails']),
         )
 
         nodes: List[Node] = []
 
         for nodedetail in launch_request.addNodesRequest['nodeDetails']:
-            ip = nodedetail['metadata']['ec2_ipaddress']
-
-            if launch_request.hardwareprofile.nameFormat != '*':
-                # Generate host name for spot instance
-                fqdn = self.addHostApi.generate_node_name(
-                    session,
-                    launch_request.hardwareprofile.nameFormat,
-                    dns_zone=launch_request.configDict.get('dns_domain', None))
-            else:
-                fqdn = nodedetail['name']
-
-            self._pre_add_host(
-                fqdn,
-                launch_request.hardwareprofile.name,
-                launch_request.softwareprofile.name,
-                ip)
-
-            if 'metadata' in nodedetail and \
-                    'ec2_instance_id' in nodedetail['metadata']:
-                instance = self.__get_instance_by_instance_id(
-                    launch_request.conn,
-                    nodedetail['metadata']['ec2_instance_id'])
-
-                if not instance:
-                    self._logger.warning(
-                        'Error inserting node [{0}]. AWS instance [{1}]'
-                        ' does not exist'.format(
-                            fqdn, nodedetail['metadata']['ec2_instance_id']))
-
-                    continue
-
-                self._logger.debug(
-                    '__insert_nodes(): add node [{0}]'
-                    ' instance: [{1}]'.format(
-                        fqdn,
-                        nodedetail['metadata']['ec2_instance_id']))
-            else:
-                instance = None
-
-                self._logger.debug(
-                    '__insert_nodes(): add node [{0}]'.format(fqdn))
-
-            node = Node(name=fqdn)
-            node.softwareprofile = launch_request.softwareprofile
-            node.hardwareprofile = launch_request.hardwareprofile
-            node.isIdle = False
-            node.state = state.NODE_STATE_PROVISIONED
-            node.addHostSession = self.addHostSession
-
-            node.nics = [Nic(ip=ip, boot=True)]
-
-            self.fire_provisioned_event(node)
+            node = self.__upsert_node(session, launch_request, nodedetail)
+            if not node:
+                continue
 
             nodes.append(node)
 
-            if instance:
-                # Update instance cache
-                node.instance = InstanceMapping(
-                    instance=nodedetail['metadata']['ec2_instance_id']
-                )
-
-                # Add tags
-                self._logger.debug(
-                    'Assigning tags to instance [{0}]'.format(
-                        instance.id))
-
-                self.__assign_tags(
-                    launch_request.configDict, launch_request.conn, node,
-                    instance)
-
         return nodes
 
-    def request_spot_instances(self,
-                               dbSession: Session,
-                               launch_request: LaunchRequest) -> List[Node]:
+    def __get_node_by_instance(self, session: Session,
+                               instance_id: str) -> Optional[Node]:
+        try:
+            return session.query(InstanceMapping).filter(
+                InstanceMapping.instance==instance_id  # noqa
+            ).one().node
+        except NoResultFound:
+            pass
+
+        return None
+
+    def __get_spot_instance_metadata(self, session: Session, sir_id: str) -> Optional[InstanceMetadata]:
+        try:
+            return session.query(
+                InstanceMetadata
+            ).filter(InstanceMetadata.key==sir_id).one()  # noqa
+        except NoResultFound:
+            pass
+
+        return None
+
+
+    def __upsert_node(self, session: Session, launch_request: LaunchRequest,
+                      nodedetail: dict) -> Optional[Node]:
+        """
+        """
+        instance_id: Optional[str] = \
+            nodedetail['metadata']['ec2_instance_id'] \
+            if 'metadata' in nodedetail and \
+            'ec2_instance_id' in nodedetail['metadata'] else None
+        if not instance_id:
+            # TODO: currently not handled
+            self.self._logger.error(
+                'instance_id not set in metadata. Unable to insert AWS nodes'
+                ' without backing instance'
+            )
+
+            return None
+
+        instance = self.__get_instance_by_instance_id(
+            launch_request.conn, instance_id
+        )
+        if not instance:
+            self.self._logger.warning(
+                'Error inserting node [%s]. AWS instance [%s] does not exist',
+                instance_id,
+            )
+
+            return None
+
+        node_created = False
+
+        node = self.__get_node_by_instance(session, instance_id)
+        if node is None:
+            try:
+                node = self.__create_node(session, launch_request, nodedetail)
+
+                # Add tags
+                self.self._logger.info('Assigning tags to instance [%s]', instance.id)
+
+                self.__assign_tags(
+                    launch_request.configDict,
+                    launch_request.conn,
+                    node,
+                    instance
+                )
+
+                node_created = True
+            except InvalidArgument:
+                self._logger.exception(
+                    'Error creating new node record in insert workflow'
+                )
+
+                raise
+        else:
+            self.self._logger.debug(
+                'Found existing node record [%s] for instance id [%s]',
+                node.name, instance_id
+            )
+
+        # set node properties
+        node.instance = InstanceMapping(instance=instance_id)
+
+        # find spot instance request
+        # TODO: do we need to support non-spot instance node insertion?
+        sir_id = nodedetail['metadata']['spot_instance_request_id']
+
+        result = self.__get_spot_instance_metadata(session, sir_id)
+        if not result:
+            self.self._logger.error(
+                'Unable to find matching spot instand request: %s',
+                sir_id,
+            )
+
+            return None
+
+        self.self._logger.info(
+            'Matching spot instance request [%s] to instance id [%s]',
+            sir_id, instance_id
+        )
+
+        node.instance.instance_metadata.append(result)
+
+        if node_created:
+            # only fire the new node event if creating the record for the
+            # first time
+            self.fire_provisioned_event(node)
+
+        return node
+
+    def __create_node(self, session: Session, launch_request: LaunchRequest,
+                      nodedetail: dict) -> Node:
+        """
+        :raises InvalidArgument:
+        """
+        if launch_request.hardwareprofile.nameFormat != '*':
+            # Generate host name for spot instance
+            fqdn = self.addHostApi.generate_node_name(
+                session,
+                launch_request.hardwareprofile.nameFormat,
+                dns_zone=launch_request.configDict.get('dns_domain')
+            )
+        else:
+            fqdn = nodedetail.get('name')
+            if fqdn is None:
+                raise InvalidArgument(
+                    'Unable to insert node(s) without name'
+                )
+
+        # TODO: handle this not being defined
+        ip = nodedetail['metadata']['ec2_ipaddress']
+
+        self._pre_add_host(
+            fqdn,
+            launch_request.hardwareprofile.name,
+            launch_request.softwareprofile.name,
+            ip,
+        )
+
+        return Node(
+            name=fqdn,
+            softwareprofile=launch_request.softwareprofile,
+            hardwareprofile=launch_request.hardwareprofile,
+            isIdle=False,
+            state=state.NODE_STATE_PROVISIONED,
+            addHostSession=self.addHostSession,
+            nics=[Nic(ip=ip, boot=True)],
+        )
+
+    def __request_spot_instances(
+                self,
+                session: Session,
+                launch_request: LaunchRequest
+            ) -> List[Node]:
         """
         Make request for EC2 spot instances. Spot instance arguments are
         passed through 'addNodesRequest' in the dictionary
@@ -796,12 +890,14 @@ class Aws(ResourceAdapter):
         Minimally, 'price' needs to be specified. Sane defaults exist for all
         other values, similar to those used in the AWS Management Console.
 
-        Raises:
-            OperationFailed
+        :raises OperationFailed:
         """
 
         addNodesRequest = launch_request.addNodesRequest
-        cfgname = addNodesRequest['resource_adapter_configuration']
+
+        cfgname = addNodesRequest.get('resource_adapter_configuration') \
+            if addNodesRequest else DEFAULT_CONFIGURATION_PROFILE_NAME
+
         dbHardwareProfile = launch_request.hardwareprofile
         dbSoftwareProfile = launch_request.softwareprofile
 
@@ -810,15 +906,14 @@ class Aws(ResourceAdapter):
         conn = launch_request.conn
 
         self._logger.debug(
-            'request_spot_instances(addNodeRequest=[%s], dbSession=[%s],'
-            ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])' % (
-                addNodesRequest, dbSession, dbHardwareProfile.name,
-                dbSoftwareProfile.name))
+            'request_spot_instances: addNodesRequest=[%s], '
+            ' dbHardwareProfile=[%s], dbSoftwareProfile=[%s])',
+            addNodesRequest,
+            dbHardwareProfile.name,
+            dbSoftwareProfile.name,
+        )
 
         self._validate_ec2_launch_args(conn, configDict)
-
-        security_group_ids: Optional[List[str]] = \
-            self.__get_security_group_ids(configDict, conn)
 
         try:
             if configDict['use_instance_hostname']:
@@ -828,18 +923,23 @@ class Aws(ResourceAdapter):
                     conn,
                     addNodesRequest,
                     configDict,
-                    security_group_ids)
+                )
 
                 resv = conn.request_spot_instances(
                     addNodesRequest['spot_instance_request']['price'],
-                    configDict['ami'], **args)
+                    configDict['ami'],
+                    **args,
+                )
 
-                self.__post_add_spot_instance_request(resv,
-                                                      dbHardwareProfile,
-                                                      dbSoftwareProfile,
-                                                      cfgname)
+                self.__post_add_spot_instance_request(
+                    session,
+                    resv,
+                    dbHardwareProfile,
+                    dbSoftwareProfile,
+                    cfgname=cfgname,
+                )
             else:
-                nodes = self.__create_nodes(dbSession,
+                nodes = self.__create_nodes(session,
                                             configDict,
                                             dbHardwareProfile,
                                             dbSoftwareProfile,
@@ -853,7 +953,6 @@ class Aws(ResourceAdapter):
                         conn,
                         addNodesRequest,
                         configDict,
-                        security_group_ids,
                         node=node)
 
                     resv = conn.request_spot_instances(
@@ -876,10 +975,11 @@ class Aws(ResourceAdapter):
 
                     # Post 'add' message onto message queue
                     self.__post_add_spot_instance_request(
+                        session,
                         resv,
                         dbHardwareProfile,
                         dbSoftwareProfile,
-                        cfgname,
+                        cfgname=cfgname,
                     )
 
                 # this may be redundant...
@@ -888,16 +988,19 @@ class Aws(ResourceAdapter):
             raise OperationFailed(
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
                     exc.message, exc.error_code))
-        except Exception as exc:  # pylint: disable=broad-except
-            self._logger.exception(
+        except Exception:  # pylint: disable=broad-except
+            self.self._logger.exception(
                 'Fatal error making spot instance request')
 
         return nodes
 
-    def __get_request_spot_instance_args(self, conn: EC2Connection,
-                                         addNodesRequest: dict,
-                                         configDict: dict,
-                                         node: Optional[Node] = None):
+    def __get_request_spot_instance_args(
+                self,
+                conn: EC2Connection,
+                addNodesRequest: dict,
+                configDict: Dict[str, Any],
+                node: Optional[Node] = None
+            ) -> Dict[str, Any]:
         """
         Create dict of args for boto request_spot_instances() API
         """
@@ -910,49 +1013,47 @@ class Aws(ResourceAdapter):
             addNodesRequest=addNodesRequest
         )
 
-        args['count'] = 1 if node else addNodesRequest['count']
+        args['count'] = addNodesRequest.get('count', 1)
 
         if 'launch_group' in addNodesRequest:
             args['launch_group'] = addNodesRequest['launch_group']
 
+        if 'user_data' in args:
+            # Due to a bug in "boto<=2.4.9", it is necessary to convert
+            # user_data to bytes before passing it to launch
+            args['user_data'] = args['user_data'].encode('utf-8')
+
         return args
 
-    def __post_add_spot_instance_request(self, resv,
-                                         dbHardwareProfile: HardwareProfile,
-                                         dbSoftwareProfile: SoftwareProfile,
-                                         cfgname: Optional[str] = None) \
-            -> None:
-        # Send message to awsspotd (using zeromq)
-        context = zmq.Context()
+    def __post_add_spot_instance_request(
+                self,
+                session: Session,
+                resv: boto.ec2.instance.Reservation,
+                hardwareprofile: HardwareProfile,
+                softwareprofile: SoftwareProfile,
+                cfgname: str = DEFAULT_CONFIGURATION_PROFILE_NAME
+            ) -> None:
+        """
+        Persist spot instance request to database. Notify awsspotd of new
+        spot instance requests.
+        """
+        for r in resv:
+            request = {
+                'action': 'add',
+                'spot_instance_request_id': r.id,
+                'softwareprofile': softwareprofile.name,
+                'hardwareprofile': hardwareprofile.name,
+            }
 
-        try:
-            socket = context.socket(zmq.REQ)
-            socket.connect("tcp://localhost:5555")
+            if cfgname:
+                request['resource_adapter_configuration'] = cfgname
 
-            try:
-                for r in resv:
-                    request = {
-                        'action': 'add',
-                        'spot_instance_request_id': r.id,
-                        'softwareprofile': dbSoftwareProfile.name,
-                        'hardwareprofile': dbHardwareProfile.name,
-                    }
-
-                    if cfgname:
-                        request['resource_adapter_configuration'] = \
-                            cfgname
-
-                    socket.send(json.dumps(request))
-
-                    message = socket.recv()
-
-                    self._logger.debug(
-                        'request_spot_instances():'
-                        ' response=[{0}]'.format(message))
-            finally:
-                socket.close()
-        finally:
-            context.term()
+            session.add(
+                InstanceMetadata(
+                    key=r.id,
+                    value=json.dumps(request),
+                )
+            )
 
     def cancel_spot_instance_requests(self):
         """TODO"""
@@ -1123,17 +1224,19 @@ dns_nameservers = %(dns_nameservers)s
 
     def __get_user_data_script(self, fp: TextIO,
                                config: Dict[str, str],
-                               node: Optional[Node] = None):
+                               node: Optional[Node] = None) -> str:
         settings_dict = self.__get_common_user_data_settings(config, node)
 
         result = ''
 
         for inp in fp.readlines():
             if inp.startswith('### SETTINGS'):
-                result += self.__get_common_user_data_content(
-                    settings_dict)
-            else:
-                result += inp
+                # substitute "SETTINGS" section in template
+                result += self.__get_common_user_data_content(settings_dict)
+
+                continue
+
+            result += inp
 
         if node and not config['use_instance_hostname']:
             # Use cloud-init to set fully-qualified domain name of instance
@@ -1843,13 +1946,19 @@ fqdn: %s
 
         args = {
             'key_name': configDict['keypair'],
-            'placement': configDict.get('zone', None),
             'instance_type': configDict['instancetype'],
-            'placement_group': configDict.get('placementgroup', None),
         }
 
-        args['user_data'] = self.__get_user_data(configDict, node=node) \
-            if configDict['cloud_init'] else None
+        value = configDict.get('zone')
+        if value is not None:
+            args['placement'] = value
+
+        value = configDict.get('placementgroup')
+        if value is not None:
+            args['placement_group'] = value
+
+        if configDict['cloud_init']:
+            args['user_data'] = self.__get_user_data(configDict, node=node)
 
         if 'aki' in configDict and configDict['aki']:
             # Override kernel used for new instances
@@ -1884,7 +1993,7 @@ fqdn: %s
 
             private_ip_address = get_private_ip_address_argument(
                 addNodesRequest
-            )
+            ) if addNodesRequest else None
 
             if private_ip_address:
                 self._logger.debug(
@@ -2494,7 +2603,8 @@ def get_primary_nic(nics: List[Nic]) -> Nic:
     return result[0]
 
 
-def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) -> str:
+def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) \
+        -> Optional[str]:
     """
     Parse ip address argument from addNodesRequest
     """

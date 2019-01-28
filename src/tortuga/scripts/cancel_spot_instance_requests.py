@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,139 +12,117 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import configparser
-import os.path
-import sys
+from typing import Dict, List, Optional, Tuple
 
 import boto3
+from tortuga.wsapi.metadataWsApi import MetadataWsApi
+from tortuga.wsapi.nodeWsApi import NodeWsApi
 
-from tortuga.cli.tortugaCli import TortugaCli
-from tortuga.config.configManager import ConfigManager
-from tortuga.node.nodeApi import NodeApi
-from tortuga.resourceAdapter.aws import Aws
+# from .spot_common import SpotInstanceCommonMixin
+from .commonSpotInstanceCli import CommonSpotInstanceCLI
 
 
-class CancelSpotInstanceRequestsCLI(TortugaCli):
-    def __init__(self):
-        super(CancelSpotInstanceRequestsCLI, self).__init__(validArgCount=1)
+class CancelSpotInstanceRequestsCLI(CommonSpotInstanceCLI):
+    def parseArgs(self, usage: Optional[str] = None):
+        parser = self.getParser()
 
-        self.nodeApi = NodeApi()
+        mutex = parser.add_mutually_exclusive_group(required=True)
 
-    def parseArgs(self, usage=None):
-        self.addOption('--all', action='store_true', default=False,
-                       help='Cancel all spot instance requests managed by'
-                            ' Tortuga')
+        mutex.add_argument(
+            '--all', action='store_true', default=False,
+            help='Cancel all spot instance requests managed by Tortuga'
+        )
 
-        self.addOption('--terminate', action='store_true', default=False,
-                       help='Terminate any running (fulfilled) instance(s).')
+        mutex.add_argument(
+            'spot-instance-request-id', nargs='?',
+            help='Spot instance request id to cancel'
+        )
+
+        parser.add_argument(
+            '--terminate', action='store_true', default=False,
+            help='Terminate associated instance(s).'
+        )
 
         super(CancelSpotInstanceRequestsCLI, self).parseArgs(usage=usage)
 
-        if not self.getOptions().all and not self.getArgs():
-            self.getParser().error(
-                '<spot instance request id> or --all argument must be'
-                ' specified')
-
     def runCommand(self):
-        self.parseArgs(
-            usage='%prog [--terminate] <spot instance request id|--all>')
+        self.parseArgs()
 
-        sir_instance_cache_filename = \
-            os.path.join(ConfigManager().getRoot(), 'var',
-                         'spot-instances.conf')
-
-        cfg = configparser.ConfigParser()
-        cfg.read(sir_instance_cache_filename)
-
-        if self.getOptions().all:
-            result = self.__get_spot_instance_request_ids(cfg)
+        # get all spot instance requests
+        if self.getArgs().all:
+            sir_tuples = [
+                sir_tuple
+                for sir_tuple in self._iter_spot_instance_requests()
+            ]
         else:
-            sir_id = self.getArgs()[0]
+            sir_tuples = [
+                self._get_spot_instance_request(
+                    getattr(self.getArgs(), 'spot-instance-request-id')
+                )
+            ]
 
-            result = [self.__get_spot_instance_request_id(cfg, sir_id)]
+        self.__cancel_spot_instances(sir_tuples)
 
-        if not result:
-            # Nothing to do...
-            sys.exit(0)
+    def __cancel_spot_instances(
+                self, sir_tuples: List[Tuple[str, dict, Optional[str]]]
+            ):
+        """
+        """
 
-        self.__cancel_spot_instances(result)
+        metadataWsApi = MetadataWsApi(
+            username=self.getUsername(),
+            password=self.getPassword(),
+            baseurl=self.getUrl(),
+            verify=self._verify,
+        )
 
-    def __get_spot_instance_request_id(self, cfg, sir_id):
-        # Ensure spot instance request id
-        if not cfg.has_section(sir_id):
-            sys.stderr.write(
-                'Spot instance request [{0}] is not managed by'
-                ' Tortuga\n'.format(sir_id))
+        nodeWsApi = NodeWsApi(
+            username=self.getUsername(),
+            password=self.getPassword(),
+            baseurl=self.getUrl(),
+            verify=self._verify,
 
-            sys.exit(0)
+        )
 
-        resource_adapter_configuration = \
-            self.__get_resource_adapter_configuration(cfg, sir_id)
+        ec2_connection_cache: Dict[str, dict] = {}
 
-        return sir_id, resource_adapter_configuration
+        for sir_tuple in sir_tuples:
+            sir_id, sir_metadata, node = sir_tuple
 
-    def __get_resource_adapter_configuration(self, cfg, sir_id): \
-            # pylint: disable=no-self-use
-        return cfg.get(sir_id, 'resource_adapter_configuration') \
-            if cfg.has_option(
-                sir_id, 'resource_adapter_configuration') else \
-            'default'
+            adapter_cfg_name = sir_metadata['resource_adapter_configuration']
 
-    def __get_spot_instance_request_ids(self, cfg):
-        result = []
+            adapter_cfg = self._get_adapter_cfg(adapter_cfg_name)
 
-        for sir_id in cfg.sections():
-            resource_adapter_configuration = \
-                self.__get_resource_adapter_configuration(cfg, sir_id)
+            if adapter_cfg_name not in ec2_connection_cache:
+                region_name = self._get_adapter_cfg_key(adapter_cfg, 'region')
 
-            result.append((sir_id, resource_adapter_configuration))
+                conn_spec = {
+                    'ec2_conn': boto3.session.Session(
+                        region_name=region_name,
+                    ).client('ec2'),
+                    'sir_tuples': [sir_tuple]
+                }
 
-        return result
-
-    def __get_spot_instance_request_map(self, result): \
-            # pylint: disable=no-self-use
-        sir_map = {}
-        adapter_cfg_map = {}
-
-        adapter = Aws()
-
-        # Create map of spot instance requests keyed on EC2 region
-        for sir_id, resource_adapter_configuration in result:
-            if resource_adapter_configuration not in adapter_cfg_map:
-                adapter_cfg = adapter.getResourceAdapterConfig(
-                    resource_adapter_configuration)
-
-                adapter_cfg_map[resource_adapter_configuration] = \
-                    adapter_cfg
+                ec2_connection_cache[adapter_cfg_name] = conn_spec
             else:
-                adapter_cfg = adapter_cfg_map[
-                    resource_adapter_configuration]
+                conn_spec = ec2_connection_cache[adapter_cfg_name]
+                conn_spec['sir_tuples'].append(sir_tuple)
 
-            if adapter_cfg['region'].name not in sir_map:
-                sir_map[adapter_cfg['region'].name] = []
+        for region_name, conn_spec in ec2_connection_cache.items():
+            sir_id_and_name_tuples = [
+                (sir_id, name)
+                for sir_id, _, name in conn_spec['sir_tuples']
+            ]
 
-            sir_map[adapter_cfg['region'].name].append(sir_id)
+            print(
+                'Cancelling {} spot instance requests'.format(
+                      len(sir_id_and_name_tuples)
+                )
+            )
 
-        return sir_map
+            ec2_conn = conn_spec['ec2_conn']
 
-    def __cancel_spot_instances(self, result):
-        sir_map = self.__get_spot_instance_request_map(result)
-
-        aws_instance_cache = configparser.ConfigParser()
-        aws_instance_cache.read('/opt/tortuga/var/aws-instance.conf')
-
-        # Iterate on map cancelling requests in each region
-        for region_name, sir_ids in sir_map.iteritems():
-            session = boto3.session.Session(region_name=region_name)
-
-            ec2_conn = session.client('ec2')
-
-            if len(sir_ids) == 1:
-                print('Cancelling spot instance request [{0}]'
-                      ' in region [{1}]'.format(sir_ids[0], region_name))
-            else:
-                print('Cancelling {0} spot instance requests in'
-                      ' region [{1}]'.format(len(sir_ids), region_name))
+            sir_ids = [sir_id for sir_id, _ in sir_id_and_name_tuples]
 
             response = ec2_conn.describe_spot_instance_requests(
                 SpotInstanceRequestIds=sir_ids)
@@ -159,36 +135,29 @@ class CancelSpotInstanceRequestsCLI(TortugaCli):
                 # All spot instance requests that are 'open' should be
                 # terminated to avoid leaving orphaned Tortuga node records
                 cancelled_spot_instance_requests.append(
-                    (sir['SpotInstanceRequestId'],
-                     self.getOptions().terminate or sir['State'] == 'open'))
+                    sir['SpotInstanceRequestId']
+                )
 
-            result = ec2_conn.cancel_spot_instance_requests(
-                SpotInstanceRequestIds=sir_ids)
+            # TODO: check response here
+            ec2_conn.cancel_spot_instance_requests(
+                SpotInstanceRequestIds=sir_ids
+            )
 
-            # Delete corresponding node entries
-            for sir_id, terminate in cancelled_spot_instance_requests:
-                if terminate:
-                    node_name = self.__get_associated_node(
-                        aws_instance_cache, sir_id)
-                    if node_name:
-                        print('  - Deleting node [{0}]'.format(node_name))
+            for sir_id in sir_ids:
+                metadataWsApi.deleteMetadata(filter_key=sir_id)
 
-                        self.nodeApi.deleteNode(node_name)
+            if not self.getArgs().terminate:
+                # '--terminate' flag not specified; continue
+                continue
 
-    def __get_associated_node(self, aws_instance_cache, sir_id): \
-            # pylint: disable=no-self-use
-        node_name = None
+            nodes = [
+                name for _, _,
+                name in conn_spec['sir_tuples'] if name is not None
+            ]
 
-        for node_name in aws_instance_cache.sections():
-            if aws_instance_cache.has_option(
-                    node_name, 'spot_instance_request') and \
-                aws_instance_cache.get(
-                    node_name, 'spot_instance_request') == sir_id:
-                break
-        else:
-            return None
+            print('Deleting {} node(s)'.format(len(nodes)))
 
-        return node_name
+            nodeWsApi.deleteNode(','.join(nodes))
 
 
 def main():
