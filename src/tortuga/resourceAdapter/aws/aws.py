@@ -81,7 +81,7 @@ class Aws(ResourceAdapter):
         'awsaccesskey': settings.StringSetting(
             secret=True,
             display_name='Access key',
-            description='AWS API access key',
+            description='AWS Access key ID',
             group='Authentication',
             group_order=1,
             requires=['awssecretkey']
@@ -89,7 +89,7 @@ class Aws(ResourceAdapter):
         'awssecretkey': settings.StringSetting(
             secret=True,
             display_name='Secret key',
-            description='AWS API secret key',
+            description='AWS secret access key',
             group='Authentication',
             group_order=1,
             requires=['awsaccesskey']
@@ -104,7 +104,8 @@ class Aws(ResourceAdapter):
         'keypair': settings.StringSetting(
             display_name='SSH keypair',
             description='Name of AWS SSH keypair to install on new node '
-                        'instances',
+                        'instances. The keypair must be previously created in'
+                        ' AWS',
             group='Authentication',
             group_order=1,
             required=True
@@ -115,23 +116,21 @@ class Aws(ResourceAdapter):
         #
         'override_dns_domain': settings.BooleanSetting(
             display_name='Override DNS domain',
-            description='Allow the compute node bootstrap process to manage '
-                        '/etc/resolv.conf',
+            description='Enable overriding of instances\' DNS domain',
             group='DNS',
             group_order=2,
             default='False'
         ),
         'dns_domain': settings.StringSetting(
             display_name='DNS domain',
-            description='The DNS search order to be configured on new node '
-                        'instances',
+            description='DNS search order to be configured on instances',
             group='DNS',
             group_order=2,
             requires=['override_dns_domain']
         ),
         'dns_options': settings.StringSetting(
             display_name='DNS options',
-            description='specifies the "options" field in /etc/resolv.conf '
+            description='Specifies the "options" field in /etc/resolv.conf '
                         'on new node instances',
             group='DNS',
             group_order=2,
@@ -139,7 +138,7 @@ class Aws(ResourceAdapter):
         ),
         'dns_nameservers': settings.StringSetting(
             display_name='DNS nameservers',
-            description='specifies the "nameservers" field in '
+            description='Specifies the "nameservers" field in '
                         '/etc/resolv.conf on compute node instances and is '
                         'a space-separated list of IP addresses',
             group='DNS',
@@ -149,8 +148,7 @@ class Aws(ResourceAdapter):
             list_separator=' '
         ),
         'use_domain_from_dhcp_option_set': settings.BooleanSetting(
-            display_name='Domain from DHCP',
-            description='use domain specified in DHCP option set',
+            display_name='Use DNS domain configured in DHCP option set',
             group='DNS',
             group_order=2,
             default='False'
@@ -164,7 +162,8 @@ class Aws(ResourceAdapter):
             default='True'
         ),
         'use_reverse_dns_hostname': settings.BooleanSetting(
-            display_name='Use reverse DNS hostname',
+            display_name='Use reverse DNS lookup of instance private IP to'
+                         ' determine host name',
             group='DNS',
             group_order=2,
             default='False',
@@ -190,7 +189,8 @@ class Aws(ResourceAdapter):
             group_order=3
         ),
         'associate_public_ip_address': settings.BooleanSetting(
-            display_name='Associate public IP address',
+            display_name='Automatically assign public IP address when set to'
+                         ' \'true\'',
             group='Networking',
             group_order=3,
             default='True'
@@ -215,13 +215,13 @@ class Aws(ResourceAdapter):
         ),
         'block_device_map': settings.StringSetting(
             display_name='Block device map',
-            description='Block device map for new node instances',
+            description='Used to define block devices (virtual hard drives)',
             group='Instances',
             group_order=0
         ),
         'cloud_init_script_template': settings.FileSetting(
-            display_name='Cloud init script template',
-            description='Path to cloud init script',
+            display_name='cloud-init script template',
+            description='Path to cloud-init script template',
             group='Instances',
             group_order=0,
             mutually_exclusive=['user_data_script_template'],
@@ -230,7 +230,7 @@ class Aws(ResourceAdapter):
         ),
         'user_data_script_template': settings.FileSetting(
             display_name='User data script template',
-            description='Path to user date template script',
+            description='Path to user data template script',
             group='Instances',
             group_order=0,
             mutually_exclusive=['cloud_init_script_template'],
@@ -239,19 +239,19 @@ class Aws(ResourceAdapter):
         ),
         'vcpus': settings.IntegerSetting(
             display_name='Number of VCPUs',
-            description='The number of virtual CPUs for the resource adapter '
-                        'configuration profile',
+            description='Override automatically detected virtual CPU count',
             group='Instances',
             group_order=0
         ),
         'monitoring_enabled': settings.BooleanSetting(
-            display_name='Monitoring enabled',
+            display_name='Enable detailed CloudWatch monitoring',
             group='Instances',
             group_order=0
 
         ),
         'ebs_optimized': settings.BooleanSetting(
-            display_name='EBS optimized',
+            display_name='Enable EBS optimization for additional disk'
+                         ' throughput',
             group='Instances',
             group_order=0
         ),
@@ -271,7 +271,8 @@ class Aws(ResourceAdapter):
         ),
         'placementgroup': settings.StringSetting(
             display_name='Placement group',
-            description='AWS placement group',
+            description='The name of the placement group instances will be'
+                        ' created in',
             group='Instances',
             group_order=0
         ),
@@ -293,21 +294,21 @@ class Aws(ResourceAdapter):
             group_order=4
         ),
         'proxy_host': settings.StringSetting(
-            display_name='Proxy host',
+            display_name='Proxy host used for AWS communication',
             group='API'
         ),
         'proxy_port': settings.IntegerSetting(
-            display_name='Proxy port',
+            display_name='Proxy port used for AWS communication',
             group='API',
             group_order=4
         ),
         'proxy_user': settings.StringSetting(
-            display_name='Proxy username',
+            display_name='Proxy username used for AWS communication',
             group='API',
             group_order=4
         ),
         'proxy_pass': settings.StringSetting(
-            display_name='Proxy password',
+            display_name='Proxy password used for AWS communication',
             group='API',
             group_order=4,
             secret=True
@@ -317,17 +318,20 @@ class Aws(ResourceAdapter):
         # Unspecified
         #
         'installer_ip': settings.StringSetting(
-            display_name='Tortuga installer IP'
+            display_name='Override automatically detected installer IP'
+                         ' address. This may be required for multi-homed'
+                         ' installers.'
         ),
         'launch_timeout': settings.IntegerSetting(
             display_name='Launch timeout',
-            description='Timeout (in seconds) of the launch request',
+            description='Wait time (in seconds) for launch request to'
+                        ' complete',
             default='300'
         ),
         'createtimeout': settings.IntegerSetting(
             display_name='Create timeout',
-            description='Default time in seconds before creates will return '
-                        'even if not completed',
+            description='Wait time (in seconds) for instance launch(es) to'
+                        ' complete',
             default='900',
             advanced=True
         ),
