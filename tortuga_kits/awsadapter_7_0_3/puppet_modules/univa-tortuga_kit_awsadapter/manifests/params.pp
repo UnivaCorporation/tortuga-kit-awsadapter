@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tortuga.kit.mixins.resource_adapter import \
-    ResourceAdapterManagementComponentInstaller
+class tortuga_kit_awsadapter::params {
+  $major_version = '7.0'
 
+  $version = '7.0.3'
 
-class ComponentInstaller(ResourceAdapterManagementComponentInstaller):
-    name = 'management'
-    version = '7.0.2'
-    os_list = [
-        {'family': 'rhel', 'version': '6', 'arch': 'x86_64'},
-        {'family': 'rhel', 'version': '7', 'arch': 'x86_64'},
-    ]
+  $iteration = '0'
+
+  $kitdescr = "awsadapter-${version}-${iteration}"
+}
