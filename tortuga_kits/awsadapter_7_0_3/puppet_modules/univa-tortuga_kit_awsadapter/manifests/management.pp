@@ -20,7 +20,6 @@ class tortuga_kit_awsadapter::management::package {
 
   $pkgs = [
     'unzip',
-    'zeromq3',
   ]
 
   ensure_packages($pkgs, {'ensure' => 'installed'})
