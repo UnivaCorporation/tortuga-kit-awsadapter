@@ -32,7 +32,6 @@ import boto.ec2
 import boto.vpc
 import gevent
 import gevent.queue
-import zmq
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
