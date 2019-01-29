@@ -2566,10 +2566,13 @@ fqdn: %s
         vcpus = 1
 
         self._logger.debug(
-            'get_instance_size_mapping(instancetype=[{0}])'.format(value))
+            'get_instance_size_mapping(instancetype=[%s])', value)
 
-        with open(os.path.join(self._cm.getKitConfigBase(),
-                               'aws-instances.csv')) as fp:
+        fn = os.path.join(self._cm.getKitConfigBase(), 'aws-instances.csv')
+        if not os.path.exists(fn):
+            return vcpus
+
+        with open(fn) as fp:
             dr = csv.DictReader(fp)
 
             for entry in dr:
@@ -2584,7 +2587,7 @@ fqdn: %s
                     'get_instance_size_mapping() cache hit')
 
                 # Found matching entry
-                vcpus = entry['vCPUs'].split(' ', 1)[0]
+                vcpus = int(entry['vCPUs'].split(' ', 1)[0])
 
                 break
             else:
