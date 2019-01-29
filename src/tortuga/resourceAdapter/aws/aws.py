@@ -811,25 +811,25 @@ class Aws(ResourceAdapter):
         # set node properties
         node.instance = InstanceMapping(instance=instance_id)
 
-        # find spot instance request
-        # TODO: do we need to support non-spot instance node insertion?
-        sir_id = nodedetail['metadata']['spot_instance_request_id']
+        # attempt to find matching spot instance request
+        if 'spot_instance_request_id' in nodedetail['metadata']:
+            sir_id = nodedetail['metadata']['spot_instance_request_id']
 
-        result = self.__get_spot_instance_metadata(session, sir_id)
-        if not result:
-            self.self._logger.error(
-                'Unable to find matching spot instand request: %s',
-                sir_id,
+            result = self.__get_spot_instance_metadata(session, sir_id)
+            if not result:
+                self._logger.error(
+                    'Unable to find matching spot instand request: %s',
+                    sir_id,
+                )
+
+                return None
+
+            self._logger.info(
+                'Matching spot instance request [%s] to instance id [%s]',
+                sir_id, instance_id
             )
 
-            return None
-
-        self.self._logger.info(
-            'Matching spot instance request [%s] to instance id [%s]',
-            sir_id, instance_id
-        )
-
-        node.instance.instance_metadata.append(result)
+            node.instance.instance_metadata.append(result)
 
         if node_created:
             # only fire the new node event if creating the record for the
