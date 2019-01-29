@@ -760,7 +760,7 @@ class Aws(ResourceAdapter):
             'ec2_instance_id' in nodedetail['metadata'] else None
         if not instance_id:
             # TODO: currently not handled
-            self.self._logger.error(
+            self._logger.error(
                 'instance_id not set in metadata. Unable to insert AWS nodes'
                 ' without backing instance'
             )
@@ -771,7 +771,7 @@ class Aws(ResourceAdapter):
             launch_request.conn, instance_id
         )
         if not instance:
-            self.self._logger.warning(
+            self._logger.warning(
                 'Error inserting node [%s]. AWS instance [%s] does not exist',
                 instance_id,
             )
@@ -786,7 +786,7 @@ class Aws(ResourceAdapter):
                 node = self.__create_node(session, launch_request, nodedetail)
 
                 # Add tags
-                self.self._logger.info('Assigning tags to instance [%s]', instance.id)
+                self._logger.info('Assigning tags to instance [%s]', instance.id)
 
                 self.__assign_tags(
                     launch_request.configDict,
@@ -803,7 +803,7 @@ class Aws(ResourceAdapter):
 
                 raise
         else:
-            self.self._logger.debug(
+            self._logger.debug(
                 'Found existing node record [%s] for instance id [%s]',
                 node.name, instance_id
             )
@@ -817,14 +817,14 @@ class Aws(ResourceAdapter):
 
         result = self.__get_spot_instance_metadata(session, sir_id)
         if not result:
-            self.self._logger.error(
+            self._logger.error(
                 'Unable to find matching spot instand request: %s',
                 sir_id,
             )
 
             return None
 
-        self.self._logger.info(
+        self._logger.info(
             'Matching spot instance request [%s] to instance id [%s]',
             sir_id, instance_id
         )
@@ -989,7 +989,7 @@ class Aws(ResourceAdapter):
                 'Error requesting EC2 spot instances: {0} ({1})'.format(
                     exc.message, exc.error_code))
         except Exception:  # pylint: disable=broad-except
-            self.self._logger.exception(
+            self._logger.exception(
                 'Fatal error making spot instance request')
 
         return nodes
