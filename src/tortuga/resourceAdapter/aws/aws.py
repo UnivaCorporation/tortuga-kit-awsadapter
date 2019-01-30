@@ -59,7 +59,7 @@ from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFI
 from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
-from .helpers import (_get_encoded_list, ec2_get_root_block_devices,
+from .helpers import (_get_encoded_list, _quote_str, ec2_get_root_block_devices,
                       parse_cfg_tags)
 from .launchRequest import LaunchRequest, init_node_request_queue
 
@@ -1165,28 +1165,33 @@ class Aws(ResourceAdapter):
 
         """
 
-        installerIp = config['installer_ip'] \
-            if config['installer_ip'] else \
-            self._get_installer_ip(
-                hardwareprofile=node.hardwareprofile if node else None)
+        installerIp: Optional[str] = config.get('installer_ip')
+        if installerIp is None:
+            # handle situation where installer hostname cannot be resolved
+            try:
+                installerIp = self._get_installer_ip(
+                    hardwareprofile=node.hardwareprofile
+                    if node else None
+                )
+            except socket.gaierror:
+                pass
 
-        dns_domain_value = '\'{0}\''.format(config['dns_domain']) \
-            if config.get('dns_domain', None) else None
+        dns_domain_value = _quote_str(config['dns_domain']) \
+            if config.get('dns_domain') else None
 
         return {
             'installerHostName': self.installer_public_hostname,
-            'installerIp': '\'{0}\''.format(installerIp)
-                           if installerIp else 'None',
+            'installerIp': _quote_str(installerIp),
             'adminport': self._cm.getAdminPort(),
             'cfmuser': self._cm.getCfmUser(),
             'cfmpassword': self._cm.getCfmPassword(),
-            'override_dns_domain': str(config.get('override_dns_domain',
-                                                  False)),
-            'dns_options': '\'{0}\''.format(config['dns_options'])
-                           if config.get('dns_options', None) else None,
+            'override_dns_domain':
+            str(config.get('override_dns_domain', False)),
+            'dns_options': _quote_str(config['dns_options'])
+            if config.get('dns_options') else None,
             'dns_domain': dns_domain_value,
-            'dns_nameservers': _get_encoded_list(
-                config.get('dns_nameservers', None)),
+            'dns_nameservers':
+            _get_encoded_list(config.get('dns_nameservers')),
         }
 
     def __get_common_user_data_content(
