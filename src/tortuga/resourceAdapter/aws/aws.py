@@ -59,8 +59,8 @@ from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFI
 from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
-from .helpers import (_get_encoded_list, _quote_str, ec2_get_root_block_devices,
-                      parse_cfg_tags)
+from .helpers import (_get_encoded_list, _quote_str,
+                      ec2_get_root_block_devices, parse_cfg_tags)
 from .launchRequest import LaunchRequest, init_node_request_queue
 
 
@@ -665,9 +665,7 @@ class Aws(ResourceAdapter):
 
                 return nodes
 
-        nodes = self.__add_active_nodes(dbSession, launch_request) \
-            if dbSoftwareProfile and not dbSoftwareProfile.isIdle else \
-            self.__add_idle_nodes(dbSession, launch_request)
+        nodes = self.__add_active_nodes(dbSession, launch_request)
 
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
@@ -870,7 +868,6 @@ class Aws(ResourceAdapter):
             name=fqdn,
             softwareprofile=launch_request.softwareprofile,
             hardwareprofile=launch_request.hardwareprofile,
-            isIdle=False,
             state=state.NODE_STATE_PROVISIONED,
             addHostSession=self.addHostSession,
             nics=[Nic(ip=ip, boot=True)],
@@ -1097,55 +1094,6 @@ class Aws(ResourceAdapter):
                 raise ConfigurationError(
                     '\'use_instance_hostname\' is disabled, but hardware'
                     ' profile does not have a name format defined')
-
-    def __add_idle_nodes(self, session: Session,
-                         launch_request: LaunchRequest) -> List[Node]:
-        """
-        Create nodes in idle state
-        """
-
-        addNodesRequest = launch_request.addNodesRequest
-        dbHardwareProfile = launch_request.hardwareprofile
-        dbSoftwareProfile = launch_request.softwareprofile
-
-        nodes = []
-
-        for _ in range(addNodesRequest['count']):
-            addNodeRequest = {}
-
-            addNodeRequest['addHostSession'] = self.addHostSession
-
-            # Create a list of dicts containing the nic device name. One
-            # entry for each nic defined in the hardware profile.
-
-            addNodeRequest['nics'] = [
-                {
-                    'device': dbHardwareProfileNetwork.networkdevice.name,
-                }
-                for dbHardwareProfileNetwork in
-                dbHardwareProfile.hardwareprofilenetworks
-            ]
-
-            # Create the node
-            node = self.nodeApi.createNewNode(
-                session, addNodeRequest, dbHardwareProfile,
-                dbSoftwareProfile, validateIp=False)
-
-            session.add(node)
-
-            # Update instance cache
-            node.instance = InstanceMapping(
-                resource_adapter_configuration=self.load_resource_adapter_config(
-                    session, addNodesRequest.get('resource_adapter_configuration')
-                )
-            )
-
-            nodes.append(node)
-
-            # Log node creation
-            self._logger.debug('Created idle node [%s]' % (node.name))
-
-        return nodes
 
     def _get_installer_ip(
             self, hardwareprofile: Optional[HardwareProfile] = None) -> str:
@@ -1832,7 +1780,6 @@ fqdn: %s
                 )
 
             node.state = initial_state
-            node.isIdle = False
             node.hardwareprofile = hardwareprofile
             node.softwareprofile = softwareprofile
             node.addHostSession = self.addHostSession
@@ -2120,40 +2067,6 @@ fqdn: %s
         Stops addhost daemon from creating additional nodes
         """
 
-    def suspendActiveNode(self, node: Node) -> bool: \
-            # pylint: disable=unused-argument
-        return False
-
-    def idleActiveNode(self, nodes: List[Node]) -> str:
-        session = self.session
-
-        for node in nodes:
-            self._logger.info('Idling node [{0}]'.format(node.name))
-
-            configDict = self.get_node_resource_adapter_config(node)
-
-            if node.state != 'Discovered':
-                # Terminate instance
-                try:
-                    conn = self.getEC2Connection(configDict)
-
-                    conn.terminate_instances([node.instance.instance])
-                except boto.exception.EC2ResponseError as exc:
-                    self._logger.warning(
-                        'Error while terminating instance [{}]:'
-                        ' {1}'.format(
-                            node.instance.instance, exc.message
-                        )
-                    )
-
-                # Remove instance id from cache
-                session.delete(node.instance)
-
-            # Unset IP address for node
-            node.nics[0].ip = None
-
-        return 'Discovered'
-
     def __addTags(self, conn: EC2Connection, resource_ids: List[str],
                   keyvaluepairs: Dict[str, str]) -> None:
         """
@@ -2164,41 +2077,6 @@ fqdn: %s
             ' '.join(resource_ids)))
 
         conn.create_tags(resource_ids, keyvaluepairs)
-
-    def activateIdleNode(self, node: Node, softwareProfileName: str,
-                         softwareProfileChanged: bool):
-        self._logger.debug(
-            'activateIdleNode(node=[%s],'
-            ' softwareProfileName=[%s], softwareProfileChanged=[%s])' % (
-                node.name, softwareProfileName, softwareProfileChanged))
-
-        launch_request = LaunchRequest()
-
-        launch_request.configDict = self.get_node_resource_adapter_config(node)
-
-        launch_request.conn = self.getEC2Connection(launch_request.configDict)
-
-        launch_request.node_request_queue = init_node_request_queue([node])
-
-        # log information about request
-        self.__common_prelaunch(launch_request)
-
-        for node_request in launch_request.node_request_queue:
-            # these nodes must be launched individually because of
-            # node-specific user data
-            node_request['instance'] = self.__launchEC2(
-                launch_request.conn, launch_request.configDict, node=node
-            ).instances[0]
-
-            node_request['status'] = 'launched'
-
-            if not node.instance:
-                node.instance = InstanceMapping()
-
-            node.instance.instance = node_request['instance'].id
-
-        # Wait for activated instance(s) to start
-        self.__wait_for_instances(self.session, launch_request)
 
     def __common_prelaunch(self, launch_request: LaunchRequest):
         """
@@ -2235,9 +2113,6 @@ fqdn: %s
         )
 
         for node in nodes:
-            if node.isIdle:
-                continue
-
             self.__delete_node(node)
 
     def __delete_node(self, node: Node) -> None:
@@ -2274,30 +2149,6 @@ fqdn: %s
                     node.instance.instance, exc.message
                 )
             )
-
-    def transferNode(self, nodeIdSoftwareProfileTuples: Tuple[Node, str],
-                     newSoftwareProfileName: str) -> None:
-        """
-        Transfer the given idle node
-        """
-
-        for node, oldSoftwareProfileName in nodeIdSoftwareProfileTuples:
-            # Note call in log
-            self._logger.debug(
-                'transferNode (node=[%s])' % (node.name))
-
-            # simply idle and activate
-            self.idleActiveNode([node])
-
-            self.activateIdleNode(
-                node,
-                newSoftwareProfileName,
-                (newSoftwareProfileName != oldSoftwareProfileName))
-
-    def migrateNode(self, node: Node, remainingNodeList: List[str],
-                    liveMigrate: bool): \
-            # pylint: disable=no-self-use,unused-argument
-        raise TortugaException('EC2 nodes cannot be migrated')
 
     def runningOnEc2(self):
         """

@@ -389,7 +389,6 @@ class AWSSpotdAppClass:
                 spot_instance_request['softwareprofile'],
             'hardwareProfile':
                 spot_instance_request['hardwareprofile'],
-            'isIdle': False,
             'count': 1,
             'nodeDetails': [{
                 'metadata': {

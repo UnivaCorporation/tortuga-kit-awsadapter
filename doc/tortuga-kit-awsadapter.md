@@ -396,19 +396,11 @@ settings to the compute nodes.
 
 The AWS adapter supports the following Tortuga node management commands:
 
-- `activate-node`
 - `add-nodes`
 - `delete-node`
-- `idle-node`
 - `reboot-node`
-- `transfer-node`
 - `shutdown-node`
 - `startup-node`
-
-The AWS adapter _does not_ support the following node operation commands as they do not make sense within the context of cloud-based compute nodes:
-
-- `checkpoint-node`
-- `migrate-node`
 
 ### Networking Considerations
 
