@@ -396,12 +396,9 @@ settings to the compute nodes.
 
 The AWS adapter supports the following Tortuga node management commands:
 
-- `activate-node`
 - `add-nodes`
 - `delete-node`
-- `idle-node`
 - `reboot-node`
-- `transfer-node`
 - `shutdown-node`
 - `startup-node`
 

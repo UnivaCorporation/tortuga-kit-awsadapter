@@ -378,7 +378,6 @@ def dbm():
                 name='ip-10-10-10-{:0d}.ec2.internal'.format(idx),
                 hardwareprofile=aws_hwprofile,
                 softwareprofile=compute_swprofile,
-                isIdle=False
             )
 
             new_node.instance = InstanceMapping(
