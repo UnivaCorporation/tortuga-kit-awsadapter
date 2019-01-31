@@ -2150,11 +2150,6 @@ fqdn: %s
                 )
             )
 
-    def migrateNode(self, node: Node, remainingNodeList: List[str],
-                    liveMigrate: bool): \
-            # pylint: disable=no-self-use,unused-argument
-        raise TortugaException('EC2 nodes cannot be migrated')
-
     def runningOnEc2(self):
         """
         Determines if this node is running on EC2
