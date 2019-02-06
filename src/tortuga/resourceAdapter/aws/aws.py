@@ -357,10 +357,15 @@ class Aws(ResourceAdapter):
         :raises ConfigurationError: invalid AWS region specified
         """
 
-        connectionArgs = dict(
-            aws_access_key_id=configDict.get('awsAccessKey', None),
-            aws_secret_access_key=configDict.get('awsSecretKey', None),
-        )
+        connectionArgs = {}
+
+        # only include access/secret key if defined in adapter config
+        access_key = configDict.get('awsaccesskey')
+        if access_key is not None:
+            connectionArgs['aws_access_key_id'] = access_key
+
+            connectionArgs['aws_secret_access_key'] = \
+                configDict.get('awssecretkey')
 
         if 'proxy_host' in configDict:
             self._logger.debug('Using proxy for AWS (%s:%s)' % (
@@ -469,8 +474,8 @@ class Aws(ResourceAdapter):
         try:
             vpcconn = boto.vpc.connect_to_region(
                 config['region'],
-                aws_access_key_id=config.get('awsAccessKey', None),
-                aws_secret_access_key=config.get('awsSecretKey', None)
+                aws_access_key_id=config.get('awsaccesskey'),
+                aws_secret_access_key=config.get('awssecretkey')
             )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(

@@ -522,8 +522,8 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         adapter_cfg['cloud_init_script_template'] = cloud_init_script_template
 
     if access_key and secret_key:
-        adapter_cfg['awsAccessKey'] = access_key
-        adapter_cfg['awsSecretKey'] = secret_key
+        adapter_cfg['awsaccesskey'] = access_key
+        adapter_cfg['awssecretkey'] = secret_key
 
     # parse tags to determine if 'Name' has been defined
     if 'Name' not in parse_cfg_tags(tags):
