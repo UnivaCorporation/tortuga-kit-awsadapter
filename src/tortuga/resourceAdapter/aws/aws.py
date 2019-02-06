@@ -693,17 +693,7 @@ class Aws(ResourceAdapter):
             # Create node records before instances
             self.__add_hosts(session, launch_request)
 
-        nodes = self.__process_node_request_queue(session, launch_request)
-
-        vcpus = self.get_instance_size_mapping(
-            launch_request.configDict['instancetype']) \
-            if 'vcpus' not in launch_request.configDict else \
-            launch_request.configDict['vcpus']
-
-        for node in nodes:
-            node.vcpus = vcpus
-
-        return nodes
+        return self.__process_node_request_queue(session, launch_request)
 
     def __insert_nodes(self, session: Session,
                        launch_request: LaunchRequest) -> List[Node]:
@@ -719,10 +709,22 @@ class Aws(ResourceAdapter):
             len(launch_request.addNodesRequest['nodeDetails']),
         )
 
+        vcpus = self.get_instance_size_mapping(
+            launch_request.configDict['instancetype']
+        ) if 'vcpus' not in launch_request.configDict else \
+            launch_request.configDict['vcpus']
+
         nodes: List[Node] = []
 
         for nodedetail in launch_request.addNodesRequest['nodeDetails']:
-            node = self.__upsert_node(session, launch_request, nodedetail)
+            node = self.__upsert_node(
+                session,
+                launch_request,
+                nodedetail,
+                metadata={
+                    'vcpus': vcpus,
+                },
+            )
             if not node:
                 continue
 
@@ -751,11 +753,15 @@ class Aws(ResourceAdapter):
 
         return None
 
-
     def __upsert_node(self, session: Session, launch_request: LaunchRequest,
-                      nodedetail: dict) -> Optional[Node]:
+                      nodedetail: dict, *,
+                      metadata: Optional[dict] = None) -> Optional[Node]:
+        """This method is used to add/update node entries after spot
+        instances have been fulfilled.
+
+        :raises InvalidArgument:
         """
-        """
+
         instance_id: Optional[str] = \
             nodedetail['metadata']['ec2_instance_id'] \
             if 'metadata' in nodedetail and \
@@ -785,10 +791,17 @@ class Aws(ResourceAdapter):
         node = self.__get_node_by_instance(session, instance_id)
         if node is None:
             try:
-                node = self.__create_node(session, launch_request, nodedetail)
+                node = self.__create_node(
+                    session,
+                    launch_request,
+                    nodedetail,
+                    metadata=metadata,
+                )
 
                 # Add tags
-                self._logger.info('Assigning tags to instance [%s]', instance.id)
+                self._logger.info(
+                    'Assigning tags to instance [%s]', instance.id
+                )
 
                 self.__assign_tags(
                     launch_request.configDict,
@@ -841,7 +854,8 @@ class Aws(ResourceAdapter):
         return node
 
     def __create_node(self, session: Session, launch_request: LaunchRequest,
-                      nodedetail: dict) -> Node:
+                      nodedetail: dict, *,
+                      metadata: Optional[dict] = None) -> Node:
         """
         :raises InvalidArgument:
         """
@@ -869,7 +883,7 @@ class Aws(ResourceAdapter):
             ip,
         )
 
-        return Node(
+        node = Node(
             name=fqdn,
             softwareprofile=launch_request.softwareprofile,
             hardwareprofile=launch_request.hardwareprofile,
@@ -877,6 +891,11 @@ class Aws(ResourceAdapter):
             addHostSession=self.addHostSession,
             nics=[Nic(ip=ip, boot=True)],
         )
+
+        if metadata is not None and 'vcpus' in metadata:
+            node.vcpus = metadata['vcpus']
+
+        return node
 
     def __request_spot_instances(
                 self,
@@ -1770,6 +1789,11 @@ fqdn: %s
             NetworkNotFound
         """
 
+        # get vcpus for nodes being added
+        vcpus = self.get_instance_size_mapping(
+            configDict['instancetype']
+        ) if 'vcpus' not in configDict else configDict['vcpus']
+
         nodes = []
 
         for _ in range(count):
@@ -1788,6 +1812,7 @@ fqdn: %s
             node.hardwareprofile = hardwareprofile
             node.softwareprofile = softwareprofile
             node.addHostSession = self.addHostSession
+            node.vcpus = vcpus
 
             # Create primary network interface
             node.nics.append(Nic(boot=True))
