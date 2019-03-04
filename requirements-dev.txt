@@ -6,4 +6,3 @@ click
 colorama
 daemonize
 gevent
-pyzmq

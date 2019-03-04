@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import shlex
-from typing import Dict
+from typing import Dict, Optional
 
 
 def ec2_get_root_block_devices(ami):
@@ -22,10 +22,19 @@ def ec2_get_root_block_devices(ami):
             if device in ('/dev/xvda', '/dev/sda', '/dev/sda1')]
 
 
+def _quote_str(value: Optional[str]) -> str:
+    """Helper function used for generating instance metadata"""
+    if value is None:
+        return 'None'
+
+    return '\'%s\'' % value
+
+
 def _get_encoded_list(items):
     """Return Python list encoded in a string"""
-    return '[' + ', '.join(['\'%s\'' % (item) for item in items]) + ']' \
-        if items else '[]'
+    return '[' + ', '.join(
+        [_quote_str(item) for item in items]
+    ) + ']' if items else '[]'
 
 
 def parse_cfg_tags(value: str) -> Dict[str, str]:

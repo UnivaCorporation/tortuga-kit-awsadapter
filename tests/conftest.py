@@ -14,41 +14,45 @@
 
 import pytest
 from passlib.hash import pbkdf2_sha256
-from sqlalchemy import create_engine
 
 import boto.ec2
 import tortuga.resourceAdapter
 import tortuga.resourceAdapter.aws.aws
 from moto import mock_ec2_deprecated
+from sqlalchemy import create_engine
 from tortuga.config.configManager import ConfigManager, getfqdn
 from tortuga.db.dbManager import DbManager
 from tortuga.db.models.admin import Admin
 from tortuga.db.models.component import Component
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.hardwareProfileNetwork import HardwareProfileNetwork
+from tortuga.db.models.hardwareProfileTag import HardwareProfileTag
 from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.kit import Kit
 from tortuga.db.models.network import Network
 from tortuga.db.models.networkDevice import NetworkDevice
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
+from tortuga.db.models.nodeTag import NodeTag
 from tortuga.db.models.operatingSystem import OperatingSystem
 from tortuga.db.models.operatingSystemFamily import OperatingSystemFamily
 from tortuga.db.models.resourceAdapter import ResourceAdapter
 from tortuga.db.models.resourceAdapterConfig import ResourceAdapterConfig
 from tortuga.db.models.resourceAdapterSetting import ResourceAdapterSetting
 from tortuga.db.models.softwareProfile import SoftwareProfile
-from tortuga.db.models.tag import Tag
+from tortuga.db.models.softwareProfileTag import SoftwareProfileTag
 from tortuga.deployer.dbUtility import init_global_parameters, primeDb
 from tortuga.objects import osFamilyInfo, osInfo
 from tortuga.resourceAdapter.aws import Aws
+from tortuga.resourceAdapter.resourceAdapter import \
+    DEFAULT_CONFIGURATION_PROFILE_NAME
 
 
 #
 # Override some settings so that validation doesn't complain
 #
-Aws.settings['awsAccessKey'].required = False
-Aws.settings['awsSecretKey'].required = False
+Aws.settings['awsaccesskey'].required = False
+Aws.settings['awssecretkey'].required = False
 Aws.settings['keypair'].required = False
 Aws.settings['instancetype'].required = False
 Aws.settings['cloud_init_script_template'].must_exist = False
@@ -121,13 +125,10 @@ def dbm():
         init_global_parameters(session, settings)
 
         # create sample tags
-        all_tags = []
-
-        for idx in range(1, 5 + 1):
-            tag = Tag(name='tag{:d}'.format(idx),
-                      value='value{:d}'.format(idx))
-
-            all_tags.append(tag)
+        all_tags = [
+            {'name': 'tag{:d}'.format(idx), 'value': 'value{:d}'.format(idx)}
+            for idx in range(1, 5 + 1)
+        ]
 
         installer_node = session.query(Node).filter(
             Node.name == installer_fqdn).one()
@@ -180,7 +181,7 @@ def dbm():
         # create 'base' kit
         kit = Kit()
         kit.name = 'base'
-        kit.version = '7.0.2'
+        kit.version = '7.0.3'
         kit.iteration = '0'
         kit.description = 'Sample base kit'
 
@@ -217,15 +218,17 @@ def dbm():
         session.commit()
 
         # create 'default' resource adapter
-        default_adapter = ResourceAdapter(name='default')
-        default_adapter.kit = kit
+        default_adapter = ResourceAdapter(
+            name=DEFAULT_CONFIGURATION_PROFILE_NAME,
+            kit=kit,
+        )
 
         # create resource adapter
         aws_adapter = ResourceAdapter(name='AWS')
         aws_adapter.kit = ra_kit
 
         aws_adapter_cfg = ResourceAdapterConfig(
-            name='default',
+            name=DEFAULT_CONFIGURATION_PROFILE_NAME,
             description='Example default resource adapter configuration'
         )
 
@@ -319,21 +322,53 @@ def dbm():
 
             if n in (1, 2):
                 # compute-01 and compute-02 have all tags
-                compute_node.tags.extend(all_tags)
+                compute_node.tags = [
+                    NodeTag(
+                        name=tag['name'],
+                        value=tag['value'],
+                    )
+                    for tag in all_tags
+                ]
             elif n in (3, 4):
                 # compute-03 and compute-04 have 'tag1' and 'tag2'
-                compute_node.tags.append(all_tags[0])
-                compute_node.tags.append(all_tags[1])
+                compute_node.tags = [
+                    NodeTag(
+                        name=all_tags[0]['name'],
+                        value=all_tags[0]['value'],
+                    ),
+                    NodeTag(
+                        name=all_tags[1]['name'],
+                        value=all_tags[1]['value'],
+                    ),
+                ]
             elif n in (5, 6):
                 # compute-05 and compute-06 have 'tag2' and 'tag3'
-                compute_node.tags.append(all_tags[1])
-                compute_node.tags.append(all_tags[2])
+                compute_node.tags = [
+                    NodeTag(
+                        name=all_tags[1]['name'],
+                        value=all_tags[1]['value'],
+                    ),
+                    NodeTag(
+                        name=all_tags[2]['name'],
+                        value=all_tags[2]['value'],
+                    ),
+                ]
             elif n == 7:
                 # compute-07 has 'tag4'
-                compute_node.tags.append(all_tags[3])
+                compute_node.tags = [
+                    NodeTag(
+                        name=all_tags[3]['name'],
+                        value=all_tags[3]['value'],
+                    ),
+                ]
             elif n == 8:
                 # compute-08 has 'tag5'
-                compute_node.tags.append(all_tags[4])
+                compute_node.tags = [
+                    NodeTag(
+                        name=all_tags[4]['name'],
+                        value=all_tags[4]['value'],
+                    ),
+                ]
 
             session.add(compute_node)
 
@@ -343,7 +378,6 @@ def dbm():
                 name='ip-10-10-10-{:0d}.ec2.internal'.format(idx),
                 hardwareprofile=aws_hwprofile,
                 softwareprofile=compute_swprofile,
-                isIdle=False
             )
 
             new_node.instance = InstanceMapping(
@@ -355,22 +389,52 @@ def dbm():
             session.add(new_node)
 
         # create arbitrary hardware profiles
-        hwprofile1 = HardwareProfile(name='profile1', tags=[all_tags[0]])
-        hwprofile2 = HardwareProfile(name='profile2', tags=[all_tags[1]])
+        hwprofile1 = HardwareProfile(
+            name='profile1',
+            tags=[
+                HardwareProfileTag(
+                    name=all_tags[0]['name'],
+                    value=all_tags[0]['value'],
+                ),
+            ],
+        )
+        hwprofile2 = HardwareProfile(
+            name='profile2',
+            tags=[
+                HardwareProfileTag(
+                    name=all_tags[1]['name'],
+                    value=all_tags[1]['value'],
+                ),
+            ],
+        )
 
         session.add(hwprofile1)
         session.add(hwprofile2)
 
         # create arbitrary software profiles
-        SoftwareProfile(name='swprofile1',
-                        os=os_,
-                        type='compute',
-                        tags=[all_tags[0]])
+        SoftwareProfile(
+            name='swprofile1',
+            os=os_,
+            type='compute',
+            tags=[
+                SoftwareProfileTag(
+                    name=all_tags[0]['name'],
+                    value=all_tags[0]['value']
+                ),
+            ],
+        )
 
-        SoftwareProfile(name='swprofile2',
-                        os=os_,
-                        type='compute',
-                        tags=[all_tags[1]])
+        SoftwareProfile(
+            name='swprofile2',
+            os=os_,
+            type='compute',
+            tags=[
+                SoftwareProfileTag(
+                    name=all_tags[1]['name'],
+                    value=all_tags[1]['value'],
+                ),
+            ],
+        )
 
         session.commit()
 

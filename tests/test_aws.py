@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import boto
 import mock
 
+import boto
 from moto import mock_ec2_deprecated
-
-from tortuga.db.models.node import Node
-from tortuga.resourceAdapter.aws.aws import Aws, ResourceAdapter
 from tortuga.db.hardwareProfilesDbHandler import HardwareProfilesDbHandler
+from tortuga.db.models.node import Node
 from tortuga.db.softwareProfilesDbHandler import SoftwareProfilesDbHandler
+from tortuga.resourceAdapter.aws.aws import Aws, ResourceAdapter
 
 
 def test_instantiation():
@@ -71,8 +70,8 @@ def test_installer_public_ipaddress_with_hardwareprofile():
 @mock.patch.object(Aws, '_load_config_from_database')
 def test_deleteNode(load_config_dict_mock, dbm):
     load_config_dict_mock.return_value = {
-        'awsAccessKey': 'the_key',
-        'awsSecretKey': 'the_secret'
+        'awsaccesskey': 'the_key',
+        'awssecretkey': 'the_secret'
     }
 
     with mock_ec2_deprecated():
@@ -85,19 +84,23 @@ def test_deleteNode(load_config_dict_mock, dbm):
             adapter.deleteNode([node])
 
 
+@mock.patch.object(Aws, 'get_instance_size_mapping')
 @mock.patch.object(Aws, 'fire_provisioned_event')
 @mock.patch.object(Aws, '_pre_add_host')
 @mock.patch.object(Aws, '_load_config_from_database')
 @mock_ec2_deprecated
 def test_start(load_config_dict_mock, pre_add_host_mock,
-               fire_provisioned_even_mock, dbm, valid_ami):
+               fire_provisioned_even_mock, get_instance_size_mapping_mock,
+               dbm, valid_ami):
     """
     Test ResourceAdapter.start() workflow
     """
 
+    get_instance_size_mapping_mock.return_value = 8
+
     load_config_dict_mock.return_value = {
-        'awsAccessKey': 'the_key',
-        'awsSecretKey': 'the_secret',
+        'awsaccesskey': 'the_key',
+        'awssecretkey': 'the_secret',
         'keypair': 'the_keypair',
         'ami': valid_ami,
         'use_instance_hostname': 'true',
@@ -147,8 +150,8 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
 def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
                            fire_provisioned_event_mock, dbm, valid_ami):
     configDict = {
-        'awsAccessKey': 'the_key',
-        'awsSecretKey': 'the_secret',
+        'awsaccesskey': 'the_key',
+        'awssecretkey': 'the_secret',
         'ami': valid_ami,
         'use_instance_hostname': 'true',
     }
@@ -174,8 +177,8 @@ def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
         )
 
         # create instances to be associated with nodes
-        conn = boto.connect_ec2(configDict['awsAccessKey'],
-                                configDict['awsSecretKey'])
+        conn = boto.connect_ec2(configDict['awsaccesskey'],
+                                configDict['awssecretkey'])
 
         conn.run_instances(
             configDict['ami'],

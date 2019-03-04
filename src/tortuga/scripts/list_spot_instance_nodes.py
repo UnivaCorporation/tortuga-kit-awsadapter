@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright 2008-2018 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,26 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import configparser
+from .commonSpotInstanceCli import CommonSpotInstanceCLI
+from .spot_common import SpotInstanceCommonMixin
 
-from tortuga.db.dbManager import DbManager
-from tortuga.db.nodesDbHandler import NodesDbHandler
+
+class ListSpotInstanceNodesCLI(CommonSpotInstanceCLI, SpotInstanceCommonMixin):
+    def runCommand(self):
+        self.parseArgs()
+
+        for sir_id, sir_metadata, name in self._iter_spot_instance_requests():
+            if name is None:
+                continue
+
+            print(name)
 
 
 def main():
-    spot_instance_cache = configparser.ConfigParser()
-    spot_instance_cache.read('/opt/tortuga/var/spot-instances.conf')
-
-    spot_instances = []
-    for item in spot_instance_cache.sections():
-        try:
-            spot_instances.append(spot_instance_cache.get(item, 'node'))
-        except configparser.NoOptionError:
-            pass
-
-    with DbManager().session() as session:
-        for node in NodesDbHandler().getNodeList(session):
-            if node.hardwareprofile.resourceadapter and \
-                    node.hardwareprofile.resourceadapter.name == 'AWS':
-                if node.name in spot_instances:
-                    print(node.name)
+    ListSpotInstanceNodesCLI().run()

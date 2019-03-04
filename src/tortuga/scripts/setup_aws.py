@@ -470,7 +470,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
 
         # validate user-provided instance type
         result = validate_instance_type(
-            ec2, instance_type, subnet_id, debug=debug)
+            ec2, instance_type, ami_id, subnet_id, debug=debug)
         if result:
             print(colorama.Style.BRIGHT + colorama.Fore.GREEN +
                   'done.' + colorama.Style.RESET_ALL)
@@ -522,8 +522,8 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         adapter_cfg['cloud_init_script_template'] = cloud_init_script_template
 
     if access_key and secret_key:
-        adapter_cfg['awsAccessKey'] = access_key
-        adapter_cfg['awsSecretKey'] = secret_key
+        adapter_cfg['awsaccesskey'] = access_key
+        adapter_cfg['awssecretkey'] = secret_key
 
     # parse tags to determine if 'Name' has been defined
     if 'Name' not in parse_cfg_tags(tags):
@@ -652,28 +652,8 @@ def get_resource_name_from_tag(subnet):
 
     return name
 
-
-def get_amazon_linux_image_id(client) -> Optional[str]:
-    """
-    Return a valid Amazon Linux AMI ID for specified region
-    """
-
-    result = client.describe_images(Owners=['amazon'], Filters=[
-        {'Name': 'name', 'Values': ['amzn*']},
-        {'Name': 'architecture', 'Values': ['x86_64']}])
-
-    if 'Images' not in result or not result['Images']:
-        return None
-
-    return result['Images'][0]['ImageId']
-
-
-def validate_instance_type(client, instance_type: str, subnet_id: str, *,
+def validate_instance_type(client, instance_type: str, image_id: str, subnet_id: str, *,
                            debug: bool = False) -> Optional[bool]:
-    image_id = get_amazon_linux_image_id(client)
-    if not image_id:
-        return None
-
     try:
         client.run_instances(
             ImageId=image_id,
