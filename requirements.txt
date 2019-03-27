@@ -1,7 +1,7 @@
 Jinja2==2.10
 awscli==1.16.132
 boto==2.49.0
-boto3==1.9.46
+boto3==1.9.122
 Click==7.0
 colorama==0.3.9
 daemonize==2.4.7
