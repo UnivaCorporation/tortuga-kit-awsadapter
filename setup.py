@@ -12,22 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-
 from setuptools import find_packages, setup
 
 
 VERSION = '7.0.3'
 
 
-if os.getenv('RELEASE'):
-    requirements_file = 'requirements.txt'
-else:
-    requirements_file = 'requirements-dev.txt'
+def get_requirements():
+    with open('requirements.txt') as fp:
+        requirements = [buf.rstrip() for buf in fp.readlines()]
 
-
-with open(requirements_file) as fp:
-    requirements = [buf.rstrip() for buf in fp.readlines()]
+    return requirements
 
 
 setup(
@@ -44,7 +39,7 @@ setup(
         'tortuga.resourceAdapter'
     ],
     zip_safe=False,
-    install_requires=requirements,
+    install_requires=get_requirements(),
     entry_points={
         'console_scripts': [
             'awsspotd=tortuga.scripts.awsspotd:main',

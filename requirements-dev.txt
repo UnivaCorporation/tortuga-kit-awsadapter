@@ -1,8 +1,0 @@
-Jinja2
-awscli
-boto
-boto3
-click
-colorama
-daemonize
-gevent
