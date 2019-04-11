@@ -12,46 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import subprocess
-
 from setuptools import find_packages, setup
 
 
-version = '7.0.3'
+VERSION = '7.0.3'
 
 
-if os.getenv('RELEASE'):
-    requirements_file = 'requirements.txt'
-else:
-    requirements_file = 'requirements-dev.txt'
+def get_requirements():
+    with open('requirements.txt') as fp:
+        requirements = [buf.rstrip() for buf in fp.readlines()]
 
-
-with open(requirements_file) as fp:
-    requirements = [buf.rstrip() for buf in fp.readlines()]
-
-
-def get_git_revision():
-    cmd = 'git rev-parse --short HEAD'
-
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
-    result, _ = p.communicate()
-    p.wait()
-
-    return result.decode().rstrip()
-
-
-git_revision = get_git_revision()
-
-module_version = f'{version}+rev{git_revision}'
-
-if os.getenv('CI_PIPELINE_ID'):
-    module_version += '.{}'.format(os.getenv('CI_PIPELINE_ID'))
+    return requirements
 
 
 setup(
     name='tortuga-aws-adapter',
-    version=module_version,
+    version=VERSION,
     url='http://univa.com',
     author='Univa Corporation',
     author_email='support@univa.com',
@@ -63,7 +39,7 @@ setup(
         'tortuga.resourceAdapter'
     ],
     zip_safe=False,
-    install_requires=requirements,
+    install_requires=get_requirements(),
     entry_points={
         'console_scripts': [
             'awsspotd=tortuga.scripts.awsspotd:main',
