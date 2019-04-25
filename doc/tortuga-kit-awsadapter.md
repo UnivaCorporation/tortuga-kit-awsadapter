@@ -180,14 +180,11 @@ This section lists the valid settings for the AWS resource adapter.
 
     **Note:** The specified keypair must previously exist.
 
-- `override_dns_domain`, `dns_search`, `dns_options`, `dns_nameservers`
+- `override_dns_domain`, `dns_options`, `dns_nameservers`
 
     Allow the compute node bootstrap process to manage `/etc/resolv.conf`.
     This enables support for a custom DNS suffix outside of the configuration
     provided by [Amazon VPC][].
-
-    `dns_search` specifies the DNS search order to be configured on compute
-    node instances.
 
     `dns_options` specifies the "options" field in `/etc/resolv/conf` on
     compute node instances.
@@ -394,8 +391,7 @@ and/or `dns_nameservers`. For example:
 adapter-mgmt update -r AWS -p Default \
     -s override_dns_domain=true \
     -s dns_options="timeout:2 attempts:5" \
-    -s dns_nameservers="8.8.8.8 8.8.4.4" \
-    -s dns_search="cloud.mydomain.com mydomain.com"
+    -s dns_nameservers="8.8.8.8 8.8.4.4"
 ```
 
 The resulting `/etc/resolv.conf` on the compute node instance would be
