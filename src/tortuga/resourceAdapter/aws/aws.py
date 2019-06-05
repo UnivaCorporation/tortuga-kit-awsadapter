@@ -651,6 +651,13 @@ class Aws(ResourceAdapter):
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
+        # Attach node tags to aws
+        configTags = launch_request.configDict.get('tags', {})
+        configTags.update(addNodesRequest.get('tags', {}))
+        if len(configTags) > 0:
+            launch_request.configDict['tags'] = configTags
+            launch_request.configDict['use_tags'] = True
+
         if 'spot_instance_request' in addNodesRequest:
             # handle EC2 spot instance request
             return self.__request_spot_instances(
