@@ -52,7 +52,6 @@ from tortuga.exceptions.nicNotFound import NicNotFound
 from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
-from tortuga.exceptions.tortugaException import TortugaException
 from tortuga.node import state
 from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
                                                      ResourceAdapter)
@@ -60,7 +59,7 @@ from tortuga.resourceAdapterConfiguration import settings
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import (_get_encoded_list, _quote_str,
-                      ec2_get_root_block_devices, parse_cfg_tags)
+                      ec2_get_root_block_devices)
 from .launchRequest import LaunchRequest, init_node_request_queue
 
 
@@ -74,6 +73,10 @@ class Aws(ResourceAdapter):
     LAUNCH_INITIAL_SLEEP_TIME = 10.0
 
     settings = {
+        #
+        # Pull in defaults from base class
+        #
+        **ResourceAdapter.settings,
         #
         # Authentication
         #
@@ -275,13 +278,6 @@ class Aws(ResourceAdapter):
             group='Instances',
             group_order=0
         ),
-        'tags': settings.StringSetting(
-            display_name='Tags',
-            description='AWS tags, a space separated list in the form of '
-                        'key=value',
-            group='Instances',
-            group_order=0
-        ),
 
         #
         # API
@@ -405,17 +401,6 @@ class Aws(ResourceAdapter):
         #
         config['cloud_init'] = config.get('user_data_script_template') or \
             config.get('cloud_init_script_template')
-
-        #
-        # Parse user-defined tags
-        #
-        if 'tags' in config and config['tags']:
-            #
-            # Support tag names/values containing spaces and tags without a
-            # value.
-            #
-            config['tags'] = parse_cfg_tags(config['tags'])
-            config['use_tags'] = True
 
         #
         # Setup block device map
@@ -651,13 +636,6 @@ class Aws(ResourceAdapter):
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
-        # Attach node tags to aws
-        configTags = launch_request.configDict.get('tags', {})
-        configTags.update(addNodesRequest.get('tags', {}))
-        if len(configTags) > 0:
-            launch_request.configDict['tags'] = configTags
-            launch_request.configDict['use_tags'] = True
-
         if 'spot_instance_request' in addNodesRequest:
             # handle EC2 spot instance request
             return self.__request_spot_instances(
@@ -804,26 +782,16 @@ class Aws(ResourceAdapter):
                     nodedetail,
                     metadata=metadata,
                 )
-
-                # Add tags
-                self._logger.info(
-                    'Assigning tags to instance [%s]', instance.id
-                )
-
-                self.__assign_tags(
-                    launch_request.configDict,
-                    launch_request.conn,
-                    node,
-                    instance
-                )
-
+                self._tag_instance(launch_request.configDict,
+                                   launch_request.conn, node, instance)
                 node_created = True
+
             except InvalidArgument:
                 self._logger.exception(
                     'Error creating new node record in insert workflow'
                 )
-
                 raise
+
         else:
             self._logger.debug(
                 'Found existing node record [%s] for instance id [%s]',
@@ -1674,26 +1642,19 @@ fqdn: %s
             node.softwareprofile.name,
             primary_nic.ip)
 
-        # Assign instance tags
-        self._logger.debug(
-            'Assigning tags to instance [{0}]'.format(instance.id))
-
         total_sleep = 0
-
         while total_sleep < launch_request.configDict['createtimeout']:
             try:
-                self.__assign_tags(
-                    launch_request.configDict, launch_request.conn, node,
-                    instance)
-
+                self._tag_instance(launch_request.configDict,
+                                   launch_request.conn, node, instance)
                 break
+
             except boto.exception.EC2ResponseError as exc:
                 self._logger.debug(
                     'Ignoring exception tagging instances: {0}'.format(
                         str(exc)))
 
             gevent.sleep(3)
-
             total_sleep += 3
 
         if total_sleep >= launch_request.configDict['createtimeout']:
@@ -1712,45 +1673,6 @@ fqdn: %s
         node.state = state.NODE_STATE_PROVISIONED
 
         self.fire_provisioned_event(node)
-
-    def __assign_tags(self, configDict: dict, conn: EC2Connection,
-                      node: Node, instance):
-        """
-        Add tags to instance and attached EBS volumes
-        """
-
-        if not configDict.get('use_tags', None):
-            return
-
-        instance_specific_tags = {
-            'tortuga:softwareprofile':
-                node.softwareprofile.name,
-            'tortuga:hardwareprofile':
-                node.hardwareprofile.name,
-            'tortuga:installer_hostname':
-                self.installer_public_hostname,
-            'tortuga:installer_ipaddress':
-                configDict['installer_ip']
-                if configDict['installer_ip'] else
-                self.installer_public_ipaddress,
-        }
-
-        instance_specific_tags.update(configDict.get('tags', {}))
-
-        if configDict['use_instance_hostname']:
-            # Use default "Name" tag, if not defined in adapter
-            # configuration
-            if 'Name' not in configDict.get('tags', {}):
-                instance_specific_tags['Name'] = 'Tortuga compute node'
-        else:
-            # Fallback to default behaviour
-            instance_specific_tags['Name'] = node.name
-
-        self.__addTags(conn, [instance.id], instance_specific_tags)
-
-        # Volumes are tagged with user-defined tags only (not instance
-        # specific resources)
-        self.__tag_ebs_volumes(conn, configDict, instance)
 
     def __get_node_name(self, launch_request, instance):
         if launch_request.configDict['use_reverse_dns_hostname']:
@@ -1845,17 +1767,6 @@ fqdn: %s
             extErrMsg = None
 
         return extErrMsg
-
-    def __tag_ebs_volumes(self, conn, configDict, instance):
-        # Get list of all EBS volumes associated with instance
-        resource_ids = [
-            bdm.volume_id
-            for bdm in instance.block_device_mapping.values()
-            if bdm.volume_id]
-
-        # Add tags
-        if resource_ids and 'tags' in configDict and configDict['tags']:
-            self.__addTags(conn, resource_ids, configDict['tags'])
 
     def __get_security_group_by_name(self, conn, groupname): \
             # pylint: disable=no-self-use
@@ -2101,19 +2012,72 @@ fqdn: %s
 
     def stop(self, hardwareProfileName, deviceName):
         """
-        Stops addhost daemon from creating additional nodes
-        """
+        Stops addhost daemon from creating additional nodes.
 
-    def __addTags(self, conn: EC2Connection, resource_ids: List[str],
-                  keyvaluepairs: Dict[str, str]) -> None:
         """
-        Create tags for resources
-        """
+        pass
 
+    def _tag_instance(self, config: dict, conn: EC2Connection,
+                      node: Node, instance):
+        """
+        Add tags to a VM instance and attached EBS volumes
+
+        :param dict config:        the resource adapter configuration
+        :param EC2Connection conn: a configured EC2 connection
+        :param Node node:          the database node instance
+        :param instance:           the EC2 instance to tag
+
+        """
+        self._logger.debug(
+            'Assigning tags to instance: {}'.format(instance.id))
+
+        tags = self.get_tags(config, node.hardwareprofile,
+                             node.softwareprofile)
+
+        if config['use_instance_hostname']:
+            if 'Name' not in config.get('tags', {}):
+                tags['Name'] = 'Tortuga compute node'
+        else:
+            tags['Name'] = node.name
+
+        self._tag_resources(conn, [instance.id], tags)
+        self._tag_ebs_volumes(conn, instance, tags)
+
+    def _tag_resources(self, conn: EC2Connection, resource_ids: List[str],
+                       tags: Dict[str, str]) -> None:
+        """
+        Tag a list of AWS resources.
+
+        :param EC2Connection conn:     a configured EC2 connection
+        :param List[str] resource_ids: the list of resources to tag
+        :param Dict[str, str] tags:    the tags to attach to the resources
+
+        """
         self._logger.debug('Adding tags to resources: {}'.format(
             ' '.join(resource_ids)))
 
-        conn.create_tags(resource_ids, keyvaluepairs)
+        conn.create_tags(resource_ids, tags)
+
+    def _tag_ebs_volumes(self, conn: EC2Connection, instance,
+                         tags: Dict[str, str]) -> None:
+        """
+        Tag EBS volumes attached to an instance.
+
+        :param EC2Connection conn:  a configured EC2 connection
+        :param instance:            the EC2 instance to tag
+        :param Dict[str, str] tags: the tags to attach to the resources
+
+        """
+        #
+        # Get list of all EBS volumes associated with instance
+        #
+        resource_ids = [
+            bdm.volume_id
+            for bdm in instance.block_device_mapping.values()
+            if bdm.volume_id
+        ]
+
+        self._tag_resources(conn, resource_ids, tags)
 
     def __common_prelaunch(self, launch_request: LaunchRequest):
         """
@@ -2399,7 +2363,7 @@ fqdn: %s
 
         instance = self.__get_instance_by_instance_id(conn, instance_id)
 
-        self.__assign_tags(configDict, conn, node, instance)
+        self._tag_instance(configDict, conn, node, instance)
 
         node.instance = InstanceMapping(
             instance=instance_id,
