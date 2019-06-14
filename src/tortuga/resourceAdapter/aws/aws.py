@@ -615,6 +615,9 @@ class Aws(ResourceAdapter):
                 addNodesRequest, dbSession, dbHardwareProfile.name,
                 dbSoftwareProfile.name if dbSoftwareProfile else '(none)'))
 
+        result = super().start(addNodesRequest, dbSession, dbHardwareProfile,
+                               dbSoftwareProfile)
+        
         # Get connection to AWS
         launch_request = LaunchRequest(
             hardwareprofile=dbHardwareProfile,
@@ -628,7 +631,7 @@ class Aws(ResourceAdapter):
             'resource_adapter_configuration',
             DEFAULT_CONFIGURATION_PROFILE_NAME)
 
-        launch_request.configDict = self.getResourceAdapterConfig(cfgname)
+        launch_request.configDict = self.get_config(cfgname)
         if not launch_request.configDict:
             raise InvalidArgument(
                 'Unable to get resource adapter configuration'
@@ -660,8 +663,10 @@ class Aws(ResourceAdapter):
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
         self.addHostApi.clear_session_nodes(nodes)
+        
+        result.extend(nodes)
 
-        return nodes
+        return result
 
     def __add_active_nodes(self, session: Session,
                            launch_request: LaunchRequest) -> List[Node]:
@@ -1069,7 +1074,7 @@ class Aws(ResourceAdapter):
             addNodesRequest, dbHardwareProfile, dbSoftwareProfile
         )
 
-        configDict = self.getResourceAdapterConfig(
+        configDict = self.get_config(
             addNodesRequest['resource_adapter_configuration']
         )
 
@@ -2353,7 +2358,7 @@ fqdn: %s
                     node.softwareprofile.name,
                     prov_nic.ip)
 
-        configDict = self.getResourceAdapterConfig(
+        configDict = self.get_config(
             addNodesRequest['resource_adapter_configuration'])
 
         # Get connection to AWS
