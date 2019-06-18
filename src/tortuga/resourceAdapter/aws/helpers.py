@@ -35,14 +35,3 @@ def _get_encoded_list(items):
     return '[' + ', '.join(
         [_quote_str(item) for item in items]
     ) + ']' if items else '[]'
-
-
-def parse_cfg_tags(value: str) -> Dict[str, str]:
-    tags = {}
-
-    for tagdef in shlex.split(value):
-        key, value = tagdef.rsplit('=', 1) \
-            if '=' in tagdef else (tagdef, '')
-        tags[key] = value
-
-    return tags

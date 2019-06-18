@@ -78,6 +78,18 @@ class Aws(ResourceAdapter):
         #
         **ResourceAdapter.settings,
         #
+        # Override the tag settings
+        #
+        'tags': settings.TagListSetting(
+            key_validation_regex='^(?!aws:).{0,127}',
+            value_validation_regex='.{0,256}',
+            display_name='Tags',
+            description='A comma-separated list of tags in the form of '
+                        'key=value',
+            group='Instances',
+            group_order=0
+        ),
+        #
         # Authentication
         #
         'awsaccesskey': settings.StringSetting(
