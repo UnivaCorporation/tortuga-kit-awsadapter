@@ -74,10 +74,6 @@ class Aws(ResourceAdapter):
 
     settings = {
         #
-        # Pull in defaults from base class
-        #
-        **ResourceAdapter.settings,
-        #
         # Override the tag settings
         #
         'tags': settings.TagListSetting(
