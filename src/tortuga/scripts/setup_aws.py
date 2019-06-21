@@ -27,10 +27,8 @@ import colorama
 from tortuga.config.configManager import ConfigManager
 from tortuga.db.dbManager import DbManager
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
-from tortuga.resourceAdapter.aws.helpers import parse_cfg_tags
 from tortuga.resourceAdapter.resourceAdapter import DEFAULT_CONFIGURATION_PROFILE_NAME
-from tortuga.resourceAdapterConfiguration.api import \
-    ResourceAdapterConfigurationApi
+from tortuga.resourceAdapterConfiguration import api, settings
 
 
 DEFAULT_AWS_REGION = 'us-east-1'
@@ -491,7 +489,7 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
     aws_adapter_cfg = os.path.join(
         ConfigManager().getKitConfigBase(), 'aws', 'adapter.ini')
 
-    tags: str = ''
+    tags = ''
 
     if os.path.exists(aws_adapter_cfg):
         cfg = configparser.ConfigParser()
@@ -526,8 +524,14 @@ def main(verbose, debug, no_autodetect, ignore_iam, unattended, region,
         adapter_cfg['awssecretkey'] = secret_key
 
     # parse tags to determine if 'Name' has been defined
-    if 'Name' not in parse_cfg_tags(tags):
-        tags = 'Name=\"Tortuga compute node\"'
+    tag_parser = settings.TagListSetting()
+    parsed_tags = tag_parser.dump(tags)
+    if 'Name' not in parsed_tags.keys():
+        parsed_tags['Name'] = 'Tortuga compute node'
+        parsed_tag_list = []
+        for k, v in parsed_tags.items():
+            parsed_tag_list.append('{}={}'.format(k, v))
+        tags = ','.join(parsed_tags)
 
     override_adapter_cfg = {
         'keypair': keypair,
@@ -614,12 +618,12 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
             'value': value,
         })
 
-    api = ResourceAdapterConfigurationApi()
+    ra_api = api.ResourceAdapterConfigurationApi()
 
     # check for resource adapter configuration
     with DbManager().session() as session:
         try:
-            api.get(session, 'AWS', profile_name)
+            ra_api.get(session, 'AWS', profile_name)
 
             print_statement(
                 'Updating AWS resource adapter configuration profile [{0}]',
@@ -635,13 +639,13 @@ def _update_resource_adapter_configuration(adapter_cfg, profile_name):
                     'key': 'user_data_script_template', 'value': None
                 })
 
-            api.update(session, 'AWS', profile_name, normalized_cfg)
+            ra_api.update(session, 'AWS', profile_name, normalized_cfg)
         except ResourceNotFound:
             print_statement(
                 'Creating AWS resource adapter configuration profile [{0}]',
                 profile_name)
 
-            api.create(session, 'AWS', profile_name, normalized_cfg)
+            ra_api.create(session, 'AWS', profile_name, normalized_cfg)
 
 
 def get_resource_name_from_tag(subnet):

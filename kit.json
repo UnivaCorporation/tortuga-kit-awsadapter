@@ -3,5 +3,5 @@
   "version": "7.0.3",
   "iteration": "0",
   "description": "AWS resource adapter",
-  "requires_core": "7.0.3+000"
+  "requires_core": "7.0.3+001"
 }
