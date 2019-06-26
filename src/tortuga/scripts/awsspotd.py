@@ -377,6 +377,9 @@ class AWSSpotdAppClass:
 
         node_name = instance.private_dns_name
 
+        if spot_instance_request.get('dnsdomain',False):
+            node_name = node_name.split(".")[0] + "." + spot_instance_request['dnsdomain']
+
         self.logger.info(
             'Creating node for spot instance [%s]',
             instance.id,

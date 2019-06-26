@@ -927,6 +927,12 @@ class Aws(ResourceAdapter):
             if configDict['use_instance_hostname']:
                 nodes: List[Node] = []
 
+                # Get the private dns domain name
+                dnsdomain = None
+                if configDict.get('override_dns_domain', None):
+                    dnsdomain = configDict.get('dns_domain', None)
+
+
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
@@ -945,6 +951,7 @@ class Aws(ResourceAdapter):
                     dbHardwareProfile,
                     dbSoftwareProfile,
                     cfgname=cfgname,
+                    dnsdomain=dnsdomain,
                 )
             else:
                 nodes = self.__create_nodes(session,
@@ -1039,7 +1046,8 @@ class Aws(ResourceAdapter):
                 resv: boto.ec2.instance.Reservation,
                 hardwareprofile: HardwareProfile,
                 softwareprofile: SoftwareProfile,
-                cfgname: str = DEFAULT_CONFIGURATION_PROFILE_NAME
+                cfgname: str = DEFAULT_CONFIGURATION_PROFILE_NAME,
+                dnsdomain: str = None
             ) -> None:
         """
         Persist spot instance request to database. Notify awsspotd of new
@@ -1052,6 +1060,9 @@ class Aws(ResourceAdapter):
                 'softwareprofile': softwareprofile.name,
                 'hardwareprofile': hardwareprofile.name,
             }
+
+            if dnsdomain:
+                request['dnsdomain'] = dnsdomain
 
             if cfgname:
                 request['resource_adapter_configuration'] = cfgname
