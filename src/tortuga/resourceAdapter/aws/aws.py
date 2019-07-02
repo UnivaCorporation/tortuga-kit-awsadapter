@@ -812,7 +812,12 @@ class Aws(ResourceAdapter):
             )
 
         # set node properties
-        node.instance = InstanceMapping(instance=instance_id)
+        node.instance = InstanceMapping(
+            instance=instance_id,
+            resource_adapter_configuration=self.load_resource_adapter_config(
+                session,
+                launch_request.addNodesRequest.get('resource_adapter_configuration'))
+        )
 
         # attempt to find matching spot instance request
         if 'spot_instance_request_id' in nodedetail['metadata']:
