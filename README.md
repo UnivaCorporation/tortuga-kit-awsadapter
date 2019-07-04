@@ -19,7 +19,7 @@ Install the kit:
 install-kit kit-awsadapter*.tar.bz2
 ```
 
-See the [Tortuga Installation and Administration Guide](https://github.com/UnivaCorporation/tortuga/blob/master/doc/tortuga-6-admin-guide.md) for configuration
+See the [Tortuga Installation and Administration Guide](https://github.com/UnivaCorporation/tortuga/blob/master/doc/tortuga-7-admin-guide.md) for configuration
 details.
 
 [Tortuga]: https://github.com/UnivaCorporation/tortuga "Tortuga"
