@@ -13,11 +13,14 @@
 # limitations under the License.
 
 class tortuga_kit_awsadapter::params {
-  $major_version = '7.0'
+  $kit_info_data = kit_info()
 
-  $version = '7.0.3'
+  $name          = $kit_info_data['name']
+  $version       = $kit_info_data['version']
+  $iteration     = $kit_info_data['iteration']
+  $version_parts = split($version,'\.')
+  $major_version = "${version_parts[0]}.${version_parts[1]}"
 
-  $iteration = '0'
-
-  $kitdescr = "awsadapter-${version}-${iteration}"
+  $kitdescr = "${name}-${version}-${iteration}"
+}
 }
