@@ -13,3 +13,6 @@ tmtags
 ## VIM
 *.swp
 tags
+
+## Copied in during build
+kit.json
