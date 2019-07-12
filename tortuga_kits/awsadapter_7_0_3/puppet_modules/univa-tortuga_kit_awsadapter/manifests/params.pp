@@ -15,12 +15,11 @@
 class tortuga_kit_awsadapter::params {
   $kit_info_data = kit_info()
 
-  $name          = $kit_info_data['name']
+  $kname          = $kit_info_data['name']
   $version       = $kit_info_data['version']
   $iteration     = $kit_info_data['iteration']
   $version_parts = split($version,'\.')
   $major_version = "${version_parts[0]}.${version_parts[1]}"
 
-  $kitdescr = "${name}-${version}-${iteration}"
-}
+  $kitdescr = "${kname}-${version}-${iteration}"
 }
