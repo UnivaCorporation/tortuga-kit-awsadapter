@@ -23,4 +23,3 @@ class tortuga_kit_awsadapter::params {
 
   $kitdescr = "${name}-${version}-${iteration}"
 }
-}
