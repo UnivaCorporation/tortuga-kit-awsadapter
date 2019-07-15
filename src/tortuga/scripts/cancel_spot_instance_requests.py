@@ -69,20 +69,8 @@ class CancelSpotInstanceRequestsCLI(CommonSpotInstanceCLI):
         """
         """
 
-        metadataWsApi = MetadataWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-        )
-
-        nodeWsApi = NodeWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-
-        )
+        metadataWsApi = self.configureClient(MetadataWsApi)
+        nodeWsApi = self.configureClient(NodeWsApi)
 
         ec2_connection_cache: Dict[str, dict] = {}
 

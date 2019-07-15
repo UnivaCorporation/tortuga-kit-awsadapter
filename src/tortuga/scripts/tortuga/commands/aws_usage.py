@@ -169,6 +169,7 @@ class LicenseUsageCommand(Command):
             if not page_token:
                 break
 
+
 class StreamWriter():
     """
     Handle 'with' for streams you don't want to close
@@ -182,6 +183,7 @@ class StreamWriter():
 
     def __exit__(self, *args) -> None:
         pass
+
 
 class PathWriter():
     """
