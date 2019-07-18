@@ -138,8 +138,10 @@ def updateResolver(domainName):
 
 
 def bootstrapPuppet():
+    runCommand('touch /tmp/puppet_bootstrap.log')
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
+           ' --no-daemonize'
            ' --onetime --server %s --waitforcert 120' % (installerHostName))
 
     runCommand(cmd)
@@ -147,9 +149,9 @@ def bootstrapPuppet():
 
 def main():
     subprocess.Popen('yum install -y bind-utils', shell=True).wait()
-    
+
     cmd = 'ip -4 a s eth0 | awk \'/inet/ { print $2}\' | sed \'s/\/.*//\''
-    
+
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
     result = p.stdout.readline().rstrip()
     retval = p.wait()
