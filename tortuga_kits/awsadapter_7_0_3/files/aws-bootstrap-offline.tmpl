@@ -31,11 +31,11 @@ import json
 # port = {{ adminport }}
 # cfmUser = '{{ cfmuser }}'
 # cfmPassword = '{{ cfmpassword }}'
-# 
+#
 # override_dns_domain = {{ override_dns_domain }}
 # dns_options = '{{ dns_options }}'
 # dns_domain = '{{ dns_domain }}'
-# dns_nameservers = 
+# dns_nameservers =
 
 
 
@@ -138,8 +138,10 @@ def updateResolver(domainName):
 
 
 def bootstrapPuppet():
+    runCommand('touch /tmp/puppet_bootstrap.log')
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
+           ' --no-daemonize'
            ' --onetime --server %s --waitforcert 120' % installerHostName)
 
     tryCommand(cmd, good_return_values=(0, 2), time_limit=10*60)
