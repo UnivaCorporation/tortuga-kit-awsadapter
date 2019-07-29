@@ -102,7 +102,7 @@ class AwsScaleSetCreatedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set create request for AWS: ', ssr.id)
+        logger.warning('Scale set create request for AWS: %s', ssr.id)
 
 
 class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -117,7 +117,7 @@ class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set update request for AWS: ', ssr.id)
+        logger.warning('Scale set update request for AWS: %s', ssr.id)
 
 
 class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -132,4 +132,4 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set delete request for AWS: ', ssr.id)
+        logger.warning('Scale set delete request for AWS: %s', ssr.id)
