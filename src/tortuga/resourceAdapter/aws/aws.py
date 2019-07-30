@@ -646,7 +646,7 @@ class Aws(ResourceAdapter):
               resourceAdapterProfile: str):
 
         """
-        Create one or more nodes
+        Delete an existing scale set
 
         :raises InvalidArgument:
         """
@@ -678,7 +678,7 @@ class Aws(ResourceAdapter):
               desiredCount: int):
             
         """
-        Create one or more nodes
+        Create a new scale set
 
         :raises InvalidArgument:
         """
@@ -723,7 +723,7 @@ class Aws(ResourceAdapter):
               desiredCount: int):
 
         """
-        Create one or more nodes
+        Update an existing scale set
 
         :raises InvalidArgument:
         """
