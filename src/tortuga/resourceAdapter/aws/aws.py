@@ -29,15 +29,19 @@ from typing.io import TextIO
 
 import boto
 import boto.ec2
+import boto.ec2.autoscale
 import boto.vpc
 import gevent
 import gevent.queue
 from boto.ec2.connection import EC2Connection
+from boto.ec2.autoscale import (AutoScaleConnection, LaunchConfiguration,
+                                AutoScalingGroup)
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.session import Session
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
+from tortuga.addhost.utility import encrypt_insertnode_request
 from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.instanceMetadata import InstanceMetadata
@@ -347,6 +351,12 @@ class Aws(ResourceAdapter):
         ),
         'aki': settings.StringSetting(advanced=True),
         'ari': settings.StringSetting(advanced=True),
+        'healthcheck_period': settings.IntegerSetting(
+            display_name='Helthcheck period',
+            description='Wait time (in seconds) between healthchecks',
+            default='300',
+            advanced=True
+        ),
     }
 
     def __init__(self, addHostSession: Optional[str] = None) -> None:
@@ -356,11 +366,7 @@ class Aws(ResourceAdapter):
         self.__runningOnEc2 = None
         self.__installer_ip: Optional[str] = None
 
-    def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
-        """
-        :raises ConfigurationError: invalid AWS region specified
-        """
-
+    def getConnectionArgs(self, configDict: Dict[str, Any]) -> Dict[str, Any]:
         connectionArgs = {}
 
         # only include access/secret key if defined in adapter config
@@ -385,7 +391,35 @@ class Aws(ResourceAdapter):
             if 'proxy_pass' in configDict:
                 connectionArgs['proxy_pass'] = configDict['proxy_pass']
 
+        return connectionArgs        
+
+    def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
+        """
+        :raises ConfigurationError: invalid AWS region specified
+        """
+
+        connectionArgs = self.getConnectionArgs(configDict)
+
         ec2_conn = boto.ec2.connect_to_region(
+            configDict['region'],
+            **connectionArgs,
+        )
+
+        if ec2_conn is None:
+            raise ConfigurationError(
+                'Invalid AWS region [{}]'.format(configDict['region'])
+            )
+
+        return ec2_conn
+
+    def getAutoScaleConnection(self, configDict: Dict[str, Any]) -> AutoScaleConnection:
+        """
+        :raises ConfigurationError: invalid AWS region specified
+        """
+
+        connectionArgs = self.getConnectionArgs(configDict)
+
+        ec2_conn = boto.ec2.autoscale.connect_to_region(
             configDict['region'],
             **connectionArgs,
         )
@@ -606,6 +640,121 @@ class Aws(ResourceAdapter):
             return None
 
         return result[0]
+
+    def delete_scale_set(self,
+              name: str,
+              resourceAdapterProfile: str):
+
+        """
+        Create one or more nodes
+
+        :raises InvalidArgument:
+        """
+
+        configDict = self.get_config(
+            resourceAdapterProfile
+        )
+
+        autoconn = self.getAutoScaleConnection(configDict)
+        try:
+            autoconn.delete_auto_scaling_group(name, force_delete=True)
+        except boto.exception.BotoServerError as ex:
+            if not ex.message.startswith("AutoScalingGroup name not found"):
+                raise
+        finally:
+            try:
+                autoconn.delete_launch_configuration(name)
+            except boto.exception.BotoServerError as ex:
+                if not ex.message.startswith("Launch configuration name not found"):
+                    raise
+
+    def create_scale_set(self, 
+              name: str,
+              resourceAdapterProfile: str,
+              hardwareProfile: str,
+              softwareProfile: str,
+              minCount: int,
+              maxCount: int,
+              desiredCount: int):
+            
+        """
+        Create one or more nodes
+
+        :raises InvalidArgument:
+        """
+
+        configDict = self.get_config(
+            resourceAdapterProfile
+        )
+
+        autoconn = self.getAutoScaleConnection(configDict)
+        conn = self.getEC2Connection(configDict)
+        insertnode_request = {
+                   'softwareProfile': softwareProfile,
+                   'hardwareProfile': hardwareProfile,
+        }
+        lcArgs = self.__get_launch_config_args(
+            conn,
+            configDict,
+            encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
+        )
+        lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         **lcArgs)
+        autoconn.create_launch_configuration(lc)
+        try:
+            ag = AutoScalingGroup(group_name=name,
+                          vpc_zone_identifier=configDict.get("subnet_id"),
+                          launch_config=lc, min_size=minCount, max_size=maxCount,
+                          desired_capacity=desiredCount,
+                          health_check_period=configDict.get("healthcheck_period"),
+                          connection=autoconn)
+            autoconn.create_auto_scaling_group(ag)
+        except Exception as ex:
+            autoconn.delete_launch_configuration(lc.name)
+            raise ex
+
+    def update_scale_set(self,
+              name: str,
+              resourceAdapterProfile: str,
+              hardwareProfile: str,
+              softwareProfile: str,
+              minCount: int,
+              maxCount: int,
+              desiredCount: int):
+
+        """
+        Create one or more nodes
+
+        :raises InvalidArgument:
+        """
+
+        configDict = self.get_config(
+            resourceAdapterProfile
+        )
+
+        autoconn = self.getAutoScaleConnection(configDict)
+        conn = self.getEC2Connection(configDict)
+        insertnode_request = {
+                   'softwareProfile': softwareProfile,
+                   'hardwareProfile': hardwareProfile,
+        }
+        lcArgs = self.__get_launch_config_args(
+            conn,
+            configDict,
+            encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
+        )
+        lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         **lcArgs)
+        try:
+            ag = AutoScalingGroup(group_name=name,
+                          vpc_zone_identifier=configDict.get("subnet_id"),
+                          launch_config=lc, min_size=minCount, max_size=maxCount,
+                          desired_capacity=desiredCount,
+                          health_check_period=configDict.get("healthcheck_period"),
+                          connection=autoconn)
+            ag.update()
+        except Exception as ex:
+            raise ex
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
@@ -1171,14 +1320,13 @@ class Aws(ResourceAdapter):
         }
 
     def __get_common_user_data_content(
-            self, user_data_settings: Dict[str, str]) \
+            self, user_data_settings: Dict[str, str], 
+            insertnode_request: Optional[bytes] = None) \
             -> str:  # pylint: disable=no-self-use
-        return """\
+        settings =  """\
 installerHostName = '%(installerHostName)s'
 installerIpAddress = %(installerIp)s
 port = %(adminport)d
-cfmUser = '%(cfmuser)s'
-cfmPassword = '%(cfmpassword)s'
 
 # DNS resolution settings
 override_dns_domain = %(override_dns_domain)s
@@ -1187,16 +1335,31 @@ dns_search = %(dns_domain)s
 dns_domain = %(dns_domain)s
 dns_nameservers = %(dns_nameservers)s
 """ % (user_data_settings)
+        if insertnode_request is None:
+            settings += """
+# CFM Auth
+cfmUser = '%(cfmuser)s'
+cfmPassword = '%(cfmpassword)s'
+insertnode_request = None
+""" % (user_data_settings)
+        else:
+            settings += """
+# Insert_node
+insertnode_request = %s
+""" % (insertnode_request)
+        return settings
 
     def __get_user_data(self, config: Dict[str, str],
-                        node: Optional[Node] = None) -> str:
+                        node: Optional[Node] = None,
+                        insertnode_request: Optional[bytes] = None) -> str:
         """
         Return metadata to be associated with each launched instance
         """
 
         if 'user_data_script_template' in config:
             with open(config['user_data_script_template']) as fp:
-                return self.__get_user_data_script(fp, config, node=node)
+                return self.__get_user_data_script(fp, config, node=node,
+                    insertnode_request=insertnode_request)
 
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
@@ -1204,7 +1367,8 @@ dns_nameservers = %(dns_nameservers)s
 
     def __get_user_data_script(self, fp: TextIO,
                                config: Dict[str, str],
-                               node: Optional[Node] = None) -> str:
+                               node: Optional[Node] = None,
+                               insertnode_request: Optional[bytes] = None) -> str:
         settings_dict = self.__get_common_user_data_settings(config, node)
 
         result = ''
@@ -1212,7 +1376,7 @@ dns_nameservers = %(dns_nameservers)s
         for inp in fp.readlines():
             if inp.startswith('### SETTINGS'):
                 # substitute "SETTINGS" section in template
-                result += self.__get_common_user_data_content(settings_dict)
+                result += self.__get_common_user_data_content(settings_dict, insertnode_request)
 
                 continue
 
@@ -1863,6 +2027,69 @@ fqdn: %s
                     'Unable to create placement group [%s] (%s)' % (
                         configDict['placementgroup'],
                         extErrMsg or '<no reason provided>'))
+
+    def __get_launch_config_args(
+            self, conn: EC2Connection, configDict: Dict[str, Any],
+            insertnode_request: bytes) -> Dict[str, Any]:
+        """
+        Return key-value pairs of arguments for passing to launch API
+        """
+
+        args = {
+            'key_name': configDict['keypair'],
+            'instance_type': configDict['instancetype'],
+        }
+
+        value = configDict.get('zone')
+        if value is not None:
+            args['placement'] = value
+
+        value = configDict.get('placementgroup')
+        if value is not None:
+            args['placement_group'] = value
+
+        if configDict['cloud_init']:
+            args['user_data'] = self.__get_user_data(configDict,
+                                  node=None,
+                                  insertnode_request=insertnode_request)
+
+        if 'aki' in configDict and configDict['aki']:
+            # Override kernel used for new instances
+            args['kernel_id'] = configDict['aki']
+
+        if 'ari' in configDict and configDict['ari']:
+            # Override ramdisk used for new instances
+            args['ramdisk_id'] = configDict['ari']
+
+        # Build 'block_device_mappings'
+        mappings = \
+            self.__build_block_device_map(
+                conn,
+                configDict['block_device_map']
+                if 'block_device_map' in configDict else None,
+                configDict['ami'])
+         
+        args['block_device_mappings'] = [mappings]
+
+        if 'ebs_optimized' in configDict:
+            args['ebs_optimized'] = configDict['ebs_optimized']
+
+        if 'monitoring_enabled' in configDict:
+            args['monitoring_enabled'] = configDict['monitoring_enabled']
+
+        if 'iam_instance_profile_name' in configDict and \
+                configDict['iam_instance_profile_name']:
+            args['instance_profile_name'] = \
+                configDict['iam_instance_profile_name']
+
+        if 'subnet_id' in configDict and \
+                configDict['subnet_id'] is not None:
+            subnet_id = configDict['subnet_id']
+
+        # Security groups
+        args['security_groups'] = configDict.get('securitygroup', [])
+
+        return args
 
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],

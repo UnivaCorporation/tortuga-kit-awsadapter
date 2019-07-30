@@ -26,6 +26,82 @@ import json
 
 ### SETTINGS
 
+def get_instance_data(path):
+    url = 'http://169.254.169.254/latest/meta-data' + path
+
+    req = urllib2.Request(url)
+
+    for nCount in range(5):
+        try:
+            response = urllib2.urlopen(req)
+            break
+        except urllib2.URLError as ex:
+            pass
+        except urllib2.HTTPError as ex:
+            if ex.code == 404:
+                raise
+
+            time.sleep(2 ** (nCount + 1))
+    else:
+        raise Exception('Unable to communicate with metadata webservice')
+
+    if response.code != 200:
+        raise Exception('Unable to read %s' % path)
+    return response.read()
+
+def addNode():
+    tryCommand("mkdir -p /etc/pki/ca-trust/source/anchors/")
+    tryCommand("curl http://%s:8008/ca.pem > /etc/pki/ca-trust/source/anchors/tortuga-ca.pem" % installerIpAddress)
+    tryCommand("update-ca-trust")
+    instance_id = get_instance_data('/instance-id')
+    local_hostname = get_instance_data('/local-hostname')
+    local_ipv4 = get_instance_data('/local-ipv4')
+    data = {
+            'node_details': {
+                'name': local_hostname,
+                'metadata': {
+                    'ec2_instance_id': instance_id,
+                    'ec2_ipaddress': local_ipv4,
+                }
+            }
+           }
+    url = 'https://%s:%s/v1/node-token/%s' % (installerHostName, port, insertnode_request)
+    req = urllib2.Request(url)
+
+    req.add_header('Content-Type', 'application/json')
+
+    for nCount in range(5):
+        try:
+            response = urllib2.urlopen(req, json.dumps(data))
+            break
+        except urllib2.URLError as ex:
+            pass
+        except urllib2.HTTPError as ex:
+            if ex.code == 401:
+                raise Exception(
+                    'Invalid Tortuga webservice credentials')
+            elif ex.code == 404:
+                # Unrecoverable
+                raise Exception(
+                    'URI not found; invalid Tortuga webservice'
+                    ' configuration')
+
+            time.sleep(2 ** (nCount + 1))
+    else:
+        raise Exception('Unable to communicate with Tortuga webservice')
+
+    d = json.load(response)
+
+    if response.code != 200:
+        if 'error' in d:
+            errmsg = 'Tortuga webservice error: msg=[%s]' % (
+                error['message'])
+        else:
+            errmsg = 'Tortuga webservice internal error'
+
+        raise Exception(errmsg)
+    print(d)
+
 
 def tryCommand(command, good_return_values=(0,), retry_limit=0,
                time_limit=0, max_sleep_time=15000, sleep_interval=2000):
@@ -140,7 +216,7 @@ def updateResolver(domainName):
 
 
 def bootstrapPuppet():
-    runCommand('touch /tmp/puppet_bootstrap.log')
+    tryCommand('touch /tmp/puppet_bootstrap.log')
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
            ' --no-daemonize'
@@ -167,6 +243,8 @@ def main():
 
             tryCommand('hostnamectl set-hostname --static %s' % (fqdn))
 
+    if insertnode_request is not None:
+        addNode()
     tryCommand('setenforce permissive')
 
     # append /etc/hosts entry for installer

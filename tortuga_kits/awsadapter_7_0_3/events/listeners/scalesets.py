@@ -26,6 +26,11 @@ from tortuga.resources.types import (get_resource_request_class,
 from tortuga.resources.store import ResourceRequestStore
 from tortuga.resources.manager import ResourceRequestStoreManager
 
+from tortuga.resourceAdapter.resourceAdapterFactory import get_api
+from tortuga.resourceAdapter.resourceAdapter import ResourceAdapter
+
+from sqlalchemy.orm import sessionmaker
+from tortuga.web_service.database import dbm
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,13 @@ class AwsScaleSetListenerMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._store: ResourceRequestStore = ResourceRequestStoreManager.get()
+        Session = sessionmaker(bind=dbm.engine)
+        self.session = Session()
+
+    def get_resource_adapter(self) -> ResourceAdapter:
+        adapter = get_api('AWS')
+        adapter.session = self.session
+        return adapter
 
     def is_valid_request(self, resource_request: BaseResourceRequest) -> bool:
         #
@@ -102,7 +114,28 @@ class AwsScaleSetCreatedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set create request for AWS: %s', ssr.id)
+        logger.warning('Scale set create request for AWS: ', ssr.id)
+
+        # Load the resource adapter for this request
+        try:
+            adapter = self.get_resource_adapter()
+        except Exception as ex:
+            logger.warning('Resource adapter is not installed', ex)
+            self._store.delete(ssr.id)
+            return
+ 
+        try:
+            # Now create the scale set
+            adapter.create_scale_set(name=ssr.id,
+                minCount=ssr.min_nodes, maxCount=ssr.max_nodes,
+                desiredCount=ssr.desired_nodes,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name,
+                hardwareProfile=ssr.hardwareprofile_name,
+                softwareProfile=ssr.softwareprofile_name)
+        except Exception as ex:
+            logger.error("Error creating resource request", ex)
+            self._store.delete(ssr.id)
+        
 
 
 class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -117,7 +150,29 @@ class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set update request for AWS: %s', ssr.id)
+        logger.warning('Scale set update request for AWS: ', ssr.id)
+
+        # Load the resource adapter for this request
+        try:
+            adapter = self.get_resource_adapter()
+        except Exception as ex:
+            logger.warning('Resource adapter is not installed', ex)
+            return
+
+        try:
+            # Now create the scale set
+            adapter.update_scale_set(name=ssr.id,
+                minCount=ssr.min_nodes, maxCount=ssr.max_nodes,
+                desiredCount=ssr.desired_nodes,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name,
+                hardwareProfile=ssr.hardwareprofile_name,
+                softwareProfile=ssr.softwareprofile_name)
+        except Exception as ex:
+            logger.error("Error updating resource request", ex)
+            old = self.get_previous_scale_set_request(event)
+            self._store.save(old)
+
+
 
 
 class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -132,4 +187,20 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
         if ssr is None:
             return
 
-        logger.warning('Scale set delete request for AWS: %s', ssr.id)
+        logger.warning('Scale set delete request for AWS: ', ssr.id)
+
+        # Load the resource adapter for this request
+        try:
+            adapter = self.get_resource_adapter()
+        except Exception as ex:
+            logger.warning('Resource adapter is not installed', ex)
+            return
+
+        # Now create the scale set
+        try:
+            adapter.delete_scale_set(name=ssr.id,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name)
+        except Exception as ex:
+            logger.error("Error deleting resource request", ex)
+            self._store.save(ssr)
+
