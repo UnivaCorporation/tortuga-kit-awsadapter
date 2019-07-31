@@ -155,58 +155,6 @@ def installPuppet(vers):
     if not _isPackageInstalled('puppet-agent'):
         _installPackage('puppet-agent')
 
-
-def setHostName():
-    url = 'https://%s:%s/v1/identify-node' % (installerIpAddress, port)
-
-    req = urllib2.Request(url)
-
-    req.add_header(
-        'Authorization',
-        'Basic ' + base64.standard_b64encode(
-            '%s:%s' % (cfmUser, cfmPassword)))
-
-    for nCount in range(5):
-        try:
-            response = urllib2.urlopen(req)
-            break
-        except urllib2.URLError as ex:
-            pass
-        except urllib2.HTTPError as ex:
-            if ex.code == 401:
-                raise Exception(
-                    'Invalid Tortuga webservice credentials')
-            elif ex.code == 404:
-                # Unrecoverable
-                raise Exception(
-                    'URI not found; invalid Tortuga webservice'
-                    ' configuration')
-
-            time.sleep(2 ** (nCount + 1))
-    else:
-        raise Exception('Unable to communicate with Tortuga webservice')
-
-    d = json.load(response)
-
-    if response.code != 200:
-        if 'error' in d:
-            errmsg = 'Tortuga webservice error: msg=[%s]' % (
-                error['message'])
-        else:
-            errmsg = 'Tortuga webservice internal error'
-
-        raise Exception(errmsg)
-
-    h = d['node']['name']
-
-    tryCommand('hostname %s' % h)
-
-    with open('/etc/sysconfig/network', 'a') as fp:
-        fp.write('HOSTNAME=\"%s\"\n' % h)
-
-    return h
-
-
 def updateResolver(domainName):
     with open('/etc/resolv.conf', 'w') as fp:
         if domainName:
