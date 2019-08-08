@@ -214,6 +214,9 @@ def main():
 
         vers = vals[1].split('.')[0]
 
+    if not _isPackageInstalled('git'):
+        _installPackage('git')
+
     installPuppet(vers)
 
     bootstrapPuppet()
