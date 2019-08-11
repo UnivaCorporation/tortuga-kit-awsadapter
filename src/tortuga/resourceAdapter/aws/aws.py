@@ -675,7 +675,8 @@ class Aws(ResourceAdapter):
               softwareProfile: str,
               minCount: int,
               maxCount: int,
-              desiredCount: int):
+              desiredCount: int,
+              adapter_args: dict):
             
         """
         Create a new scale set
@@ -699,6 +700,7 @@ class Aws(ResourceAdapter):
             encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
         )
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         spot_price=adapter_args.get('spot_request',{}).get('price'),
                          **lcArgs)
         autoconn.create_launch_configuration(lc)
         try:
@@ -720,7 +722,8 @@ class Aws(ResourceAdapter):
               softwareProfile: str,
               minCount: int,
               maxCount: int,
-              desiredCount: int):
+              desiredCount: int,
+              adapter_args: dict):
 
         """
         Update an existing scale set
@@ -744,6 +747,7 @@ class Aws(ResourceAdapter):
             encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
         )
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         spot_price=adapter_args.get('spot_request',{}).get('price'),
                          **lcArgs)
         try:
             ag = AutoScalingGroup(group_name=name,
