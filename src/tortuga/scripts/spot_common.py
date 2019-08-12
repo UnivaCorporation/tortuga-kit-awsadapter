@@ -66,14 +66,9 @@ class SpotInstanceCommonMixin:
         """
         Return list of resource adapter configuration dicts
         """
-        resourceAdaterConfigurationWsApi = ResourceAdapterConfigurationWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-        )
+        resourceAdapterConfigurationWsApi = self.configureClient(ResourceAdapterConfigurationWsApi)
 
-        adapter_cfg = resourceAdaterConfigurationWsApi.get(
+        adapter_cfg = resourceAdapterConfigurationWsApi.get(
             'AWS',
             'Default',
         )['configuration']
@@ -81,7 +76,7 @@ class SpotInstanceCommonMixin:
         result = self.__get_adapter_cfg_as_dict(adapter_cfg)
 
         if name != 'Default':
-            resource_adapter_cfg = resourceAdaterConfigurationWsApi.get(
+            resource_adapter_cfg = resourceAdapterConfigurationWsApi.get(
                 'AWS',
                 name,
             )['configuration']

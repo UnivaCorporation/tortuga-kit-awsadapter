@@ -1090,11 +1090,15 @@ class Aws(ResourceAdapter):
                 if configDict.get('override_dns_domain', None):
                     dnsdomain = configDict.get('dns_domain', None)
 
-
+                insertnode_request = {
+                   'softwareProfile': dbSoftwareProfile.name,
+                   'hardwareProfile': dbHardwareProfile.name,
+                }
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
                     configDict,
+                    insertnode_request=encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
                 )
 
                 resv = conn.request_spot_instances(
@@ -1146,7 +1150,6 @@ class Aws(ResourceAdapter):
                         resource_adapter_configuration=adapter_cfg
                     )
 
-                    # Post 'add' message onto message queue
                     self.__post_add_spot_instance_request(
                         session,
                         resv,
@@ -1154,7 +1157,6 @@ class Aws(ResourceAdapter):
                         dbSoftwareProfile,
                         cfgname=cfgname,
                     )
-
                 # this may be redundant...
                 session.commit()
         except boto.exception.EC2ResponseError as exc:
@@ -1164,6 +1166,7 @@ class Aws(ResourceAdapter):
         except Exception:  # pylint: disable=broad-except
             self._logger.exception(
                 'Fatal error making spot instance request')
+            raise
 
         return nodes
 
@@ -1172,7 +1175,8 @@ class Aws(ResourceAdapter):
                 conn: EC2Connection,
                 addNodesRequest: dict,
                 configDict: Dict[str, Any],
-                node: Optional[Node] = None
+                node: Optional[Node] = None,
+                insertnode_request: Optional[bytes] = None
             ) -> Dict[str, Any]:
         """
         Create dict of args for boto request_spot_instances() API
@@ -1183,7 +1187,8 @@ class Aws(ResourceAdapter):
             conn,
             configDict,
             node=node,
-            addNodesRequest=addNodesRequest
+            addNodesRequest=addNodesRequest,
+            insertnode_request=insertnode_request
         )
 
         args['count'] = addNodesRequest.get('count', 1)
@@ -2098,7 +2103,8 @@ fqdn: %s
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],
             node: Optional[Node] = None, *,
-            addNodesRequest: Optional[dict] = None) -> Dict[str, Any]:
+            addNodesRequest: Optional[dict] = None,
+            insertnode_request: Optional[bytes] = None) -> Dict[str, Any]:
         """
         Return key-value pairs of arguments for passing to launch API
         """
@@ -2117,7 +2123,8 @@ fqdn: %s
             args['placement_group'] = value
 
         if configDict['cloud_init']:
-            args['user_data'] = self.__get_user_data(configDict, node=node)
+            args['user_data'] = self.__get_user_data(configDict, node=node,
+                                  insertnode_request=insertnode_request)
 
         if 'aki' in configDict and configDict['aki']:
             # Override kernel used for new instances

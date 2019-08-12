@@ -126,16 +126,12 @@ class RequestSpotInstancesCLI(TortugaCli, SpotInstanceCommonMixin):
             addNodesRequest['resource_adapter_configuration'] = \
                 self.getArgs().resource_adapter_configuration
 
-        AddHostWsApi().addNodes(addNodesRequest)
+        addHostWsApi = self.configureClient(AddHostWsApi)
+        addHostWsApi.addNodes(addNodesRequest)
 
     def __get_adapter_cfg(self, adapter_cfg_profile: Optional[str]) -> dict:
         if adapter_cfg_profile is None:
-            hardwareProfileWsApi = HardwareProfileWsApi(
-                    username=self.getUsername(),
-                    password=self.getPassword(),
-                    baseurl=self.getUrl(),
-                    verify=self._verify,
-            )
+            hardwareProfileWsApi = self.configureClient(HardwareProfileWsApi)
 
             hardware_profile = hardwareProfileWsApi.getHardwareProfile(
                 self.getArgs().hardware_profile,
