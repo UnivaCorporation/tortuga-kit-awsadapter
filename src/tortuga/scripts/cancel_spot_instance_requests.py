@@ -15,7 +15,6 @@
 from typing import Dict, List, Optional, Tuple
 
 import boto3
-from tortuga.wsapi.metadataWsApi import MetadataWsApi
 from tortuga.wsapi.nodeWsApi import NodeWsApi
 
 # from .spot_common import SpotInstanceCommonMixin
@@ -69,20 +68,8 @@ class CancelSpotInstanceRequestsCLI(CommonSpotInstanceCLI):
         """
         """
 
-        metadataWsApi = MetadataWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-        )
 
-        nodeWsApi = NodeWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-
-        )
+        nodeWsApi = self.configureClient(NodeWsApi)
 
         ec2_connection_cache: Dict[str, dict] = {}
 
@@ -144,7 +131,7 @@ class CancelSpotInstanceRequestsCLI(CommonSpotInstanceCLI):
             )
 
             for sir_id in sir_ids:
-                metadataWsApi.deleteMetadata(filter_key=sir_id)
+                self.metadataWsApi.deleteMetadata(filter_key=sir_id)
 
             if not self.getArgs().terminate:
                 # '--terminate' flag not specified; continue
