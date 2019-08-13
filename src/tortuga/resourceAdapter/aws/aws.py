@@ -862,7 +862,7 @@ class Aws(ResourceAdapter):
                 return nodes
 
         if 'spot_instance_request' in addNodesRequest or \
-            launch_request.configDict['enable_spot']:
+            launch_request.configDict.get('enable_spot', None):
             # handle EC2 spot instance request
             return self.__request_spot_instances(
                 dbSession, launch_request
