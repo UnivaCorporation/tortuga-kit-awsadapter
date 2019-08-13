@@ -52,58 +52,6 @@ class tortuga_kit_awsadapter::management::post_install {
   ~> Service['celery']
 }
 
-class tortuga_kit_awsadapter::management::config {
-  require tortuga::installer::apache
-  require tortuga_kit_awsadapter::management::post_install
-
-  include tortuga::config
-
-  $instroot = $tortuga::config::instroot
-
-  if versioncmp($::operatingsystemmajrelease, '7') < 0 {
-    file { '/etc/rc.d/init.d/awsspotd':
-      content => template('tortuga_kit_awsadapter/awsspotd.sysv.erb'),
-      mode    => '0755',
-    }
-    -> exec { 'install awsspotd initscript':
-      command => '/sbin/chkconfig --add awsspotd',
-      unless  => '/sbin/chkconfig --list awsspotd',
-    }
-  } elsif versioncmp($::operatingsystemmajrelease, '7') >= 0 {
-    # Install systemd service file on RHEL/CentOS 7.x
-
-    file { '/usr/lib/systemd/system/awsspotd.service':
-      content => template('tortuga_kit_awsadapter/awsspotd.service.erb'),
-      mode    => '0644',
-    } ~>
-    exec { 'refresh_after_installing_awsspotd_service':
-      command     => '/bin/systemctl daemon-reload',
-      refreshonly => true,
-    }
-  }
-
-  file { '/etc/sysconfig/awsspotd':
-      source => 'puppet:///modules/tortuga_kit_awsadapter/awsspotd.sysconfig',
-  }
-}
-
-class tortuga_kit_awsadapter::management::service {
-  require tortuga_kit_awsadapter::management::config
-
-  if versioncmp($::operatingsystemmajrelease, '7') < 0 {
-    $svcname = 'awsspotd'
-  } else {
-    $svcname = 'awsspotd.service'
-  }
-
-  service { $svcname:
-    # ensure     => running,
-    # enable     => true,
-    hasstatus  => true,
-    hasrestart => true,
-  }
-}
-
 class tortuga_kit_awsadapter::management {
   include tortuga_kit_awsadapter::config
 
@@ -111,11 +59,6 @@ class tortuga_kit_awsadapter::management {
 
   contain tortuga_kit_awsadapter::management::package
   contain tortuga_kit_awsadapter::management::post_install
-  contain tortuga_kit_awsadapter::management::config
-  contain tortuga_kit_awsadapter::management::service
-
-  Class['tortuga_kit_awsadapter::management::config'] ~>
-    Class['tortuga_kit_awsadapter::management::service']
 
   Class['tortuga_kit_awsadapter::management::post_install'] ~>
     Class['tortuga_kit_base::installer::webservice::server']

@@ -292,13 +292,28 @@ class Aws(ResourceAdapter):
         ),
 
         #
+        # Spot
+        #
+        'enable_spot': settings.BooleanSetting(
+            display_name='Enable spot instance requests.',
+            group='Spot',
+            group_order=4
+        ),
+        'spot_price': settings.FloatSetting(
+            display_name='Price when bidding on spot instances',
+            group='Spot',
+            group_order=4,
+            equires=['enable_spot']
+        ),
+
+        #
         # API
         #
         'endpoint': settings.StringSetting(
             display_name='API endpoint',
             description='AWS (or compatible) API endpoint',
             group='API',
-            group_order=4
+            group_order=5
         ),
         'proxy_host': settings.StringSetting(
             display_name='Proxy host used for AWS communication',
@@ -307,17 +322,17 @@ class Aws(ResourceAdapter):
         'proxy_port': settings.IntegerSetting(
             display_name='Proxy port used for AWS communication',
             group='API',
-            group_order=4
+            group_order=5
         ),
         'proxy_user': settings.StringSetting(
             display_name='Proxy username used for AWS communication',
             group='API',
-            group_order=4
+            group_order=5
         ),
         'proxy_pass': settings.StringSetting(
             display_name='Proxy password used for AWS communication',
             group='API',
-            group_order=4,
+            group_order=5,
             secret=True
         ),
 
@@ -675,7 +690,8 @@ class Aws(ResourceAdapter):
               softwareProfile: str,
               minCount: int,
               maxCount: int,
-              desiredCount: int):
+              desiredCount: int,
+              adapter_args: dict):
             
         """
         Create a new scale set
@@ -698,7 +714,11 @@ class Aws(ResourceAdapter):
             configDict,
             encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
         )
+        spot_price = adapter_args.get('spot_request',{}).get('price')
+        if spot_price is None:
+            spot_price = configDict['spot_price']
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         spot_price=spot_price,
                          **lcArgs)
         autoconn.create_launch_configuration(lc)
         try:
@@ -720,7 +740,8 @@ class Aws(ResourceAdapter):
               softwareProfile: str,
               minCount: int,
               maxCount: int,
-              desiredCount: int):
+              desiredCount: int,
+              adapter_args: dict):
 
         """
         Update an existing scale set
@@ -743,7 +764,11 @@ class Aws(ResourceAdapter):
             configDict,
             encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
         )
+        spot_price = adapter_args.get('spot_request',{}).get('price')
+        if spot_price is None:
+            spot_price = configDict['spot_price']
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
+                         spot_price=spot_price,
                          **lcArgs)
         try:
             ag = AutoScalingGroup(group_name=name,
@@ -796,12 +821,6 @@ class Aws(ResourceAdapter):
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
 
-        if 'spot_instance_request' in addNodesRequest:
-            # handle EC2 spot instance request
-            return self.__request_spot_instances(
-                dbSession, launch_request
-            )
-
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
             # Instances already exist, create node records
@@ -814,6 +833,13 @@ class Aws(ResourceAdapter):
                 dbSession.commit()
 
                 return nodes
+
+        if 'spot_instance_request' in addNodesRequest or \
+            launch_request.configDict['enable_spot']:
+            # handle EC2 spot instance request
+            return self.__request_spot_instances(
+                dbSession, launch_request
+            )
 
         nodes = self.__add_active_nodes(dbSession, launch_request)
 
@@ -1077,6 +1103,10 @@ class Aws(ResourceAdapter):
 
         self._validate_ec2_launch_args(conn, configDict)
 
+        spot_price = addNodesRequest.get('spot_instance_request',{}).get('price')
+        if spot_price is None:
+            spot_price = configDict['spot_price']
+
         try:
             if configDict['use_instance_hostname']:
                 nodes: List[Node] = []
@@ -1086,15 +1116,19 @@ class Aws(ResourceAdapter):
                 if configDict.get('override_dns_domain', None):
                     dnsdomain = configDict.get('dns_domain', None)
 
-
+                insertnode_request = {
+                   'softwareProfile': dbSoftwareProfile.name,
+                   'hardwareProfile': dbHardwareProfile.name,
+                }
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
                     configDict,
+                    insertnode_request=encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
                 )
 
                 resv = conn.request_spot_instances(
-                    addNodesRequest['spot_instance_request']['price'],
+                    spot_price,
                     configDict['ami'],
                     **args,
                 )
@@ -1125,7 +1159,7 @@ class Aws(ResourceAdapter):
                         node=node)
 
                     resv = conn.request_spot_instances(
-                        addNodesRequest['spot_instance_request']['price'],
+                        spot_price,
                         configDict['ami'], **args)
 
                     # Update instance cache
@@ -1142,7 +1176,6 @@ class Aws(ResourceAdapter):
                         resource_adapter_configuration=adapter_cfg
                     )
 
-                    # Post 'add' message onto message queue
                     self.__post_add_spot_instance_request(
                         session,
                         resv,
@@ -1150,7 +1183,6 @@ class Aws(ResourceAdapter):
                         dbSoftwareProfile,
                         cfgname=cfgname,
                     )
-
                 # this may be redundant...
                 session.commit()
         except boto.exception.EC2ResponseError as exc:
@@ -1160,6 +1192,7 @@ class Aws(ResourceAdapter):
         except Exception:  # pylint: disable=broad-except
             self._logger.exception(
                 'Fatal error making spot instance request')
+            raise
 
         return nodes
 
@@ -1168,7 +1201,8 @@ class Aws(ResourceAdapter):
                 conn: EC2Connection,
                 addNodesRequest: dict,
                 configDict: Dict[str, Any],
-                node: Optional[Node] = None
+                node: Optional[Node] = None,
+                insertnode_request: Optional[bytes] = None
             ) -> Dict[str, Any]:
         """
         Create dict of args for boto request_spot_instances() API
@@ -1179,7 +1213,8 @@ class Aws(ResourceAdapter):
             conn,
             configDict,
             node=node,
-            addNodesRequest=addNodesRequest
+            addNodesRequest=addNodesRequest,
+            insertnode_request=insertnode_request
         )
 
         args['count'] = addNodesRequest.get('count', 1)
@@ -2094,7 +2129,8 @@ fqdn: %s
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],
             node: Optional[Node] = None, *,
-            addNodesRequest: Optional[dict] = None) -> Dict[str, Any]:
+            addNodesRequest: Optional[dict] = None,
+            insertnode_request: Optional[bytes] = None) -> Dict[str, Any]:
         """
         Return key-value pairs of arguments for passing to launch API
         """
@@ -2113,7 +2149,8 @@ fqdn: %s
             args['placement_group'] = value
 
         if configDict['cloud_init']:
-            args['user_data'] = self.__get_user_data(configDict, node=node)
+            args['user_data'] = self.__get_user_data(configDict, node=node,
+                                  insertnode_request=insertnode_request)
 
         if 'aki' in configDict and configDict['aki']:
             # Override kernel used for new instances
@@ -2724,6 +2761,7 @@ def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) \
     Parse ip address argument from addNodesRequest
     """
 
+    private_ip_address = None
     if addNodesRequest and addNodesRequest['count'] == 1 and \
             'nodeDetails' in addNodesRequest:
         node_spec = addNodesRequest['nodeDetails'][0]
@@ -2732,7 +2770,5 @@ def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) \
                 node_spec['nics'] and \
                 'ip' in node_spec['nics'][0]:
             private_ip_address = node_spec['nics'][0]['ip']
-    else:
-        private_ip_address = None
 
     return private_ip_address

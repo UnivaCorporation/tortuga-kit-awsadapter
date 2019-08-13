@@ -32,12 +32,7 @@ class CommonSpotInstanceCLI(TortugaCli, SpotInstanceCommonMixin):
     @property
     def metadataWsApi(self):
         if self.__metadataWsApi is None:
-            self.__metadataWsApi = MetadataWsApi(
-                username=self.getUsername(),
-                password=self.getPassword(),
-                baseurl=self.getUrl(),
-                verify=self._verify,
-            )
+            self.__metadataWsApi = self.configureClient(MetadataWsApi)
 
         return self.__metadataWsApi
 
@@ -87,14 +82,9 @@ class CommonSpotInstanceCLI(TortugaCli, SpotInstanceCommonMixin):
         """
         Return list of resource adapter configuration dicts
         """
-        resourceAdaterConfigurationWsApi = ResourceAdapterConfigurationWsApi(
-            username=self.getUsername(),
-            password=self.getPassword(),
-            baseurl=self.getUrl(),
-            verify=self._verify,
-        )
+        resourceAdapterConfigurationWsApi = self.configureClient(ResourceAdapterConfigurationWsApi)
 
-        adapter_cfg = resourceAdaterConfigurationWsApi.get(
+        adapter_cfg = resourceAdapterConfigurationWsApi.get(
             'AWS',
             'Default',
         )['configuration']
@@ -102,7 +92,7 @@ class CommonSpotInstanceCLI(TortugaCli, SpotInstanceCommonMixin):
         result = self.__get_adapter_cfg_as_dict(adapter_cfg)
 
         if name != 'Default':
-            resource_adapter_cfg = resourceAdaterConfigurationWsApi.get(
+            resource_adapter_cfg = resourceAdapterConfigurationWsApi.get(
                 'AWS',
                 name,
             )['configuration']
