@@ -394,7 +394,6 @@ class Aws(ResourceAdapter):
         'cost_bucket_prefix': settings.StringSetting(
             display_name='Bucket Prefix',
             group='Cost Sync',
-            default='reports',
             group_order=9,
             required=True,
             requires=['cost_sync_enabled'],
