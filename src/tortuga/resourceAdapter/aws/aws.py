@@ -312,7 +312,7 @@ class Aws(ResourceAdapter):
             display_name='Price when bidding on spot instances',
             group='Spot',
             group_order=4,
-            equires=['enable_spot']
+            requires=['enable_spot']
         ),
 
         #
@@ -390,25 +390,16 @@ class Aws(ResourceAdapter):
         self.__runningOnEc2 = None
         self.__installer_ip: Optional[str] = None
 
-    def __get_access_keys(self, configDict:  Dict[str, Any]):
-        if configDict.get('aws_credential_vault_path'):
-            # Check in vault for our keys
-            record = self._cm.loadFromVault(configDict.get('aws_credential_vault_path'))
-            if record is not None:
-                aws_access_key_id = record.get('data',{}).get('aws_access_key_id')
-                aws_secret_access_key = record.get('data',{}).get('aws_secret_access_key')
-                return aws_access_key_id, aws_secret_access_key
-        return configDict.get('awsaccesskey'), configDict.get('awssecretkey')
-
     def getConnectionArgs(self, configDict: Dict[str, Any]) -> Dict[str, Any]:
         connectionArgs = {}
 
         # only include access/secret key if defined in adapter config
-        access_key, secret_access_key = self.__get_access_keys(configDict)
+        access_key = configDict.get('awsaccesskey')
         if access_key is not None:
             connectionArgs['aws_access_key_id'] = access_key
 
-            connectionArgs['aws_secret_access_key'] = secret_access_key
+            connectionArgs['aws_secret_access_key'] = \
+                configDict.get('awssecretkey')
 
         if 'proxy_host' in configDict:
             self._logger.debug('Using proxy for AWS (%s:%s)' % (
@@ -521,6 +512,15 @@ class Aws(ResourceAdapter):
             self._logger.debug(
                 'Using DNS domain {0} for compute nodes'.format(
                     config['dns_domain']))
+        #
+        # Credentials from vault
+        #
+        if config.get('aws_credential_vault_path'):
+            # Check in vault for our keys
+            record = self._cm.loadFromVault(config.get('aws_credential_vault_path'))
+            if record is not None:
+                config['awsaccesskey'] = record.get('data',{}).get('aws_access_key_id')
+                config['awssecretkey'] = record.get('data',{}).get('aws_secret_access_key')
 
     def __get_vpc_default_domain(self, config: Dict[str, Any]) -> str: \
             # pylint: disable=no-self-use
@@ -531,12 +531,11 @@ class Aws(ResourceAdapter):
             ConfigurationError
         """
 
-        access_key, secret_access_key = self.__get_access_keys(configDict)
         try:
             vpcconn = boto.vpc.connect_to_region(
                 config['region'],
-                aws_access_key_id=access_key,
-                aws_secret_access_key=secret_access_key,
+                aws_access_key_id=config.get('awsaccesskey'),
+                aws_secret_access_key=config.get('awssecretkey')
             )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(
@@ -854,7 +853,7 @@ class Aws(ResourceAdapter):
                 return nodes
 
         if 'spot_instance_request' in addNodesRequest or \
-            launch_request.configDict['enable_spot']:
+            launch_request.configDict.get('enable_spot'):
             # handle EC2 spot instance request
             return self.__request_spot_instances(
                 dbSession, launch_request
