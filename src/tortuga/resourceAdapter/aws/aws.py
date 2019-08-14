@@ -98,7 +98,8 @@ class Aws(ResourceAdapter):
             description='AWS Access key ID',
             group='Authentication',
             group_order=1,
-            requires=['awssecretkey']
+            requires=['awssecretkey'],
+            mutually_exclusive=['aws_credential_vault_path'],
         ),
         'awssecretkey': settings.StringSetting(
             secret=True,
@@ -106,8 +107,16 @@ class Aws(ResourceAdapter):
             description='AWS secret access key',
             group='Authentication',
             group_order=1,
-            requires=['awsaccesskey']
+            requires=['awsaccesskey'],
+            mutually_exclusive=['aws_credential_vault_path'],
         ),
+        'aws_credential_vault_path' : settings.StringSetting(
+            display_name='Credential Vault Path',
+            description='Path to AWS credentials stored in Vault.',
+            group='Authentication',
+            group_order=1,
+            mutually_exclusive=['awssecretkey','awsaccesskey'],
+         ),
         'iam_instance_profile_name': settings.StringSetting(
             display_name='IAM instance profile',
             description='IAM Instance Profile (IIP) name to associate with '
@@ -381,16 +390,25 @@ class Aws(ResourceAdapter):
         self.__runningOnEc2 = None
         self.__installer_ip: Optional[str] = None
 
+    def __get_access_keys(self, configDict:  Dict[str, Any]):
+        if configDict.get('aws_credential_vault_path'):
+            # Check in vault for our keys
+            record = self._cm.loadFromVault(configDict.get('aws_credential_vault_path'))
+            if record is not None:
+                aws_access_key_id = record.get('data',{}).get('aws_access_key_id')
+                aws_secret_access_key = record.get('data',{}).get('aws_secret_access_key')
+                return aws_access_key_id, aws_secret_access_key
+        return configDict.get('awsaccesskey'), configDict.get('awssecretkey')
+
     def getConnectionArgs(self, configDict: Dict[str, Any]) -> Dict[str, Any]:
         connectionArgs = {}
 
         # only include access/secret key if defined in adapter config
-        access_key = configDict.get('awsaccesskey')
+        access_key, secret_access_key = self.__get_access_keys(configDict)
         if access_key is not None:
             connectionArgs['aws_access_key_id'] = access_key
 
-            connectionArgs['aws_secret_access_key'] = \
-                configDict.get('awssecretkey')
+            connectionArgs['aws_secret_access_key'] = secret_access_key
 
         if 'proxy_host' in configDict:
             self._logger.debug('Using proxy for AWS (%s:%s)' % (
@@ -406,7 +424,7 @@ class Aws(ResourceAdapter):
             if 'proxy_pass' in configDict:
                 connectionArgs['proxy_pass'] = configDict['proxy_pass']
 
-        return connectionArgs        
+        return connectionArgs
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         """
@@ -513,11 +531,12 @@ class Aws(ResourceAdapter):
             ConfigurationError
         """
 
+        access_key, secret_access_key = self.__get_access_keys(configDict)
         try:
             vpcconn = boto.vpc.connect_to_region(
                 config['region'],
-                aws_access_key_id=config.get('awsaccesskey'),
-                aws_secret_access_key=config.get('awssecretkey')
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_access_key,
             )
         except boto.exception.NoAuthHandlerFound:
             raise ConfigurationError(
@@ -683,7 +702,7 @@ class Aws(ResourceAdapter):
                 if not ex.message.startswith("Launch configuration name not found"):
                     raise
 
-    def create_scale_set(self, 
+    def create_scale_set(self,
               name: str,
               resourceAdapterProfile: str,
               hardwareProfile: str,
@@ -692,7 +711,7 @@ class Aws(ResourceAdapter):
               maxCount: int,
               desiredCount: int,
               adapter_args: dict):
-            
+
         """
         Create a new scale set
 
@@ -799,7 +818,7 @@ class Aws(ResourceAdapter):
 
         result = super().start(addNodesRequest, dbSession, dbHardwareProfile,
                                dbSoftwareProfile)
-        
+
         # Get connection to AWS
         launch_request = LaunchRequest(
             hardwareprofile=dbHardwareProfile,
@@ -846,7 +865,7 @@ class Aws(ResourceAdapter):
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
         self.addHostApi.clear_session_nodes(nodes)
-        
+
         result.extend(nodes)
 
         return result
@@ -1355,7 +1374,7 @@ class Aws(ResourceAdapter):
         }
 
     def __get_common_user_data_content(
-            self, user_data_settings: Dict[str, str], 
+            self, user_data_settings: Dict[str, str],
             insertnode_request: Optional[bytes] = None) \
             -> str:  # pylint: disable=no-self-use
         settings =  """\
@@ -2103,7 +2122,7 @@ fqdn: %s
                 configDict['block_device_map']
                 if 'block_device_map' in configDict else None,
                 configDict['ami'])
-         
+
         args['block_device_mappings'] = [mappings]
 
         if 'ebs_optimized' in configDict:
