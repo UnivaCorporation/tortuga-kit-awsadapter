@@ -99,7 +99,7 @@ class Aws(ResourceAdapter):
             group='Authentication',
             group_order=1,
             requires=['awssecretkey'],
-            mutually_exclusive=['aws_credential_vault_path'],
+            mutually_exclusive=['credential_vault_path'],
         ),
         'awssecretkey': settings.StringSetting(
             secret=True,
@@ -108,9 +108,9 @@ class Aws(ResourceAdapter):
             group='Authentication',
             group_order=1,
             requires=['awsaccesskey'],
-            mutually_exclusive=['aws_credential_vault_path'],
+            mutually_exclusive=['credential_vault_path'],
         ),
-        'aws_credential_vault_path' : settings.StringSetting(
+        'credential_vault_path' : settings.StringSetting(
             display_name='Credential Vault Path',
             description='Path to AWS credentials stored in Vault.',
             group='Authentication',
@@ -515,9 +515,9 @@ class Aws(ResourceAdapter):
         #
         # Credentials from vault
         #
-        if config.get('aws_credential_vault_path'):
+        if config.get('credential_vault_path'):
             # Check in vault for our keys
-            record = self._cm.loadFromVault(config.get('aws_credential_vault_path'))
+            record = self._cm.loadFromVault(config.get('credential_vault_path'))
             if record is not None:
                 config['awsaccesskey'] = record.get('data',{}).get('aws_access_key_id')
                 config['awssecretkey'] = record.get('data',{}).get('aws_secret_access_key')
