@@ -380,13 +380,13 @@ class Aws(ResourceAdapter):
             display_name='Cost Synchronization Enabled',
             group='Cost Sync',
             group_order=9,
-            description='Enable AWS cost synchronization'
+            description='Enable AWS cost synchronization',
+            requires=['cost_bucket_name', 'cost_bucket_prefix']
         ),
         'cost_bucket_name': settings.StringSetting(
             display_name='Bucket Name',
             group='Cost Sync',
             group_order=9,
-            required=True,
             requires=['cost_sync_enabled'],
             description='The name of the AWS bucket where cost '
                         'reports are saved'
@@ -395,7 +395,6 @@ class Aws(ResourceAdapter):
             display_name='Bucket Prefix',
             group='Cost Sync',
             group_order=9,
-            required=True,
             requires=['cost_sync_enabled'],
             description='File path prefix for cost reports'
         ),
