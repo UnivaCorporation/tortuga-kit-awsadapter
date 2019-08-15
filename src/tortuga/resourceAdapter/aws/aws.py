@@ -734,7 +734,7 @@ class Aws(ResourceAdapter):
         )
         spot_price = adapter_args.get('spot_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
                          spot_price=spot_price,
                          **lcArgs)
@@ -784,7 +784,7 @@ class Aws(ResourceAdapter):
         )
         spot_price = adapter_args.get('spot_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
                          spot_price=spot_price,
                          **lcArgs)
@@ -1123,7 +1123,7 @@ class Aws(ResourceAdapter):
 
         spot_price = addNodesRequest.get('spot_instance_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
 
         try:
             if configDict['use_instance_hostname']:
