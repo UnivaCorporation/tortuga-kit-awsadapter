@@ -98,7 +98,8 @@ class Aws(ResourceAdapter):
             description='AWS Access key ID',
             group='Authentication',
             group_order=1,
-            requires=['awssecretkey']
+            requires=['awssecretkey'],
+            mutually_exclusive=['credential_vault_path'],
         ),
         'awssecretkey': settings.StringSetting(
             secret=True,
@@ -106,8 +107,16 @@ class Aws(ResourceAdapter):
             description='AWS secret access key',
             group='Authentication',
             group_order=1,
-            requires=['awsaccesskey']
+            requires=['awsaccesskey'],
+            mutually_exclusive=['credential_vault_path'],
         ),
+        'credential_vault_path' : settings.StringSetting(
+            display_name='Credential Vault Path',
+            description='Path to AWS credentials stored in Vault.',
+            group='Authentication',
+            group_order=1,
+            mutually_exclusive=['awssecretkey','awsaccesskey'],
+         ),
         'iam_instance_profile_name': settings.StringSetting(
             display_name='IAM instance profile',
             description='IAM Instance Profile (IIP) name to associate with '
@@ -303,7 +312,7 @@ class Aws(ResourceAdapter):
             display_name='Price when bidding on spot instances',
             group='Spot',
             group_order=4,
-            equires=['enable_spot']
+            requires=['enable_spot']
         ),
 
         #
@@ -406,7 +415,7 @@ class Aws(ResourceAdapter):
             if 'proxy_pass' in configDict:
                 connectionArgs['proxy_pass'] = configDict['proxy_pass']
 
-        return connectionArgs        
+        return connectionArgs
 
     def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
         """
@@ -503,6 +512,15 @@ class Aws(ResourceAdapter):
             self._logger.debug(
                 'Using DNS domain {0} for compute nodes'.format(
                     config['dns_domain']))
+        #
+        # Credentials from vault
+        #
+        if config.get('credential_vault_path'):
+            # Check in vault for our keys
+            record = self._cm.loadFromVault(config.get('credential_vault_path'))
+            if record is not None:
+                config['awsaccesskey'] = record.get('data',{}).get('aws_access_key_id')
+                config['awssecretkey'] = record.get('data',{}).get('aws_secret_access_key')
 
     def __get_vpc_default_domain(self, config: Dict[str, Any]) -> str: \
             # pylint: disable=no-self-use
@@ -683,7 +701,7 @@ class Aws(ResourceAdapter):
                 if not ex.message.startswith("Launch configuration name not found"):
                     raise
 
-    def create_scale_set(self, 
+    def create_scale_set(self,
               name: str,
               resourceAdapterProfile: str,
               hardwareProfile: str,
@@ -692,7 +710,7 @@ class Aws(ResourceAdapter):
               maxCount: int,
               desiredCount: int,
               adapter_args: dict):
-            
+
         """
         Create a new scale set
 
@@ -716,7 +734,7 @@ class Aws(ResourceAdapter):
         )
         spot_price = adapter_args.get('spot_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
                          spot_price=spot_price,
                          **lcArgs)
@@ -766,7 +784,7 @@ class Aws(ResourceAdapter):
         )
         spot_price = adapter_args.get('spot_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
         lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
                          spot_price=spot_price,
                          **lcArgs)
@@ -799,7 +817,7 @@ class Aws(ResourceAdapter):
 
         result = super().start(addNodesRequest, dbSession, dbHardwareProfile,
                                dbSoftwareProfile)
-        
+
         # Get connection to AWS
         launch_request = LaunchRequest(
             hardwareprofile=dbHardwareProfile,
@@ -835,7 +853,7 @@ class Aws(ResourceAdapter):
                 return nodes
 
         if 'spot_instance_request' in addNodesRequest or \
-            launch_request.configDict['enable_spot']:
+            launch_request.configDict.get('enable_spot'):
             # handle EC2 spot instance request
             return self.__request_spot_instances(
                 dbSession, launch_request
@@ -846,7 +864,7 @@ class Aws(ResourceAdapter):
         # This is a necessary evil for the time being, until there's
         # a proper context manager implemented.
         self.addHostApi.clear_session_nodes(nodes)
-        
+
         result.extend(nodes)
 
         return result
@@ -1105,7 +1123,7 @@ class Aws(ResourceAdapter):
 
         spot_price = addNodesRequest.get('spot_instance_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict['spot_price']
+            spot_price = configDict.get('spot_price')
 
         try:
             if configDict['use_instance_hostname']:
@@ -1355,7 +1373,7 @@ class Aws(ResourceAdapter):
         }
 
     def __get_common_user_data_content(
-            self, user_data_settings: Dict[str, str], 
+            self, user_data_settings: Dict[str, str],
             insertnode_request: Optional[bytes] = None) \
             -> str:  # pylint: disable=no-self-use
         settings =  """\
@@ -2103,7 +2121,7 @@ fqdn: %s
                 configDict['block_device_map']
                 if 'block_device_map' in configDict else None,
                 configDict['ami'])
-         
+
         args['block_device_mappings'] = [mappings]
 
         if 'ebs_optimized' in configDict:
