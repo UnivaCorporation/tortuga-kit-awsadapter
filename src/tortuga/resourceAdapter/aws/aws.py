@@ -381,6 +381,32 @@ class Aws(ResourceAdapter):
             default='300',
             advanced=True
         ),
+
+        #
+        # Settings for Navops Launch 2.0
+        #
+        'cost_sync_enabled': settings.BooleanSetting(
+            display_name='Cost Synchronization Enabled',
+            group='Cost Sync',
+            group_order=9,
+            description='Enable AWS cost synchronization',
+            requires=['cost_bucket_name', 'cost_bucket_prefix']
+        ),
+        'cost_bucket_name': settings.StringSetting(
+            display_name='Bucket Name',
+            group='Cost Sync',
+            group_order=9,
+            requires=['cost_sync_enabled'],
+            description='The name of the AWS bucket where cost '
+                        'reports are saved'
+        ),
+        'cost_bucket_prefix': settings.StringSetting(
+            display_name='Bucket Prefix',
+            group='Cost Sync',
+            group_order=9,
+            requires=['cost_sync_enabled'],
+            description='File path prefix for cost reports'
+        ),
     }
 
     def __init__(self, addHostSession: Optional[str] = None) -> None:
