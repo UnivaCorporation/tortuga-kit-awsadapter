@@ -2368,8 +2368,8 @@ fqdn: %s
         self._logger.debug(
             'Assigning tags to instance: {}'.format(instance.id))
 
-        tags = self.get_tags(config, node.hardwareprofile,
-                             node.softwareprofile)
+        tags = self.get_tags(config, node.hardwareprofile.name,
+                             node.softwareprofile.name)
 
         if config['use_instance_hostname']:
             if 'Name' not in config.get('tags', {}):

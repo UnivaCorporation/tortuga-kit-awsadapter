@@ -4,7 +4,7 @@ python:
 services:
 - docker
 env:
-- TORTUGA_BUILD_DOCKER="true" BUILD_KIT_IMAGE="univa/tortuga-build-kit:master-latest"
+- TORTUGA_BUILD_DOCKER="true" BUILD_KIT_IMAGE="univa/tortuga-build-kit:scale-set-tagging-latest"
 before_install:
 - docker pull $BUILD_KIT_IMAGE
 install:
