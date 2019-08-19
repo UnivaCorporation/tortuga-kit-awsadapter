@@ -4,12 +4,12 @@ python:
 services:
 - docker
 env:
-- TORTUGA_BUILD_DOCKER="true" BUILD_KIT_IMAGE="univa/tortuga-build-kit:scale-set-tagging-latest"
+- TORTUGA_BUILD_DOCKER="true" BUILD_KIT_IMAGE="univa/tortuga-build-kit:refactor-20190816"
 before_install:
 - docker pull $BUILD_KIT_IMAGE
 install:
 - chmod -R a-w .
-- docker run --rm -it -v `pwd`:/kit-src $BUILD_KIT_IMAGE
+- docker run --rm -it -v `pwd`:/kit-src $BUILD_KIT_IMAGE tortuga kits build
 script:
 - echo "Done"
 deploy:
