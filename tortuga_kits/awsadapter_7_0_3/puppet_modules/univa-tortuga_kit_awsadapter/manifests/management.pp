@@ -18,11 +18,7 @@ class tortuga_kit_awsadapter::management::package {
 
   include tortuga::config
 
-  $pkgs = [
-    'unzip',
-  ]
-
-  ensure_packages($pkgs, {'ensure' => 'installed'})
+  ensure_resource('package', 'unzip', {'ensure' => 'installed'})
 
   if $::osfamily == 'RedHat' {
     if versioncmp($facts['os']['release']['major'], '7') < 0 {
