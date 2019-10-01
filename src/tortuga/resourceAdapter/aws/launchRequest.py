@@ -19,6 +19,7 @@ from tortuga.db.models.hardwareProfile import HardwareProfile
 from tortuga.db.models.node import Node
 from tortuga.db.models.softwareProfile import SoftwareProfile
 from boto.ec2.connection import EC2Connection
+from boto3.resources.base import ServiceResource
 
 
 class LaunchRequest(object):
@@ -30,6 +31,7 @@ class LaunchRequest(object):
         self.addNodesRequest: Optional[dict] = None
         self.configDict: Optional[Dict[str, Any]] = None
         self.conn: Optional[EC2Connection] = None
+        self.conn3: Optional[ServiceResource] = None
 
 
 def init_node_request_queue(nodes: List[Node]) -> List[Dict[str, Any]]:

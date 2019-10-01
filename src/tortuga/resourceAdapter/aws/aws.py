@@ -24,17 +24,22 @@ import sys
 import xml.etree.cElementTree as ET
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, NoReturn, Optional, Tuple
+from typing import Any, Dict, List, NoReturn, Optional, Tuple, Union
 from typing.io import TextIO
 
 import boto
 import boto.ec2
 import boto.vpc
+import boto3
+import botocore
 import gevent
 import gevent.queue
+from boto.ec2.blockdevicemapping import BlockDeviceMapping
 from boto.ec2.connection import EC2Connection
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
+from boto3.resources.base import ServiceResource
+from botocore.config import Config
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.session import Session
 from tortuga.addhost.addHostServerLocal import AddHostServerLocal
@@ -352,11 +357,12 @@ class Aws(ResourceAdapter):
         self.__runningOnEc2 = None
         self.__installer_ip: Optional[str] = None
 
-    def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
+    def _get_common_connection_args(self, configDict: Dict[str, Any]) \
+            -> Dict[str, Any]:
         """
-        :raises ConfigurationError: invalid AWS region specified
+        Constructs a dict of connection args common to both the boto and
+        boto3 connections
         """
-
         connectionArgs = {}
 
         # only include access/secret key if defined in adapter config
@@ -366,6 +372,14 @@ class Aws(ResourceAdapter):
 
             connectionArgs['aws_secret_access_key'] = \
                 configDict.get('awssecretkey')
+
+        return connectionArgs
+
+    def getEC2Connection(self, configDict: Dict[str, Any]) -> EC2Connection:
+        """
+        :raises ConfigurationError: invalid AWS region specified
+        """
+        connectionArgs = self._get_common_connection_args(configDict)
 
         if 'proxy_host' in configDict:
             self._logger.debug('Using proxy for AWS (%s:%s)' % (
@@ -385,6 +399,57 @@ class Aws(ResourceAdapter):
             configDict['region'],
             **connectionArgs,
         )
+
+        if ec2_conn is None:
+            raise ConfigurationError(
+                'Invalid AWS region [{}]'.format(configDict['region'])
+            )
+
+        return ec2_conn
+
+    def getEC2Connection3(self, configDict: Dict[str, Any]) -> ServiceResource:
+        """
+        Returns a boto3 connection to EC2
+
+        :raises ConfigurationError: invalid AWS region specified
+        """
+        connectionArgs = self._get_common_connection_args(configDict)
+
+        # For boto3, we put the proxy configuration in a
+        # botocore.config.Config instance
+        config = None
+        if 'proxy_host' in configDict:
+            self._logger.debug('Using proxy for AWS boto3 connection (%s:%s)' %
+                (configDict['proxy_host'], configDict['proxy_port']))
+
+            # Format proxy credentials, if applicable
+            proxy_url_template = '{user_pass}{host}:{port}'
+            user_pass = ''
+            if 'proxy_user' in configDict:
+                user_pass = configDict['proxy_user']
+
+                if 'proxy_pass' in configDict:
+                    user_pass += ':' + configDict['proxy_pass']
+
+                user_pass += '@'
+
+            proxy_url = proxy_url_template.format(
+                user_pass=user_pass,
+                host=configDict['proxy_host'],
+                port=configDict['proxy_port']
+            )
+
+            # boto assumes it's an HTTP proxy, so we'll do the same
+            # for boto3
+            proxy_dict = {'http': proxy_url}
+            config = Config(proxies=proxy_dict)
+
+        # Set up the session
+        session = boto3.Session(
+            region_name=configDict['region'],
+            **connectionArgs
+        )
+        ec2_conn = session.resource('ec2', config=config)
 
         if ec2_conn is None:
             raise ConfigurationError(
@@ -650,6 +715,9 @@ class Aws(ResourceAdapter):
             )
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
+        launch_request.conn3 = self.getEC2Connection3(
+            launch_request.configDict
+        )
 
         if 'spot_instance_request' in addNodesRequest:
             # handle EC2 spot instance request
@@ -1273,8 +1341,8 @@ fqdn: %s
         self.__common_prelaunch(launch_request)
 
         try:
-            reservation = self.__launchEC2(
-                launch_request.conn, launch_request.configDict,
+            instances = self.__launchEC2(
+                launch_request.conn3, launch_request.configDict,
                 count=launch_request.addNodesRequest['count'],
                 addNodesRequest=launch_request.addNodesRequest,
             )
@@ -1286,7 +1354,7 @@ fqdn: %s
 
         launch_request.node_request_queue = \
             [dict(instance=instance, status='launched')
-             for instance in reservation.instances]
+             for instance in instances]
 
         # Wait for instances to reach 'running' state
         self.__wait_for_instances(dbSession, launch_request)
@@ -1301,7 +1369,7 @@ fqdn: %s
             NetworkNotFound
         """
 
-        conn = launch_request.conn
+        conn3 = launch_request.conn3
         configDict = launch_request.configDict
         addNodesRequest = launch_request.addNodesRequest
         dbHardwareProfile = launch_request.hardwareprofile
@@ -1340,11 +1408,11 @@ fqdn: %s
                 try:
                     node_request['instance'] = \
                         self.__launchEC2(
-                            conn,
+                            conn3,
                             configDict,
                             node=node_request['node'],
                             addNodesRequest=addNodesRequest
-                        ).instances[0]
+                        )[0]
 
                     node_request['status'] = 'launched'
 
@@ -1443,8 +1511,8 @@ fqdn: %s
 
     def __aws_check_instance_state(self, instance):
         try:
-            instance.update()
-        except boto.exception.EC2ResponseError as exc:
+            instance.reload()
+        except botocore.exceptions.ClientError as ex:
             # Not even the sample boto code appears to handle this
             # scenario. It appears there's a race condition between
             # creating an instance and polling for the instance
@@ -1455,12 +1523,12 @@ fqdn: %s
             # Subsequent update() calls are successful.
 
             self._logger.debug(
-                'Ignoring exception raised while'
-                ' updating instance: %s' % (str(exc)))
+                f'Ignoring exception raised while updating instance: {ex}'
+            )
 
             return None
 
-        return instance.state
+        return instance.state['Name']
 
     def process_item(self, launch_request: LaunchRequest, node_request: dict):
         """
@@ -1505,17 +1573,17 @@ fqdn: %s
                 raise AWSOperationTimeoutError(
                     'Timeout waiting for instance [{0}]'.format(instance.id))
 
-            if instance.state != 'pending':
+            if instance.state['Name'] != 'pending':
                 # Instance in unexpected state, report error
-                node_request['status'] = instance.state
+                node_request['status'] = instance.state['Name']
 
                 self._logger.error(
                     'Instance [%s] in unexpected state [%s]' % (
-                        instance.state))
+                        instance.state['Name']))
 
                 raise OperationFailed(
                     'Error launching instance: state=[{0}]'.format(
-                        instance.state))
+                        instance.state['Name']))
 
     def __failed_launch_cleanup_handler(self, session: Session,
                                         node_request: dict) -> None:
@@ -1882,8 +1950,11 @@ fqdn: %s
 
         return security_group
 
-    def _validate_ec2_launch_args(self, conn: EC2Connection,
+    def _validate_ec2_launch_args(self,
+                                  conn: Union[EC2Connection, ServiceResource],
                                   configDict: Dict[str, Any]):
+
+        # NOTE: the commented out portions are not boto3-compatible
         # # Get the kernel, if specified
         # if 'aki' in configDict and configDict['aki']:
         #     try:
@@ -1911,6 +1982,11 @@ fqdn: %s
         #                 configDict['ari'],
         #                 extErrMsg or '<no reason provided>'))
 
+        ConnException = boto.exception.EC2ResponseError
+        is_boto3_conn = isinstance(conn, ServiceResource)
+        if is_boto3_conn:
+            ConnException = botocore.exceptions.ClientError
+
         # Create placement group if needed.
         if configDict.get('placementgroup'):
             try:
@@ -1918,20 +1994,32 @@ fqdn: %s
                     'Attempting to create placement group [%s]' % (
                         configDict['placementgroup']))
 
-                conn.create_placement_group(configDict['placementgroup'])
+                if is_boto3_conn:
+                    conn.create_placement_group(
+                        GroupName=configDict['placementgroup'],
+                        Strategy='cluster'
+                    )
+                else:
+                    conn.create_placement_group(
+                        configDict['placementgroup'],
+                        strategy='cluster'
+                    )
 
                 self._logger.debug(
                     'Created placement group [%s]' % (
                         configDict['placementgroup']))
-            except boto.exception.EC2ResponseError as ex:
+            except ConnException as ex:
                 # let this fail, group may already exist
-
-                extErrMsg = self.__parseEC2ResponseError(ex)
+                if is_boto3_conn:
+                    extErrMsg = str(ex)
+                else:
+                    extErrMsg = self.__parseEC2ResponseError(ex)
 
                 self._logger.warning(
                     'Unable to create placement group [%s] (%s)' % (
                         configDict['placementgroup'],
                         extErrMsg or '<no reason provided>'))
+
 
     def __get_common_launch_args(
             self, conn: EC2Connection, configDict: Dict[str, Any],
@@ -2016,37 +2104,135 @@ fqdn: %s
 
         return args
 
-    def __launchEC2(self, conn: EC2Connection, configDict: Dict[str, Any],
+    def __get_common_launch_args3(
+            self, conn3: ServiceResource, configDict: Dict[str, Any],
+            node: Optional[Node] = None, *,
+            addNodesRequest: Optional[dict] = None) -> Dict[str, Any]:
+        """
+        Return key-value pairs of arguments for passing to launch API
+        """
+        args = {
+            'KeyName': configDict['keypair'],
+            'InstanceType': configDict['instancetype'],
+        }
+
+        # Set up placement dict
+        placement = {}
+        value = configDict.get('zone')
+        if value is not None:
+            placement['AvailabilityZone'] = value
+
+        value = configDict.get('placementgroup')
+        if value is not None:
+            placement['GroupName'] = value
+
+        # Add to args
+        if placement:
+            args['Placement'] = placement
+
+        # User data
+        if configDict['cloud_init']:
+            args['UserData'] = self.__get_user_data(configDict, node=node)
+
+        # Kernel ID
+        if 'aki' in configDict and configDict['aki']:
+            # Override kernel used for new instances
+            args['KernelId'] = configDict['aki']
+
+        # Ramdisk ID
+        if 'ari' in configDict and configDict['ari']:
+            # Override ramdisk used for new instances
+            args['RamdiskId'] = configDict['ari']
+
+        # Build 'BlockDeviceMappings'
+        bdms = self.__build_block_device_map(
+            conn3,
+            configDict['block_device_map']
+            if 'block_device_map' in configDict else None,
+            configDict['ami']
+        )
+        # bdms is a boto.ec2.blockdevicemapping.BlockDeviceMapping
+        # We need to translate it to a list of dicts for boto3
+        args['BlockDeviceMappings'] = \
+            translate_blockdevicemappings_for_boto3(bdms)
+
+        if 'ebs_optimized' in configDict:
+            args['EbsOptimized'] = configDict['ebs_optimized']
+
+        if 'monitoring_enabled' in configDict:
+            args['Monitoring'] = {'Enabled': configDict['monitoring_enabled']}
+
+        if 'iam_instance_profile_name' in configDict and \
+                configDict['iam_instance_profile_name']:
+            args['IamInstanceProfile'] = \
+                {'Name': configDict['iam_instance_profile_name']}
+
+        if 'subnet_id' in configDict and \
+                configDict['subnet_id'] is not None:
+            subnet_id = configDict['subnet_id']
+
+            # If "subnet_id" is defined, we know the instance belongs to a
+            # VPC. Handle the security group differently.
+            primary_nic = {
+                'AssociatePublicIpAddress': \
+                    configDict['associate_public_ip_address'],
+                'Groups': configDict.get('securitygroup', []),
+                'SubnetId': subnet_id,
+                'DeviceIndex': 0,  # AWS docs: primary NIC = device index of 0
+            }
+
+            # Handle private IP address
+            private_ip_address = get_private_ip_address_argument(
+                addNodesRequest
+            ) if addNodesRequest else None
+
+            if private_ip_address:
+                self._logger.debug(
+                    'Assigning ip address [%s] to new instance',
+                    private_ip_address
+                )
+                primary_nic['PrivateIpAddress'] = private_ip_address
+
+            args['NetworkInterfaces'] = [primary_nic]
+        else:
+            # Default instance (non-VPC)
+            args['SecurityGroupIds'] = configDict.get('securitygroup', [])
+
+        return args
+
+    def __launchEC2(self, conn3: ServiceResource, configDict: Dict[str, Any],
                     *, count: int = 1, node: Optional[Node] = None,
                     addNodesRequest: Optional[dict] = None):
         """
         Launch EC2 instances. If 'node' is specified, Tortuga node
         record exists at time of instance creation.
 
+        Note that conn3 is a boto3 connection to EC2.
+
         :raises CommandFailed:
         """
 
-        self._validate_ec2_launch_args(conn, configDict)
+        self._validate_ec2_launch_args(conn3, configDict)
 
-        runArgs = self.__get_common_launch_args(
-            conn,
+        runArgs = self.__get_common_launch_args3(
+            conn3,
             configDict,
             node=node,
             addNodesRequest=addNodesRequest
         )
 
         try:
-            return conn.run_instances(
-                configDict['ami'], max_count=count, **runArgs
+            return conn3.create_instances(
+                ImageId=configDict['ami'],
+                MinCount=1,
+                MaxCount=count,
+                **runArgs
             )
-        except boto.exception.EC2ResponseError as ex:
-            extErrMsg = self.__parseEC2ResponseError(ex)
+        except botocore.exceptions.ClientError as ex:
+            raise CommandFailed(f'AWS error: {ex}')
 
-            # Pass the exception message through for status message
-            # aesthetic purposes
-            raise CommandFailed('AWS error: %s' % (extErrMsg))
-
-    def __build_block_device_map(self, conn: EC2Connection,
+    def __build_block_device_map(self,
+                                 conn: Union[EC2Connection, ServiceResource],
                                  block_device_map, image_id: str):
         result = None
 
@@ -2058,10 +2244,17 @@ fqdn: %s
 
             result = block_device_map
 
-        ami = conn.get_image(image_id)
+        is_boto3_conn = isinstance(conn, ServiceResource)
+        if is_boto3_conn:
+            ami = conn.Image(image_id)
+            block_devices = \
+                [bdm['DeviceName'] for bdm in ami.block_device_mappings]
+        else:
+            ami = conn.get_image(image_id)
+            block_devices = list(ami.block_device_mapping)
 
         # determine root device name
-        root_block_devices = ec2_get_root_block_devices(ami)
+        root_block_devices = ec2_get_root_block_devices(block_devices)
 
         if root_block_devices:
             root_block_device = root_block_devices[0]
@@ -2525,3 +2718,47 @@ def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) \
         private_ip_address = None
 
     return private_ip_address
+
+
+def translate_blockdevicemappings_for_boto3(
+        block_device_mapping: BlockDeviceMapping) -> List[Dict]:
+    """
+    Translate block device mappings from
+    boto.ec2.blockdevicemapping.BlockDeviceMapping (effectively a dict of
+    boto.ec2.blockdevicemapping.BlockDeviceType objects) into a list
+    of dicts, where each dict describes a block device
+    """
+    ebs_attr_map = {
+        'snapshot_id': 'SnapshotId',
+        'delete_on_termination': 'DeleteOnTermination',
+        'volume_type': 'VolumeType',
+        'iops': 'Iops',
+        'encrypted': 'Encrypted',
+    }
+
+    block_device_list = []
+    for device_name, bdt in block_device_mapping.items():
+
+        # Root-level attributes
+        bd_dict = {'DeviceName': device_name}
+        no_device = getattr(bdt, 'no_device', False)
+        if no_device:
+            bd_dict['NoDevice'] = no_device
+
+        # Nested EBS attributes
+        ebs_dict = {}
+        for boto_attr, boto3_key in ebs_attr_map.items():
+            value = getattr(bdt, boto_attr)
+            if value is not None:
+                ebs_dict[boto3_key] = value
+        # Do this one manually for type conversion
+        if bdt.size is not None:
+            ebs_dict['VolumeSize'] = int(bdt.size)
+
+        if ebs_dict:
+            bd_dict['Ebs'] = ebs_dict
+
+        # Append to list of block devices
+        block_device_list.append(bd_dict)
+
+    return block_device_list

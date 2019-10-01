@@ -16,9 +16,9 @@ import shlex
 from typing import Dict, Optional
 
 
-def ec2_get_root_block_devices(ami):
+def ec2_get_root_block_devices(block_devices):
     # Helper function for determining the root block device for an AMI
-    return [device for device in ami.block_device_mapping.keys()
+    return [device for device in block_devices
             if device in ('/dev/xvda', '/dev/sda', '/dev/sda1')]
 
 
