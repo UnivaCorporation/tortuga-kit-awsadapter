@@ -1759,18 +1759,36 @@ fqdn: %s
         self.fire_provisioned_event(node)
 
     def __get_instance_specific_tags(self, configDict: Dict[str, Any],
-                                     node: Node) -> Dict[str, Any]:
+                                     node: Optional[Node] = None,
+                                     addNodesRequest: Optional[dict] = None
+            ) -> Dict[str, Any]:
         """
         Generates a dict of tags to be applied to an EC2 instance.
         """
+        # Check that we have one of either node or addNodesRequest to get
+        # hardware/software profile names from
+        if not (node or addNodesRequest):
+            err_msg = 'Must provide either \'node\' or \'addNodesRequest\''
+            self._logger.exception('Error getting tags for instance: '
+                                   f'{err_msg}')
+            raise InvalidArgument(err_msg)
+
+        # Get profile names
+        if node:
+            softwareprofile_name = node.softwareprofile.name
+            hardwareprofile_name = node.hardwareprofile.name
+        else:
+            softwareprofile_name = addNodesRequest['softwareProfile']
+            hardwareprofile_name = addNodesRequest['hardwareProfile']
+
         # Get installer public ip address
         installer_ipaddress = configDict['installer_ip'] \
             if configDict['installer_ip'] else self.installer_public_ipaddress
 
         # Instantiate tag dict
         tags = {
-            'tortuga:softwareprofile': node.softwareprofile.name,
-            'tortuga:hardwareprofile': node.hardwareprofile.name,
+            'tortuga:softwareprofile': softwareprofile_name,
+            'tortuga:hardwareprofile': hardwareprofile_name,
             'tortuga:installer_hostname': self.installer_public_hostname,
             'tortuga:installer_ipaddress': installer_ipaddress,
         }
@@ -1784,9 +1802,11 @@ fqdn: %s
             # configuration
             if 'Name' not in configDict.get('tags', {}):
                 tags['Name'] = 'Tortuga compute node'
-        else:
+        elif node and node.name:
             # Fallback to default behaviour
             tags['Name'] = node.name
+        else:
+            pass
 
         return tags
 
@@ -1800,7 +1820,7 @@ fqdn: %s
             return
 
         instance_specific_tags = \
-            self.__get_instance_specific_tags(configDict, node)
+            self.__get_instance_specific_tags(configDict, node=node)
 
         self.__addTags(conn, [instance.id], instance_specific_tags)
 
@@ -2184,8 +2204,11 @@ fqdn: %s
 
         # Otherwise, set up the tags
         # Get tags for instance
-        instance_specific_tags = \
-            self.__get_instance_specific_tags(configDict, node)
+        instance_specific_tags = self.__get_instance_specific_tags(
+            configDict,
+            node=node,
+            addNodesRequest=addNodesRequest
+        )
 
         # Convert to "tag specification" - format expected by boto3
         instance_tag_specs = {'ResourceType': 'instance'}
