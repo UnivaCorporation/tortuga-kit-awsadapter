@@ -57,6 +57,7 @@ from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.node import state
+from tortuga.objects.node import Node
 from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
                                                      ResourceAdapter)
 
@@ -2037,8 +2038,8 @@ fqdn: %s
         self._logger.debug(
             'Assigning tags to instance: {}'.format(instance.id))
 
-        tags = self.get_tags(config, node.hardwareprofile.name,
-                             node.softwareprofile.name)
+        tags = self.get_initial_tags(config, node.hardwareprofile.name,
+                                     node.softwareprofile.name)
 
         if config['use_instance_hostname']:
             if 'Name' not in config.get('tags', {}):
@@ -2457,6 +2458,38 @@ fqdn: %s
                     'get_instance_size_mapping() cache miss')
 
         return vcpus
+
+    def set_remote_tags(self, sess: Session, node: Node,
+                        tags: Dict[str, str]):
+        #
+        # Figure out the correct configuration and get Boto connection
+        #
+        instance_mapping = node.getInstance()
+        config_name = \
+            instance_mapping['resource_adapter_configuration']['name']
+        config = self.get_config(config_name)
+        conn = self.getEC2Connection(config)
+        #
+        # Get the instance ID
+        #
+        instance_id = instance_mapping['instance']
+        #
+        # Figure out what tags needs to be deleted
+        #
+        existing_tags = {
+            t.name: t.value for t in conn.get_all_tags(
+                filters={'resource-id': instance_id}
+            )
+        }
+        tags_to_delete = []
+        for k, v in tags:
+            if k not in existing_tags.keys():
+                tags_to_delete.append(k)
+        #
+        # Do the update/delete
+        #
+        conn.create_tags([instance_id], tags)
+        conn.delete_tags([instance_id], tags_to_delete)
 
 
 def get_primary_nic(nics: List[Nic]) -> Nic:
