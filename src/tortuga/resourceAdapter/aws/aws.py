@@ -47,6 +47,7 @@ from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.instanceMetadata import InstanceMetadata
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
+from tortuga.db.models.nodeTag import NodeTag
 from tortuga.db.models.softwareProfile import SoftwareProfile
 from tortuga.db.nodesDbHandler import NodesDbHandler
 from tortuga.exceptions.commandFailed import CommandFailed
@@ -57,7 +58,6 @@ from tortuga.exceptions.nodeNotFound import NodeNotFound
 from tortuga.exceptions.operationFailed import OperationFailed
 from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.node import state
-from tortuga.objects.node import Node
 from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
                                                      ResourceAdapter)
 
@@ -1685,6 +1685,16 @@ fqdn: %s
             node.addHostSession = self.addHostSession
             node.vcpus = vcpus
 
+            #
+            # Set initial tags for the node
+            #
+            initial_tags = self.get_initial_tags(configDict,
+                                                 hardwareprofile.name,
+                                                 softwareprofile.name)
+            for k, v in initial_tags.items():
+                tag = NodeTag(name=k, value=v)
+                node.tags.append(tag)
+
             # Create primary network interface
             node.nics.append(Nic(boot=True))
 
@@ -2051,7 +2061,7 @@ fqdn: %s
         self._tag_ebs_volumes(conn, instance, tags)
 
     def _tag_resources(self, conn: EC2Connection, resource_ids: List[str],
-                       tags: Dict[str, str]) -> None:
+                       tags: Dict[str, str], replace: bool = False) -> None:
         """
         Tag a list of AWS resources.
 
@@ -2459,20 +2469,16 @@ fqdn: %s
 
         return vcpus
 
-    def set_remote_tags(self, sess: Session, node: Node,
-                        tags: Dict[str, str]):
+    def set_remote_tags(self, node: Node, tags: Dict[str, str]):
         #
-        # Figure out the correct configuration and get Boto connection
+        # Get an EC2 connection
         #
-        instance_mapping = node.getInstance()
-        config_name = \
-            instance_mapping['resource_adapter_configuration']['name']
-        config = self.get_config(config_name)
+        config = self.get_node_resource_adapter_config(node)
         conn = self.getEC2Connection(config)
         #
         # Get the instance ID
         #
-        instance_id = instance_mapping['instance']
+        instance_id = node.instance.instance
         #
         # Figure out what tags needs to be deleted
         #
@@ -2482,7 +2488,7 @@ fqdn: %s
             )
         }
         tags_to_delete = []
-        for k, v in tags:
+        for k, v in tags.items():
             if k not in existing_tags.keys():
                 tags_to_delete.append(k)
         #
