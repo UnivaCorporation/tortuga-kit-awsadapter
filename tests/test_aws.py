@@ -89,7 +89,7 @@ def test_deleteNode(load_config_dict_mock, dbm):
 @mock.patch.object(Aws, 'fire_provisioned_event')
 @mock.patch.object(Aws, '_pre_add_host')
 @mock.patch.object(Aws, '_load_config_from_database')
-@mock_ec2_deprecated
+@mock_ec2
 def test_start(load_config_dict_mock, pre_add_host_mock,
                fire_provisioned_even_mock, get_instance_size_mapping_mock,
                dbm, valid_ami):
@@ -482,6 +482,7 @@ def test_launch_EC2(valid_ami):
         'awssecretkey': 'the_secret',
         'zone': 'fake_zone',
         'use_instance_hostname': False,
+        'block_device_map': '/dev/sda1=:30:true:io1:500:encrypted',
         'ami': valid_ami,
         'aki': 'fake_kernel_id',
         'ari': 'fake_ramdisk_id',
