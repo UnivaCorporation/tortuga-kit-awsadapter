@@ -89,7 +89,7 @@ def test_deleteNode(load_config_dict_mock, dbm):
 @mock.patch.object(Aws, 'fire_provisioned_event')
 @mock.patch.object(Aws, '_pre_add_host')
 @mock.patch.object(Aws, '_load_config_from_database')
-@mock_ec2_deprecated
+@mock_ec2
 def test_start(load_config_dict_mock, pre_add_host_mock,
                fire_provisioned_even_mock, get_instance_size_mapping_mock,
                dbm, valid_ami):
@@ -114,10 +114,6 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
         # override default sleep time
         adapter.LAUNCH_INITIAL_SLEEP_TIME = 0.0
 
-        addNodesRequest = {
-            'count': 2,
-        }
-
         hardwareprofile = HardwareProfilesDbHandler().getHardwareProfile(
             session, 'aws2'
         )
@@ -125,6 +121,12 @@ def test_start(load_config_dict_mock, pre_add_host_mock,
         softwareprofile = SoftwareProfilesDbHandler().getSoftwareProfile(
             session, 'compute'
         )
+
+        addNodesRequest = {
+            'count': 2,
+            'hardwareProfile': hardwareprofile.name,
+            'softwareProfile': softwareprofile.name,
+        }
 
         nodes = adapter.start(
             addNodesRequest, session, hardwareprofile,
