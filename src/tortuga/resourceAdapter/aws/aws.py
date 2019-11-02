@@ -2469,34 +2469,17 @@ fqdn: %s
 
         return vcpus
 
-    def set_remote_tags(self, node: Node, tags: Dict[str, str]):
-        #
-        # Get an EC2 connection
-        #
+    def set_node_tag(self, node: Node, tag_name: str, tag_value: str):
         config = self.get_node_resource_adapter_config(node)
         conn = self.getEC2Connection(config)
-        #
-        # Get the instance ID
-        #
         instance_id = node.instance.instance
-        #
-        # Figure out what tags needs to be deleted
-        #
-        existing_tags = {
-            t.name: t.value for t in conn.get_all_tags(
-                filters={'resource-id': instance_id}
-            )
-        }
-        tags_to_delete = []
-        for k, v in tags.items():
-            if k not in existing_tags.keys():
-                tags_to_delete.append(k)
-        #
-        # Do the update/delete
-        #
-        conn.create_tags([instance_id], tags)
-        conn.delete_tags([instance_id], tags_to_delete)
+        conn.create_tags([instance_id], {tag_name: tag_value})
 
+    def unset_node_tag(self, node: Node, tag_name: str):
+        config = self.get_node_resource_adapter_config(node)
+        conn = self.getEC2Connection(config)
+        instance_id = node.instance.instance
+        conn.delete_tags([instance_id], [tag_name])
 
 def get_primary_nic(nics: List[Nic]) -> Nic:
     result = [nic for nic in nics if nic.boot]
