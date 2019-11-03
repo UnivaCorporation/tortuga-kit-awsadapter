@@ -47,6 +47,7 @@ from tortuga.db.models.instanceMapping import InstanceMapping
 from tortuga.db.models.instanceMetadata import InstanceMetadata
 from tortuga.db.models.nic import Nic
 from tortuga.db.models.node import Node
+from tortuga.db.models.nodeTag import NodeTag
 from tortuga.db.models.softwareProfile import SoftwareProfile
 from tortuga.db.nodesDbHandler import NodesDbHandler
 from tortuga.exceptions.commandFailed import CommandFailed
@@ -1684,6 +1685,16 @@ fqdn: %s
             node.addHostSession = self.addHostSession
             node.vcpus = vcpus
 
+            #
+            # Set initial tags for the node
+            #
+            initial_tags = self.get_initial_tags(configDict,
+                                                 hardwareprofile.name,
+                                                 softwareprofile.name)
+            for k, v in initial_tags.items():
+                tag = NodeTag(name=k, value=v)
+                node.tags.append(tag)
+
             # Create primary network interface
             node.nics.append(Nic(boot=True))
 
@@ -2037,8 +2048,8 @@ fqdn: %s
         self._logger.debug(
             'Assigning tags to instance: {}'.format(instance.id))
 
-        tags = self.get_tags(config, node.hardwareprofile.name,
-                             node.softwareprofile.name)
+        tags = self.get_initial_tags(config, node.hardwareprofile.name,
+                                     node.softwareprofile.name)
 
         if config['use_instance_hostname']:
             if 'Name' not in config.get('tags', {}):
@@ -2050,7 +2061,7 @@ fqdn: %s
         self._tag_ebs_volumes(conn, instance, tags)
 
     def _tag_resources(self, conn: EC2Connection, resource_ids: List[str],
-                       tags: Dict[str, str]) -> None:
+                       tags: Dict[str, str], replace: bool = False) -> None:
         """
         Tag a list of AWS resources.
 
@@ -2458,6 +2469,17 @@ fqdn: %s
 
         return vcpus
 
+    def set_node_tag(self, node: Node, tag_name: str, tag_value: str):
+        config = self.get_node_resource_adapter_config(node)
+        conn = self.getEC2Connection(config)
+        instance_id = node.instance.instance
+        conn.create_tags([instance_id], {tag_name: tag_value})
+
+    def unset_node_tag(self, node: Node, tag_name: str):
+        config = self.get_node_resource_adapter_config(node)
+        conn = self.getEC2Connection(config)
+        instance_id = node.instance.instance
+        conn.delete_tags([instance_id], [tag_name])
 
 def get_primary_nic(nics: List[Nic]) -> Nic:
     result = [nic for nic in nics if nic.boot]

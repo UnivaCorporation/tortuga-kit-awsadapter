@@ -1,7 +1,7 @@
 {
   "name": "awsadapter",
-  "version": "7.0.3",
+  "version": "7.1.0",
   "iteration": "0",
   "description": "AWS resource adapter",
-  "requires_core": "7.0.3+004"
+  "requires_core": "7.1.0+001"
 }

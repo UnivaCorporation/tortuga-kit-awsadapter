@@ -1,15 +1,13 @@
-#############################################################################
+# Copyright 2008-2018 Univa Corporation
 #
-# This code is the Property, a Trade Secret and the Confidential Information
-# of Univa Corporation.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# Copyright 2008-2018 Univa Corporation. All Rights Reserved. Access is Restricted.
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
-# It is provided to you under the terms of the
-# Univa Term Software License Agreement.
-#
-# If you have any questions, please contact our Support Department.
-#
-# http://www.univa.com
-#
-#############################################################################
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
