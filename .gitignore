@@ -1,6 +1,7 @@
 build/
 dist/
 man/**/*.8
+*.swp
 *.egg-info/
 **/puppet_modules/**/pkg/
 .mypy_cache/
@@ -8,3 +9,4 @@ __pycache__/
 .pytest_cache/
 .ropeproject/
 .tox/
+tests/.coverage
