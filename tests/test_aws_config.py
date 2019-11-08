@@ -38,7 +38,7 @@ def test_invalid_adapter_configuration(dbm):
                 adapter = Aws()
                 adapter.session = session
 
-                adapter.getResourceAdapterConfig()
+                adapter.get_config()
 
 
 def test_minimal_config(dbm, minimal_configDict):
@@ -49,7 +49,7 @@ def test_minimal_config(dbm, minimal_configDict):
             adapter = Aws()
             adapter.session = session
 
-            config = adapter.getResourceAdapterConfig()
+            config = adapter.get_config()
 
             assert 'ami' in config
 
@@ -73,7 +73,7 @@ def test_override_dns_domain_enabled(dbm):
             adapter = Aws()
             adapter.session = session
 
-            config = adapter.getResourceAdapterConfig()
+            config = adapter.get_config()
 
             assert isinstance(config['override_dns_domain'], bool)
 
@@ -100,7 +100,7 @@ def test_override_dns_domain_enabled_with_dns_domain(dbm):
             adapter = Aws()
             adapter.session = session
 
-            config = adapter.getResourceAdapterConfig()
+            config = adapter.get_config()
 
             assert isinstance(config['override_dns_domain'], bool)
 
@@ -118,7 +118,7 @@ def test_missing_ami_setting(load_config_dict_mock, dbm):
             adapter = Aws()
             adapter.session = session
 
-            adapter.getResourceAdapterConfig()
+            adapter.get_config()
 
 
 @mock.patch.object(Aws, '_load_config_from_database')
@@ -134,7 +134,7 @@ def test_use_instance_hostname(load_config_dict_mock, dbm):
         adapter = Aws()
         adapter.session = session
 
-        result = adapter.getResourceAdapterConfig()
+        result = adapter.get_config()
 
         assert result['dns_domain'] == 'cloud.example.com'
 
@@ -149,7 +149,7 @@ def test_defaults(load_config_dict_mock, dbm):
         adapter = Aws()
         adapter.session = session
 
-        result = adapter.getResourceAdapterConfig()
+        result = adapter.get_config()
 
         assert result['ami'] == 'ami-XXXXXXXX'
 
@@ -179,4 +179,4 @@ def test_invalid_settings(load_config_dict_mock, dbm):
             adapter = Aws()
             adapter.session = session
 
-            adapter.getResourceAdapterConfig()
+            adapter.get_config()
