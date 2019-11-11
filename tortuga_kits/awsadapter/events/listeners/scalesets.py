@@ -121,20 +121,22 @@ class AwsScaleSetCreatedListener(AwsScaleSetListenerMixin, BaseListener):
             logger.warning('Resource adapter is not installed: %s', ex)
             self._store.delete(ssr.id)
             return
- 
+
         try:
             # Now create the scale set
-            adapter.create_scale_set(name=ssr.id,
-                minCount=ssr.min_nodes, maxCount=ssr.max_nodes,
+            adapter.create_scale_set(
+                name=ssr.id,
+                minCount=ssr.min_nodes,
+                maxCount=ssr.max_nodes,
                 desiredCount=ssr.desired_nodes,
                 resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 hardwareProfile=ssr.hardwareprofile_name,
                 softwareProfile=ssr.softwareprofile_name,
                 adapter_args=ssr.adapter_arguments)
+
         except Exception as ex:
             logger.error("Error creating resource request: %s", ex)
             self._store.delete(ssr.id)
-        
 
 
 class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -160,19 +162,20 @@ class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
 
         try:
             # Now create the scale set
-            adapter.update_scale_set(name=ssr.id,
-                minCount=ssr.min_nodes, maxCount=ssr.max_nodes,
+            adapter.update_scale_set(
+                name=ssr.id,
+                minCount=ssr.min_nodes,
+                maxCount=ssr.max_nodes,
                 desiredCount=ssr.desired_nodes,
                 resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 hardwareProfile=ssr.hardwareprofile_name,
                 softwareProfile=ssr.softwareprofile_name,
-                adapter_args=ssr.adapter_arguments)
+                adapter_args=ssr.adapter_arguments
+            )
         except Exception as ex:
             logger.error("Error updating resource request: %s", ex)
             old = self.get_previous_scale_set_request(event)
-            self._store.save(old)
-
-
+            self._store.rollback(old)
 
 
 class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -199,8 +202,7 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
         # Now create the scale set
         try:
             adapter.delete_scale_set(name=ssr.id,
-                resourceAdapterProfile=ssr.resourceadapter_profile_name)
+                                     resourceAdapterProfile=ssr.resourceadapter_profile_name)
         except Exception as ex:
             logger.error("Error deleting resource request: %s", ex)
-            self._store.save(ssr)
-
+            self._store.rollback(ssr)
