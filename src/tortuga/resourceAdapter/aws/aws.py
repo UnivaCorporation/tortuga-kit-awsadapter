@@ -1644,31 +1644,6 @@ fqdn: %s
             node.softwareprofile.name,
             primary_nic.ip)
 
-        total_sleep = 0
-        while total_sleep < launch_request.configDict['createtimeout']:
-            try:
-                self._tag_instance(launch_request.configDict,
-                                   launch_request.conn, node, instance)
-                break
-
-            except boto.exception.EC2ResponseError as exc:
-                self._logger.debug(
-                    'Ignoring exception tagging instances: {0}'.format(
-                        str(exc)))
-
-            gevent.sleep(3)
-            total_sleep += 3
-
-        if total_sleep >= launch_request.configDict['createtimeout']:
-            raise AWSOperationTimeoutError(
-                'Timeout attempting to assign tags to instance {0}'.format(
-                    instance.id))
-
-        if total_sleep:
-            self._logger.debug(
-                'Waited %d seconds tagging instance %s' % (
-                    total_sleep, instance.id))
-
         # This node is ready
         node_request['status'] = 'running'
 
@@ -2109,6 +2084,29 @@ fqdn: %s
             # Default instance (non-VPC)
             args['SecurityGroupIds'] = configDict.get('securitygroup', [])
 
+        # Get tags and convert to format expected by boto3
+        tags = self.__get_tags_for_instance_creation(
+            configDict,
+            node=node,
+            addNodesRequest=addNodesRequest
+        )
+        tag_dict_list = [{'Key': k, 'Value': v} for k, v in tags.items()]
+
+        # Set up a list of "tag specification dicts"
+        tag_specifications = [
+            {
+                'ResourceType': 'instance',
+                'Tags': tag_dict_list,
+            },
+            {
+                'ResourceType': 'volume',
+                'Tags': tag_dict_list,
+            },
+        ]
+
+        # Add full tag specifications to args
+        args['TagSpecifications'] = tag_specifications
+
         return args
 
     def __launchEC2(self, conn3: EC2Connection, configDict: Dict[str, Any],
@@ -2243,6 +2241,46 @@ fqdn: %s
 
         return tags
 
+    def __get_tags_for_instance_creation(self, configDict: Dict[str, Any],
+                                         node: Optional[Node] = None,
+                                         addNodesRequest: Optional[dict] = None
+            ) -> Dict[str, Any]:
+        """
+        Generates a dict of tags to be applied to an EC2 instance at creation.
+        """
+        # Check that we have one of either node or addNodesRequest to get
+        # hardware/software profile names from
+        if not (node or addNodesRequest):
+            err_msg = 'Must provide either \'node\' or \'addNodesRequest\''
+            self._logger.exception('Error getting tags for instance: '
+                                   f'{err_msg}')
+            raise InvalidArgument(err_msg)
+
+        # Hardware/software profiles names come from either node object
+        # or addNodesRequest
+        hwp_name = node.hardwareprofile.name if node is not None \
+            else addNodesRequest['hardwareProfile']
+        swp_name = node.softwareprofile.name if node is not None \
+            else addNodesRequest['softwareProfile']
+
+        # Compile tags
+        tags = self.get_initial_tags(configDict, hwp_name, swp_name)
+        name_tag = self._get_name_tag(configDict, node)
+        if name_tag is not None:
+            tags['Name'] = name_tag
+
+        return tags
+
+    def _get_name_tag(self, config: dict, node: Optional[Node] = None) -> str:
+        name_tag = None
+        if config['use_instance_hostname']:
+            if 'Name' not in config.get('tags', {}):
+                name_tag = 'Tortuga compute node'
+        elif node and node.name:
+            name_tag = node.name
+
+        return name_tag
+
     def _tag_instance(self, config: dict, conn: EC2Connection,
                       node: Node, instance):
         """
@@ -2260,11 +2298,10 @@ fqdn: %s
         tags = self.get_initial_tags(config, node.hardwareprofile.name,
                                      node.softwareprofile.name)
 
-        if config['use_instance_hostname']:
-            if 'Name' not in config.get('tags', {}):
-                tags['Name'] = 'Tortuga compute node'
-        else:
-            tags['Name'] = node.name
+        # Add Name tag
+        name_tag = self._get_name_tag(config, node)
+        if name_tag:
+            tags['Name'] = name_tag
 
         self._tag_resources(conn, [instance.id], tags)
         self._tag_ebs_volumes(conn, instance, tags)
