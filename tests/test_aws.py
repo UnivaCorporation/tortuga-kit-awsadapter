@@ -154,6 +154,7 @@ def test_start_update_node(load_config_dict_mock, pre_add_host_mock,
         'awssecretkey': 'the_secret',
         'ami': valid_ami,
         'use_instance_hostname': 'true',
+        'instancetype': 'm5.large',
     }
 
     load_config_dict_mock.return_value = configDict

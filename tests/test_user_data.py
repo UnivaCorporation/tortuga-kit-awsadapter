@@ -68,7 +68,7 @@ if __name__ == '__main__':
 
     adapter = Aws()
 
-    config = adapter.getResourceAdapterConfig()
+    config = adapter.get_config()
 
     result = adapter._Aws__get_user_data_script(fp, config)
 
@@ -105,7 +105,7 @@ if __name__ == '__main__':
 
     adapter = Aws()
 
-    config = adapter.getResourceAdapterConfig()
+    config = adapter.get_config()
 
     class DummyNode:
         def __init__(self, name):
@@ -146,7 +146,7 @@ if __name__ == '__main__':
 
     adapter = Aws()
 
-    config = adapter.getResourceAdapterConfig()
+    config = adapter.get_config()
 
     result = adapter.expand_cloud_init_user_data_template(
         config, template=Template(tmpl))
