@@ -2034,6 +2034,30 @@ fqdn: %s
         """
         pass
 
+    def get_initial_tags(self, config: Dict[str, str], hwp_name: str,
+                         swp_name: str) -> Dict[str, str]:
+        """
+        Returns the list of tags that should be applied to one or more
+        nodes upon creation.  We override the base class version of this
+        method to properly handle the case where the user overrides the
+        automatically-detected installer IP address.
+
+        :param Dict[str, str] config: the resource adapter profile config
+        :param str hwp_name:          the node hardware profile name
+        :param str swp_name:          the node software profile name
+
+        :return Dict[str, str: the tags that should be applied
+        """
+
+        tags = super().get_initial_tags(config, hwp_name, swp_name)
+
+        installer_ip = config.get('installer_ip', None)
+        if installer_ip is not None:
+            tags['tortuga-installer_ipaddress'] = \
+                self._sanitze_tag_value(installer_ip)
+
+        return tags
+
     def _tag_instance(self, config: dict, conn: EC2Connection,
                       node: Node, instance):
         """
