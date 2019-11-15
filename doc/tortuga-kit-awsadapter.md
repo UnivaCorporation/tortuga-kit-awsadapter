@@ -229,11 +229,10 @@ This section lists the valid settings for the AWS resource adapter.
     can be used to classify or group similar instances. For example, to clearly
     identify all instances within in the same cluster.
 
-    They should be specified as key-value pairs in the format `key:value`.
-    Multiple tags should be separated by spaces.
+    They should be specified as key-value pairs in the format `key=value`.
+    Multiple tags should be separated by commas.
 
-    For keys and/or values containing spaces, enclose the spaces in
-    double-quotes.
+    Do *not* use quotes to enclose keys or values which contain spaces.
 
     Simple example:
 
@@ -246,14 +245,14 @@ This section lists the valid settings for the AWS resource adapter.
 
     ```shell
     adapter-mgmt update --resource-adapter AWS --profile Default \
-        --setting tags="key=value \"this is the tag name=this is the tag value\""
+        --setting tags="key=value,this is the tag name=this is the tag value"
     ```
 
   Multiple tags:
 
     ```shell
     adapter-mgmt update --resource-adapter AWS --profile Default \
-        --setting tags="Name=\"execd host\" ostype=centos"
+        --setting tags="Name=execd host,ostype=centos"
     ```
 
 - `use_instance_hostname`
