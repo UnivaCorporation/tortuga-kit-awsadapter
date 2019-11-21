@@ -38,6 +38,7 @@ from boto.ec2.blockdevicemapping import BlockDeviceMapping
 from boto.ec2.connection import EC2Connection
 from boto.ec2.autoscale import (AutoScaleConnection, LaunchConfiguration,
                                 AutoScalingGroup)
+from boto.ec2.autoscale.tag import Tag as AutoscaleTag
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from boto3.resources.base import ServiceResource
@@ -493,13 +494,19 @@ class Aws(ResourceAdapter):
                          spot_price=spot_price,
                          **lcArgs)
         autoconn.create_launch_configuration(lc)
+
+        # Get list of boto.ec2.autoscale.tag.Tag objects to apply to the
+        # auto-scaling group and propagate to new instances
+        tags = self._get_scale_set_tags(name, configDict, hardwareProfile,
+                                        softwareProfile)
+
         try:
             ag = AutoScalingGroup(group_name=name,
                           vpc_zone_identifier=configDict.get("subnet_id"),
                           launch_config=lc, min_size=minCount, max_size=maxCount,
                           desired_capacity=desiredCount,
                           health_check_period=configDict.get("healthcheck_period"),
-                          connection=autoconn)
+                          connection=autoconn, tags=tags)
             autoconn.create_auto_scaling_group(ag)
         except Exception as ex:
             autoconn.delete_launch_configuration(lc.name)
@@ -552,6 +559,30 @@ class Aws(ResourceAdapter):
             ag.update()
         except Exception as ex:
             raise ex
+
+    def _get_scale_set_tags(self, group_name: str, configDict: Dict[str, Any],
+                            hardwareprofile_name: str,
+                            softwareprofile_name: str) -> List[AutoscaleTag]:
+
+        # Get dict of key-value pairs for default tags
+        tag_dict = self.get_initial_tags(configDict, hardwareprofile_name,
+                                         softwareprofile_name)
+        name_tag = self._get_name_tag(configDict)
+        if name_tag:
+            tag_dict['Name'] = name_tag
+
+        # Convert to a list of boto.ec2.autoscale.tag.Tag objects
+        # Set "propagate-at-launch" to be always True so that instances in
+        # the group are assigned the tags when they are launched.
+        autoscale_tags = [
+            AutoscaleTag(
+                resource_id=group_name, resource_type='auto-scaling-group',
+                key=k, value=v, propagate_at_launch=True
+            )
+            for k, v in tag_dict.items()
+        ]
+
+        return autoscale_tags
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
