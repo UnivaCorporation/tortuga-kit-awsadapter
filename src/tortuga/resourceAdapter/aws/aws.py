@@ -479,8 +479,9 @@ class Aws(ResourceAdapter):
         autoconn = self.getAutoScaleConnection(configDict)
         conn = self.getEC2Connection(configDict)
         insertnode_request = {
-                   'softwareProfile': softwareProfile,
-                   'hardwareProfile': hardwareProfile,
+            'softwareProfile': softwareProfile,
+            'hardwareProfile': hardwareProfile,
+            'add_tags_post_launch': False,
         }
         lcArgs = self.__get_launch_config_args(
             conn,
@@ -775,8 +776,14 @@ class Aws(ResourceAdapter):
                     nodedetail,
                     metadata=metadata,
                 )
-                self._tag_instance(launch_request.configDict,
-                                   launch_request.conn, node, instance)
+                # We apply tags as long as the addNodesRequest does not
+                # explicitly instruct us not to.
+                apply_tags = launch_request.addNodesRequest.get(
+                    'apply_tags_post_launch', True
+                )
+                if apply_tags:
+                    self._tag_instance(launch_request.configDict,
+                                       launch_request.conn, node, instance)
                 node_created = True
 
             except InvalidArgument:
