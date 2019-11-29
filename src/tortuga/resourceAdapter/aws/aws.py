@@ -65,6 +65,7 @@ from tortuga.exceptions.resourceNotFound import ResourceNotFound
 from tortuga.node import state
 from tortuga.resourceAdapter.resourceAdapter import (DEFAULT_CONFIGURATION_PROFILE_NAME,
                                                      ResourceAdapter)
+from tortuga.resourceAdapter.utility import patch_managed_tags
 
 from .exceptions import AWSOperationTimeoutError
 from .helpers import (_get_encoded_list, _quote_str,
@@ -572,6 +573,7 @@ class Aws(ResourceAdapter):
         name_tag = self._get_name_tag(configDict)
         if name_tag:
             tag_dict['Name'] = name_tag
+        tags = patch_managed_tags(tags)
 
         # Convert to a list of boto.ec2.autoscale.tag.Tag objects
         # Set "propagate-at-launch" to be always True so that instances in
@@ -2307,6 +2309,7 @@ fqdn: %s
         name_tag = self._get_name_tag(configDict, node)
         if name_tag is not None:
             tags['Name'] = name_tag
+        tags = patch_managed_tags(tags)
 
         return tags
 
@@ -2341,6 +2344,7 @@ fqdn: %s
         name_tag = self._get_name_tag(config, node)
         if name_tag:
             tags['Name'] = name_tag
+        tags = patch_managed_tags(tags)
 
         self._tag_resources(conn, [instance.id], tags)
         self._tag_ebs_volumes(conn, instance, tags)
