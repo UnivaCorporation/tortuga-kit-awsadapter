@@ -932,8 +932,9 @@ class Aws(ResourceAdapter):
                     dnsdomain = configDict.get('dns_domain', None)
 
                 insertnode_request = {
-                   'softwareProfile': dbSoftwareProfile.name,
-                   'hardwareProfile': dbHardwareProfile.name,
+                    'softwareProfile': dbSoftwareProfile.name,
+                    'hardwareProfile': dbHardwareProfile.name,
+                    'resource_adapter_configuration': cfgname,
                 }
                 args = self.__get_request_spot_instance_args(
                     conn,
