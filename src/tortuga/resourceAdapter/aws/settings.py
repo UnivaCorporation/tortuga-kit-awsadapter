@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import boto.ec2
+from boto3.session import Session
 
 from tortuga.resourceAdapterConfiguration import settings
 
@@ -109,7 +109,7 @@ SETTINGS = {
         display_name='Region',
         description='AWS region',
         default='us-east-1',
-        values=[region.name for region in boto.ec2.regions()],
+        values=[region for region in Session().get_available_regions('ec2')],
         **GROUP_INSTANCES
     ),
     'zone': settings.StringSetting(
@@ -338,3 +338,4 @@ SETTINGS = {
         advanced=True
     ),
 }
+

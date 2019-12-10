@@ -8,6 +8,7 @@
   "project_page": "http://univa.com",
   "issues_url": "https://support.univa.com",
   "dependencies": [
-    {"name":"puppetlabs/stdlib"}
+    {"name":"puppetlabs/stdlib"},
+    {"name":"puppetlabs-inifile"}
   ]
 }

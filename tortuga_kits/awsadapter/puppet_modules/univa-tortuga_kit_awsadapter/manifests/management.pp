@@ -1,4 +1,4 @@
-# Copyright 2008-2018 Univa Corporation
+# Copyright 2008-2019 Univa Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,15 @@ class tortuga_kit_awsadapter::management::package {
   include tortuga::config
 
   ensure_resource('package', 'unzip', {'ensure' => 'installed'})
+
+  # Update boto config to support new regions
+  ini_setting { "region endpoint heuristics":
+    ensure  => present,
+    path    => '/etc/boto.cfg',
+    section => 'Boto',
+    setting => 'use_endpoint_heuristics',
+    value   => 'True',
+  }
 
   if $::osfamily == 'RedHat' {
     if versioncmp($facts['os']['release']['major'], '7') < 0 {
