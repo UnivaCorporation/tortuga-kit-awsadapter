@@ -482,7 +482,7 @@ class Aws(ResourceAdapter):
         insertnode_request = {
             'softwareProfile': softwareProfile,
             'hardwareProfile': hardwareProfile,
-            'add_tags_post_launch': False,
+            'apply_tags_post_launch': False,
             'resource_adapter_configuration': resourceAdapterProfile,
         }
         lcArgs = self.__get_launch_config_args(
