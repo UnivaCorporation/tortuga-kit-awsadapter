@@ -573,7 +573,7 @@ class Aws(ResourceAdapter):
         name_tag = self._get_name_tag(configDict)
         if name_tag:
             tag_dict['Name'] = name_tag
-        tags = patch_managed_tags(tags)
+        tag_dict = patch_managed_tags(tag_dict)
 
         # Convert to a list of boto.ec2.autoscale.tag.Tag objects
         # Set "propagate-at-launch" to be always True so that instances in
