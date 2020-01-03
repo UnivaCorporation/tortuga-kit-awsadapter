@@ -936,6 +936,14 @@ class Aws(ResourceAdapter):
                     'hardwareProfile': dbHardwareProfile.name,
                     'resource_adapter_configuration': cfgname,
                 }
+
+                # Add any tags from the addNodesRequest (i.e., that aren't
+                # directly attached to the adapter profile configuration)
+                # so they can be applied once the spot instance comes online
+                requested_tags = addNodesRequest.get('tags', {})
+                if requested_tags:
+                    insertnode_request['tags'] = requested_tags
+
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
