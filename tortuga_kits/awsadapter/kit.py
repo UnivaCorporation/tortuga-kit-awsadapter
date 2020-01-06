@@ -24,6 +24,7 @@ class AWSKitInstaller(ResourceAdapterMixin, KitInstallerBase):
         'bootstrap-aws-ubuntu18.py',
         'aws-instances.csv',
         'aws-bootstrap-offline.tmpl',
+        'cloud-config-secondary-disk.yaml',
     ]
     puppet_modules = ['univa-tortuga_kit_awsadapter']
     resource_adapter_name = 'AWS'

@@ -1,0 +1,15 @@
+#cloud-config
+# vim: syntax=yaml
+
+fs_setup:
+  - label: None
+    filesystem: "xfs"
+    device: "{{ secondary_disk_device }}"
+    partition: auto
+
+bootcmd:
+  - 'cloud-init single --name cc_disk_setup'
+  - 'mount -a'
+
+mounts:
+  - [ {{ secondary_disk_device }}, {{ secondary_disk_mount_point }}, "xfs", "defaults", "0", "0" ]

@@ -155,6 +155,22 @@ This section lists the valid settings for the AWS resource adapter.
     **Note:** `cloud_init` does not need to be set if
     `user_data_script_template` is set.
 
+- `secondary_disk_device`
+
+    Path to a secondary disk device. Examples: `/dev/sda1`, `/dev/nvme1n1`.
+    At present, this is only used in the `cloud-config-secondary-disk.yaml`
+    template. This may depend on how you attach the block device to the
+    instance or on the AMI you are using. Note that when using non-AWS
+    Linux AMIs, there is no guaranteed correlation between the device
+    specified in the block device mapping and where it actually gets
+    mapped in the instance.
+
+- `secondary_disk_mount_point`
+
+    Path to a mount point for the `secondary_disk_device`. Example: `/opt`.
+    At present, this is only used in the `cloud-config-secondary-disk.yaml`
+    template.
+
 - `endpoint`
 
     This is intended primarily for other AWS-compatible clouds. It should be

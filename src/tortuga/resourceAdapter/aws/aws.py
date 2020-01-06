@@ -2959,6 +2959,15 @@ insertnode_request = %s
 
         return vcpus
 
+    def _get_cloud_init_template_vars(self, configDict: Dict[str, Any]) \
+        -> Dict[str, str]:
+        tmpl_vars = super()._get_cloud_init_template_vars(configDict)
+        tmpl_vars['secondary_disk_device'] = \
+            configDict.get('secondary_disk_device')
+        tmpl_vars['secondary_disk_mount_point'] = \
+            configDict.get('secondary_disk_mount_point')
+        return tmpl_vars
+
     def set_node_tag(self, node: Node, tag_name: str, tag_value: str):
         config = self.get_node_resource_adapter_config(node)
         conn = self.getEC2Connection(config)

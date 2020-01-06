@@ -75,6 +75,18 @@ SETTINGS = {
         description='Used to define block devices (virtual hard drives)',
         **GROUP_INSTANCES
     ),
+    'secondary_disk_device': settings.StringSetting(
+        display_name='Secondary disk device',
+        description='Path to a secondary disk device',
+        requires=['secondary_disk_mount_point'],
+        **GROUP_INSTANCES
+    ),
+    'secondary_disk_mount_point': settings.StringSetting(
+        display_name='Secondary disk mount point',
+        description='Path to mount secondary disk device as filesystem',
+        requires=['secondary_disk_device'],
+        **GROUP_INSTANCES
+    ),
     'cloud_init_script_template': settings.FileSetting(
         display_name='cloud-init script template',
         description='Path to cloud-init script template',
