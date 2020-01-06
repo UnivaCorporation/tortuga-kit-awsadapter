@@ -129,7 +129,18 @@ This section lists the valid settings for the AWS resource adapter.
     See "[Advanced Topics: AWS instance block device mapping](#aws-instance-block-device-mapping)" section below
     for full detail and examples.
 
-- `cloud_init` and `user_data_script_template`
+- `cloud_init_script_template`
+
+    Path to a `cloud-config` template to be used by [`cloud-init`][cloud_init]
+    for configuring an instance at boot time. Users can provide their own
+    templates (as long as the variables to be rendered are provided by the
+    adapter kit) or use one of the available ones.
+
+    This feature *can* (but does not have to) be used in conjuction with
+    `user_data_script_template` to perform boot-time configuration with
+    [`cloud-init`][cloud_init] and also run a script.
+
+- `user_data_script_template`
 
     These control the scripts that set up and configure Puppet and fully
     integrate the instance into a Tortuga cluster.

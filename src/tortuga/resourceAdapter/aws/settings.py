@@ -78,17 +78,13 @@ SETTINGS = {
     'cloud_init_script_template': settings.FileSetting(
         display_name='cloud-init script template',
         description='Path to cloud-init script template',
-        mutually_exclusive=['user_data_script_template'],
         base_path='/opt/tortuga/config/',
-        overrides=['user_data_script_template'],
         **GROUP_INSTANCES
     ),
     'user_data_script_template': settings.FileSetting(
         display_name='User data script template',
         description='Path to user data template script',
-        mutually_exclusive=['cloud_init_script_template'],
         base_path='/opt/tortuga/config/',
-        overrides=['cloud_init_script_template'],
         **GROUP_INSTANCES
     ),
     'vcpus': settings.IntegerSetting(

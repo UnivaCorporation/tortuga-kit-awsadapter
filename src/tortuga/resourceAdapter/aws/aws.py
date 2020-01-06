@@ -22,9 +22,8 @@ import os
 import random
 import socket
 import sys
+import textwrap
 import xml.etree.cElementTree as ET
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Any, Dict, List, NoReturn, Optional, Union
 from typing.io import TextIO
 
@@ -1368,16 +1367,51 @@ insertnode_request = %s
         Return metadata to be associated with each launched instance
         """
 
+        bootstrap_data = []
         if 'user_data_script_template' in config:
-            return self.__get_user_data_script(
+            user_data = self.__get_user_data_script(
                 config,
                 node=node,
                 insertnode_request=insertnode_request
             )
 
+            bootstrap_data.append({
+                'data': user_data,
+                'type': 'text/x-shellscript',
+                'filename': 'bootstrap.py',
+            })
+
+            # Use cloud-init to set fully-qualified domain name of instance
+            if node and not config['use_instance_hostname']:
+                fqdn_cloud_config = textwrap.dedent("""\
+                    #cloud-config
+
+                    fqdn: %s
+                    """) % (node.name)
+
+                bootstrap_data.append({
+                    'data': fqdn_cloud_config,
+                    'type': 'text/cloud-config',
+                    'filename': 'user-data.txt',
+                })
+
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
-        return self.expand_cloud_init_user_data_template(config, node=node)
+        if 'cloud_init_script_template' in config:
+            cloud_config = self.expand_cloud_init_user_data_template(config,
+                                                                     node=node)
+            bootstrap_data.append({
+                'data': cloud_config,
+                'type': 'text/cloud-config',
+                'filename': 'cloud-config.txt',
+            })
+
+        # If more than one, construct a MIME multi-part message
+        if len(bootstrap_data) > 1:
+            return self._construct_mime_multipart_userdata(bootstrap_data)
+
+        # Otherwise, return only the data of the single element
+        return bootstrap_data[0]['data']
 
     def generate_startup_script(self, config: Dict[str, str],
                                 node: Optional[Node] = None,
@@ -1418,34 +1452,6 @@ insertnode_request = %s
             insertnode_request=insertnode_request
         )
 
-        if node and not config['use_instance_hostname']:
-            # Use cloud-init to set fully-qualified domain name of instance
-            cloud_init = """#cloud-config
-
-fqdn: %s
-""" % (node.name)
-
-            combined_message = MIMEMultipart()
-
-            sub_message = MIMEText(
-                cloud_init, 'text/cloud-config', sys.getdefaultencoding())
-            filename = 'user-data.txt'
-            sub_message.add_header(
-                'Content-Disposition',
-                'attachment; filename="%s"' % (filename))
-            combined_message.attach(sub_message)
-
-            sub_message = MIMEText(
-                result, 'text/x-shellscript', sys.getdefaultencoding())
-            filename = 'bootstrap.py'
-            sub_message.add_header(
-                'Content-Disposition',
-                'attachment; filename="%s"' % (filename))
-            combined_message.attach(sub_message)
-
-            return str(combined_message)
-
-        # Fallback to default behaviour
         return result
     def __prelaunch_instances(self, dbSession: Session,
                               launch_request: LaunchRequest):
