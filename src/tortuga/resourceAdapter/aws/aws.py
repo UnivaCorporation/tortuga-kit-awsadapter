@@ -1013,8 +1013,19 @@ class Aws(ResourceAdapter):
                 session = self.session
 
                 for node in nodes:
-                    # Add the node name to the insertnode_request and encrypt
-                    insertnode_request['node_name'] = node.name
+                    # Add the node name to the insertnode_request and
+                    # instructions to skip a step in the validation (usually
+                    # an error is thrown if the hardware profile doesn't allow
+                    # the node name to be set, but a name is included in the
+                    # addNodesRequest)
+                    insertnode_request.update(
+                        {
+                            'node_name': node.name,
+                            'skip_hostname_hwprofile_validation': True,
+                        }
+                    )
+
+                    # Encrypt
                     encrypted_insertnode_request = encrypt_insertnode_request(
                         self._cm.get_encryption_key(), insertnode_request
                     )
