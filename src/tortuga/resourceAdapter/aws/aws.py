@@ -918,6 +918,13 @@ class Aws(ResourceAdapter):
         if spot_price is None:
             spot_price = configDict.get('spot_price')
 
+        # Set up insertnode_request
+        insertnode_request = {
+            'softwareProfile': dbSoftwareProfile.name,
+            'hardwareProfile': dbHardwareProfile.name,
+            'resource_adapter_configuration': cfgname,
+        }
+
         try:
             if configDict['use_instance_hostname']:
                 nodes: List[Node] = []
@@ -927,12 +934,6 @@ class Aws(ResourceAdapter):
                 if configDict.get('override_dns_domain', None):
                     dnsdomain = configDict.get('dns_domain', None)
 
-                insertnode_request = {
-                    'softwareProfile': dbSoftwareProfile.name,
-                    'hardwareProfile': dbHardwareProfile.name,
-                    'resource_adapter_configuration': cfgname,
-                }
-
                 # Add any tags from the addNodesRequest (i.e., that aren't
                 # directly attached to the adapter profile configuration)
                 # so they can be applied once the spot instance comes online
@@ -940,11 +941,15 @@ class Aws(ResourceAdapter):
                 if requested_tags:
                     insertnode_request['tags'] = requested_tags
 
+                # Encrypt the insertnode_request
+                encrypted_insertnode_request = encrypt_insertnode_request(
+                    self._cm.get_encryption_key(), insertnode_request
+                )
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
                     configDict,
-                    insertnode_request=encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
+                    insertnode_request=encrypted_insertnode_request
                 )
 
                 resv = conn.request_spot_instances(
@@ -972,11 +977,18 @@ class Aws(ResourceAdapter):
                 session = self.session
 
                 for node in nodes:
+                    # Add the node name to the insertnode_request and encrypt
+                    insertnode_request['node_name'] = node.name
+                    encrypted_insertnode_request = encrypt_insertnode_request(
+                        self._cm.get_encryption_key(), insertnode_request
+                    )
                     args = self.__get_request_spot_instance_args(
                         conn,
                         addNodesRequest,
                         configDict,
-                        node=node)
+                        node=node,
+                        insertnode_request=encrypted_insertnode_request
+                    )
 
                     resv = conn.request_spot_instances(
                         spot_price,
