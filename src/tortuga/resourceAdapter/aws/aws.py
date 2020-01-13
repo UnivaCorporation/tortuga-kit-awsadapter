@@ -710,6 +710,17 @@ class Aws(ResourceAdapter):
 
         return nodes
 
+    def __get_node_by_name(self, session: Session, node_name: str) \
+        -> Optional[Node]:
+        try:
+            return session.query(Node).filter(
+                Node.name==node_name  # noqa
+            ).one()
+        except NoResultFound:
+            pass
+
+        return None
+
     def __get_node_by_instance(self, session: Session,
                                instance_id: str) -> Optional[Node]:
         try:
@@ -766,7 +777,13 @@ class Aws(ResourceAdapter):
 
         node_created = False
 
+        # Try to get node by instance, or by the node name
         node = self.__get_node_by_instance(session, instance_id)
+        if node is None:
+            node_name = launch_request.addNodesRequest.get('node_name', None)
+            if node_name is not None:
+                node = self.__get_node_by_name(session, node_name)
+
         if node is None:
             try:
                 node = self.__create_node(
@@ -792,10 +809,25 @@ class Aws(ResourceAdapter):
                 raise
 
         else:
+            # This is the "update" branch of upsert
             self._logger.debug(
                 'Found existing node record [%s] for instance id [%s]',
                 node.name, instance_id
             )
+            ip = nodedetail['metadata']['ec2_ipaddress']
+            self._pre_add_host(node.name, launch_request.hardwareprofile.name,
+                               launch_request.softwareprofile.name, ip)
+
+            # Update node
+            node.state = state.NODE_STATE_PROVISIONED
+            node.addHostSession = self.addHostSession
+            primary_nic = get_primary_nic(node.nics)
+            primary_nic.ip = ip
+
+            # Get node tags from DB and apply to instance
+            tag_dict = {tag.name: tag.value for tag in node.tags}
+            self._tag_instance(launch_request.configDict, launch_request.conn,
+                               node, instance, tags=tag_dict)
 
         # set node properties
         node.instance = InstanceMapping(
@@ -812,7 +844,7 @@ class Aws(ResourceAdapter):
             result = self.__get_spot_instance_metadata(session, sir_id)
             if not result:
                 self._logger.error(
-                    'Unable to find matching spot instand request: %s',
+                    'Unable to find matching spot instance request: %s',
                     sir_id,
                 )
 
