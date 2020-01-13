@@ -570,10 +570,6 @@ class Aws(ResourceAdapter):
         # Get dict of key-value pairs for default tags
         tag_dict = self.get_initial_tags(configDict, hardwareprofile_name,
                                          softwareprofile_name)
-        name_tag = self._get_name_tag(configDict)
-        if name_tag:
-            tag_dict['Name'] = name_tag
-        tag_dict = patch_managed_tags(tag_dict)
 
         # Convert to a list of boto.ec2.autoscale.tag.Tag objects
         # Set "propagate-at-launch" to be always True so that instances in
@@ -1773,9 +1769,10 @@ fqdn: %s
             #
             # Set initial tags for the node
             #
-            initial_tags = self.get_initial_tags(configDict,
-                                                 hardwareprofile.name,
-                                                 softwareprofile.name)
+            initial_tags = self.get_initial_tags(
+                configDict, hardwareprofile.name, softwareprofile.name,
+                node=node
+            )
             for k, v in initial_tags.items():
                 tag = NodeTag(name=k, value=v)
                 node.tags.append(tag)
@@ -2268,7 +2265,8 @@ fqdn: %s
         pass
 
     def get_initial_tags(self, config: Dict[str, str], hwp_name: str,
-                         swp_name: str) -> Dict[str, str]:
+                         swp_name: str, node: Optional[Node] = None) \
+            -> Dict[str, str]:
         """
         Returns the list of tags that should be applied to one or more
         nodes upon creation.  We override the base class version of this
@@ -2281,13 +2279,21 @@ fqdn: %s
 
         :return Dict[str, str: the tags that should be applied
         """
-
+        # Get default initial tags
         tags = super().get_initial_tags(config, hwp_name, swp_name)
 
         installer_ip = config.get('installer_ip', None)
         if installer_ip is not None:
             tags['tortuga-installer_ipaddress'] = \
                 self._sanitze_tag_value(installer_ip)
+
+        # Get name tag
+        name_tag = self._get_name_tag(config, node=node)
+        if name_tag:
+            tags['Name'] = name_tag
+
+        # Patch managed tags
+        tags = patch_managed_tags(tags)
 
         return tags
 
@@ -2314,11 +2320,7 @@ fqdn: %s
             else addNodesRequest['softwareProfile']
 
         # Compile tags
-        tags = self.get_initial_tags(configDict, hwp_name, swp_name)
-        name_tag = self._get_name_tag(configDict, node)
-        if name_tag is not None:
-            tags['Name'] = name_tag
-        tags = patch_managed_tags(tags)
+        tags = self.get_initial_tags(configDict, hwp_name, swp_name, node=node)
 
         return tags
 
@@ -2347,13 +2349,7 @@ fqdn: %s
             'Assigning tags to instance: {}'.format(instance.id))
 
         tags = self.get_initial_tags(config, node.hardwareprofile.name,
-                                     node.softwareprofile.name)
-
-        # Add Name tag
-        name_tag = self._get_name_tag(config, node)
-        if name_tag:
-            tags['Name'] = name_tag
-        tags = patch_managed_tags(tags)
+                                     node.softwareprofile.name, node=node)
 
         self._tag_resources(conn, [instance.id], tags)
         self._tag_ebs_volumes(conn, instance, tags)
