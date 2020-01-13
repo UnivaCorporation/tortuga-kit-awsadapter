@@ -837,6 +837,10 @@ class Aws(ResourceAdapter):
                 launch_request.addNodesRequest.get('resource_adapter_configuration'))
         )
 
+        # Try to set public hostname
+        if instance.public_dns_name:
+            node.public_hostname = instance.public_dns_name
+
         # attempt to find matching spot instance request
         if 'spot_instance_request_id' in nodedetail['metadata']:
             sir_id = nodedetail['metadata']['spot_instance_request_id']
