@@ -2347,7 +2347,7 @@ fqdn: %s
         return name_tag
 
     def _tag_instance(self, config: dict, conn: EC2Connection,
-                      node: Node, instance):
+                      node: Node, instance, tags: Dict[str, str] = {}):
         """
         Add tags to a VM instance and attached EBS volumes
 
@@ -2355,13 +2355,17 @@ fqdn: %s
         :param EC2Connection conn: a configured EC2 connection
         :param Node node:          the database node instance
         :param instance:           the EC2 instance to tag
+        :param tags:               optional dict of tags to apply; if not
+                                   provided, default tags are used
 
         """
         self._logger.debug(
             'Assigning tags to instance: {}'.format(instance.id))
 
-        tags = self.get_initial_tags(config, node.hardwareprofile.name,
-                                     node.softwareprofile.name, node=node)
+        # If a dict of tags is not provided, get default tags
+        if not tags:
+            tags = self.get_initial_tags(config, node.hardwareprofile.name,
+                                         node.softwareprofile.name, node=node)
 
         self._tag_resources(conn, [instance.id], tags)
         self._tag_ebs_volumes(conn, instance, tags)
