@@ -570,10 +570,6 @@ class Aws(ResourceAdapter):
         # Get dict of key-value pairs for default tags
         tag_dict = self.get_initial_tags(configDict, hardwareprofile_name,
                                          softwareprofile_name)
-        name_tag = self._get_name_tag(configDict)
-        if name_tag:
-            tag_dict['Name'] = name_tag
-        tag_dict = patch_managed_tags(tag_dict)
 
         # Convert to a list of boto.ec2.autoscale.tag.Tag objects
         # Set "propagate-at-launch" to be always True so that instances in
@@ -714,6 +710,17 @@ class Aws(ResourceAdapter):
 
         return nodes
 
+    def __get_node_by_name(self, session: Session, node_name: str) \
+        -> Optional[Node]:
+        try:
+            return session.query(Node).filter(
+                Node.name==node_name  # noqa
+            ).one()
+        except NoResultFound:
+            pass
+
+        return None
+
     def __get_node_by_instance(self, session: Session,
                                instance_id: str) -> Optional[Node]:
         try:
@@ -770,7 +777,13 @@ class Aws(ResourceAdapter):
 
         node_created = False
 
+        # Try to get node by instance, or by the node name
         node = self.__get_node_by_instance(session, instance_id)
+        if node is None:
+            node_name = launch_request.addNodesRequest.get('node_name', None)
+            if node_name is not None:
+                node = self.__get_node_by_name(session, node_name)
+
         if node is None:
             try:
                 node = self.__create_node(
@@ -796,10 +809,25 @@ class Aws(ResourceAdapter):
                 raise
 
         else:
+            # This is the "update" branch of upsert
             self._logger.debug(
                 'Found existing node record [%s] for instance id [%s]',
                 node.name, instance_id
             )
+            ip = nodedetail['metadata']['ec2_ipaddress']
+            self._pre_add_host(node.name, launch_request.hardwareprofile.name,
+                               launch_request.softwareprofile.name, ip)
+
+            # Update node
+            node.state = state.NODE_STATE_PROVISIONED
+            node.addHostSession = self.addHostSession
+            primary_nic = get_primary_nic(node.nics)
+            primary_nic.ip = ip
+
+            # Get node tags from DB and apply to instance
+            tag_dict = {tag.name: tag.value for tag in node.tags}
+            self._tag_instance(launch_request.configDict, launch_request.conn,
+                               node, instance, tags=tag_dict)
 
         # set node properties
         node.instance = InstanceMapping(
@@ -809,6 +837,10 @@ class Aws(ResourceAdapter):
                 launch_request.addNodesRequest.get('resource_adapter_configuration'))
         )
 
+        # Try to set public hostname
+        if instance.public_dns_name:
+            node.public_hostname = instance.public_dns_name
+
         # attempt to find matching spot instance request
         if 'spot_instance_request_id' in nodedetail['metadata']:
             sir_id = nodedetail['metadata']['spot_instance_request_id']
@@ -816,7 +848,7 @@ class Aws(ResourceAdapter):
             result = self.__get_spot_instance_metadata(session, sir_id)
             if not result:
                 self._logger.error(
-                    'Unable to find matching spot instand request: %s',
+                    'Unable to find matching spot instance request: %s',
                     sir_id,
                 )
 
@@ -922,6 +954,13 @@ class Aws(ResourceAdapter):
         if spot_price is None:
             spot_price = configDict.get('spot_price')
 
+        # Set up insertnode_request
+        insertnode_request = {
+            'softwareProfile': dbSoftwareProfile.name,
+            'hardwareProfile': dbHardwareProfile.name,
+            'resource_adapter_configuration': cfgname,
+        }
+
         try:
             if configDict['use_instance_hostname']:
                 nodes: List[Node] = []
@@ -931,12 +970,6 @@ class Aws(ResourceAdapter):
                 if configDict.get('override_dns_domain', None):
                     dnsdomain = configDict.get('dns_domain', None)
 
-                insertnode_request = {
-                    'softwareProfile': dbSoftwareProfile.name,
-                    'hardwareProfile': dbHardwareProfile.name,
-                    'resource_adapter_configuration': cfgname,
-                }
-
                 # Add any tags from the addNodesRequest (i.e., that aren't
                 # directly attached to the adapter profile configuration)
                 # so they can be applied once the spot instance comes online
@@ -944,11 +977,15 @@ class Aws(ResourceAdapter):
                 if requested_tags:
                     insertnode_request['tags'] = requested_tags
 
+                # Encrypt the insertnode_request
+                encrypted_insertnode_request = encrypt_insertnode_request(
+                    self._cm.get_encryption_key(), insertnode_request
+                )
                 args = self.__get_request_spot_instance_args(
                     conn,
                     addNodesRequest,
                     configDict,
-                    insertnode_request=encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
+                    insertnode_request=encrypted_insertnode_request
                 )
 
                 resv = conn.request_spot_instances(
@@ -976,11 +1013,29 @@ class Aws(ResourceAdapter):
                 session = self.session
 
                 for node in nodes:
+                    # Add the node name to the insertnode_request and
+                    # instructions to skip a step in the validation (usually
+                    # an error is thrown if the hardware profile doesn't allow
+                    # the node name to be set, but a name is included in the
+                    # addNodesRequest)
+                    insertnode_request.update(
+                        {
+                            'node_name': node.name,
+                            'skip_hostname_hwprofile_validation': True,
+                        }
+                    )
+
+                    # Encrypt
+                    encrypted_insertnode_request = encrypt_insertnode_request(
+                        self._cm.get_encryption_key(), insertnode_request
+                    )
                     args = self.__get_request_spot_instance_args(
                         conn,
                         addNodesRequest,
                         configDict,
-                        node=node)
+                        node=node,
+                        insertnode_request=encrypted_insertnode_request
+                    )
 
                     resv = conn.request_spot_instances(
                         spot_price,
@@ -1773,9 +1828,10 @@ fqdn: %s
             #
             # Set initial tags for the node
             #
-            initial_tags = self.get_initial_tags(configDict,
-                                                 hardwareprofile.name,
-                                                 softwareprofile.name)
+            initial_tags = self.get_initial_tags(
+                configDict, hardwareprofile.name, softwareprofile.name,
+                node=node
+            )
             for k, v in initial_tags.items():
                 tag = NodeTag(name=k, value=v)
                 node.tags.append(tag)
@@ -2268,7 +2324,8 @@ fqdn: %s
         pass
 
     def get_initial_tags(self, config: Dict[str, str], hwp_name: str,
-                         swp_name: str) -> Dict[str, str]:
+                         swp_name: str, node: Optional[Node] = None) \
+            -> Dict[str, str]:
         """
         Returns the list of tags that should be applied to one or more
         nodes upon creation.  We override the base class version of this
@@ -2281,13 +2338,21 @@ fqdn: %s
 
         :return Dict[str, str: the tags that should be applied
         """
-
+        # Get default initial tags
         tags = super().get_initial_tags(config, hwp_name, swp_name)
 
         installer_ip = config.get('installer_ip', None)
         if installer_ip is not None:
             tags['tortuga-installer_ipaddress'] = \
                 self._sanitze_tag_value(installer_ip)
+
+        # Get name tag
+        name_tag = self._get_name_tag(config, node=node)
+        if name_tag:
+            tags['Name'] = name_tag
+
+        # Patch managed tags
+        tags = patch_managed_tags(tags)
 
         return tags
 
@@ -2314,11 +2379,7 @@ fqdn: %s
             else addNodesRequest['softwareProfile']
 
         # Compile tags
-        tags = self.get_initial_tags(configDict, hwp_name, swp_name)
-        name_tag = self._get_name_tag(configDict, node)
-        if name_tag is not None:
-            tags['Name'] = name_tag
-        tags = patch_managed_tags(tags)
+        tags = self.get_initial_tags(configDict, hwp_name, swp_name, node=node)
 
         return tags
 
@@ -2333,7 +2394,7 @@ fqdn: %s
         return name_tag
 
     def _tag_instance(self, config: dict, conn: EC2Connection,
-                      node: Node, instance):
+                      node: Node, instance, tags: Dict[str, str] = {}):
         """
         Add tags to a VM instance and attached EBS volumes
 
@@ -2341,19 +2402,17 @@ fqdn: %s
         :param EC2Connection conn: a configured EC2 connection
         :param Node node:          the database node instance
         :param instance:           the EC2 instance to tag
+        :param tags:               optional dict of tags to apply; if not
+                                   provided, default tags are used
 
         """
         self._logger.debug(
             'Assigning tags to instance: {}'.format(instance.id))
 
-        tags = self.get_initial_tags(config, node.hardwareprofile.name,
-                                     node.softwareprofile.name)
-
-        # Add Name tag
-        name_tag = self._get_name_tag(config, node)
-        if name_tag:
-            tags['Name'] = name_tag
-        tags = patch_managed_tags(tags)
+        # If a dict of tags is not provided, get default tags
+        if not tags:
+            tags = self.get_initial_tags(config, node.hardwareprofile.name,
+                                         node.softwareprofile.name, node=node)
 
         self._tag_resources(conn, [instance.id], tags)
         self._tag_ebs_volumes(conn, instance, tags)
