@@ -202,11 +202,18 @@ def main():
     # check distro and version
     result = tryCommand(
         'rpm --query --queryformat %{VENDOR} system-release |'
-	' grep --quiet --ignore-case --line-regexp Amazon.com'
+        ' grep --quiet --ignore-case Amazon'
     )
     if result == 0:
-        # amazon linux
-        vers = 6
+        # amazon linuxv2
+        tryCommand(
+            'awk -F: \'{ print $6 }\' /etc/system-release-cpe |'
+            'grep --quiet \'^2$\''
+        )
+        if result == 0:
+            vers = 7
+        else:
+            vers = 6
     else:
         import platform
 
