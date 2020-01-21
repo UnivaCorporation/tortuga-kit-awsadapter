@@ -511,6 +511,8 @@ class Aws(ResourceAdapter):
             'hardwareProfile': hardwareProfile,
             'resource_adapter_configuration': resourceAdapterProfile,
         }
+        if not configDict['use_instance_hostname']:
+            insertnode_request['skip_hostname_hwprofile_validation'] = True
         encrypted_insertnode_request = encrypt_insertnode_request(
             self._cm.get_encryption_key(),
             insertnode_request
@@ -898,6 +900,23 @@ class Aws(ResourceAdapter):
                 if apply_tags:
                     self._tag_instance(launch_request.configDict,
                                        launch_request.conn, node, instance)
+                    # Get tags to insert into db in same way they are
+                    # generated in the _tag_instance method
+                    tags = self.get_initial_tags(
+                        launch_request.configDict,
+                        node.hardwareprofile.name,
+                        node.softwareprofile.name,
+                        node=node)
+                else:
+                    # Otherwise, get tags to insert into db from instance
+                    tags = {k: v for k, v in instance.tags.items() if not
+                        k.startswith('aws:')}
+
+                # Create node tag db entries
+                for k, v in tags.items():
+                    tag = NodeTag(name=k, value=v)
+                    node.tags.append(tag)
+
                 node_created = True
 
             except InvalidArgument:
