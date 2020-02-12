@@ -1271,30 +1271,54 @@ insertnode_request = %s
         """
 
         if 'user_data_script_template' in config:
-            with open(config['user_data_script_template']) as fp:
-                return self.__get_user_data_script(fp, config, node=node,
-                    insertnode_request=insertnode_request)
+            return self.__get_user_data_script(
+                config,
+                node=node,
+                insertnode_request=insertnode_request
+            )
 
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
         return self.expand_cloud_init_user_data_template(config, node=node)
 
-    def __get_user_data_script(self, fp: TextIO,
-                               config: Dict[str, str],
-                               node: Optional[Node] = None,
-                               insertnode_request: Optional[bytes] = None) -> str:
+    def generate_startup_script(self, config: Dict[str, str],
+                                node: Optional[Node] = None,
+                                insertnode_request: Optional[bytes] = None) \
+            -> str:
+        """
+        Build a node/instance-specific startup script that will initialize
+        VPN, install Puppet, and bootstrap the instance.
+
+        :param configDict: resource adapter configuration settings
+        :param node: Node instance, optional
+        :param insertnode_request: encrypted insertnode_request, optional
+
+        :return: full startup script as a `str`
+        """
         settings_dict = self.__get_common_user_data_settings(config, node)
 
         result = ''
+        with open(config['user_data_script_template']) as fp:
+            for inp in fp.readlines():
+                if inp.startswith('### SETTINGS'):
+                    # substitute "SETTINGS" section in template
+                    result += self.__get_common_user_data_content(
+                        settings_dict, insertnode_request
+                    )
+                    continue
+                result += inp
+        return result
 
-        for inp in fp.readlines():
-            if inp.startswith('### SETTINGS'):
-                # substitute "SETTINGS" section in template
-                result += self.__get_common_user_data_content(settings_dict, insertnode_request)
+    def __get_user_data_script(self, config: Dict[str, str],
+                               node: Optional[Node] = None,
+                               insertnode_request: Optional[bytes] = None) \
+            -> str:
 
-                continue
-
-            result += inp
+        result = self.generate_startup_script(
+            config,
+            node=node,
+            insertnode_request=insertnode_request
+        )
 
         if node and not config['use_instance_hostname']:
             # Use cloud-init to set fully-qualified domain name of instance
@@ -1325,7 +1349,6 @@ fqdn: %s
 
         # Fallback to default behaviour
         return result
-
     def __prelaunch_instances(self, dbSession: Session,
                               launch_request: LaunchRequest):
         """

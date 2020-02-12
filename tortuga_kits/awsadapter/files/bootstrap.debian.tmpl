@@ -75,6 +75,9 @@ def addNode():
                 }
             }
            }
+    # Add nodes workflow must print insertnode_request as JSON with specified
+    # prefix so other tools can read this information
+    print('Instance details: ' + json.dumps(data))
 
     req_data = insertnode_request
     if python3:
