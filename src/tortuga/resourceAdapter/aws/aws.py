@@ -2875,6 +2875,9 @@ fqdn: %s
         conn.terminate_instances([instance_id])
 
     def _get_instance_id_from_cloudserver_id(self, cloudserver_id) -> str:
+        #
+        # cloud server IDs for AWS are in the form of aws:<instance-id>
+        #
         id_parts = cloudserver_id.split(':')
         if len(id_parts) != 2:
             raise Exception("Invalid cloud server id")
