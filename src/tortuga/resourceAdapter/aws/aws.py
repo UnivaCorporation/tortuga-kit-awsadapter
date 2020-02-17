@@ -457,6 +457,92 @@ class Aws(ResourceAdapter):
                 if not ex.message.startswith("Launch configuration name not found"):
                     raise
 
+    def create_launch_template(self,
+              name: str,
+              resourceAdapterProfile: str,
+              hardwareProfile: str,
+              softwareProfile: str,
+              adapter_args: dict,
+              configDict: dict={}):
+        """
+        Create an AWS launch template, which can be used for launching
+        individual instances or auto scaling groups.
+
+        :param name: name of resulting launch template
+        :param resourceAdapterProfile: name of resource adapter profile
+        :param hardwareProfile: name of hardware profile
+        :param softwareProfile: name of software profile
+        :param adapter_args: dict of extra args
+        :param configDict: resource adapter configuration dict (optional);
+            if not provided, it will be loaded from the database
+
+        :raises InvalidArgument:
+
+        :return: launch template dict (see boto3 docs for details)
+        """
+        if not configDict:
+            configDict = self.get_config(resourceAdapterProfile)
+
+        # Get boto3 EC2 connection
+        conn3 = self.getEC2Connection3(configDict)
+
+        # Set up insertnode_request
+        insertnode_request = {
+            'softwareProfile': softwareProfile,
+            'hardwareProfile': hardwareProfile,
+            'resource_adapter_configuration': resourceAdapterProfile,
+        }
+        encrypted_insertnode_request = encrypt_insertnode_request(
+            self._cm.get_encryption_key(),
+            insertnode_request
+        )
+
+        # Set up addNodesRequest
+        addNodesRequest = {
+            'hardwareProfile': hardwareProfile,
+            'softwareProfile': softwareProfile,
+        }
+
+        # Set up request parameters
+        template_args = self.__get_common_launch_args3(
+            conn3,
+            configDict,
+            addNodesRequest=addNodesRequest,
+            insertnode_request=encrypted_insertnode_request
+        )
+        # Add AMI
+        template_args['ImageId'] = configDict['ami']
+
+        # Get spot price, if any
+        spot_price = adapter_args.get('spot_request',{}).get('price')
+        if spot_price is None:
+            spot_price = configDict.get('spot_price')
+        if spot_price:
+            template_args['InstanceMarketOptions'] = {
+                'MarketType': 'spot',
+                'SpotOptions': {'MaxPrice': spot_price},
+            }
+
+        # Try to create a launch template
+        try:
+            launch_template = conn3.meta.client.create_launch_template(
+                LaunchTemplateName=name,
+                LaunchTemplateData=template_args
+            )
+        except Exception as ex:
+            self._logger.exception("Error creating launch template")
+            raise ex
+
+        return launch_template
+
+    def create_instance_template(self, *args, **kwargs):
+        """
+        This method just calls the create_launch_template() method.
+        It exists simply to provide a consistent method name for creating
+        instance templates across all adapter kits.
+        """
+        return self.create_launch_template(*args, **kwargs)
+
     def create_scale_set(self,
               name: str,
               resourceAdapterProfile: str,
