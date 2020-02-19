@@ -2838,6 +2838,54 @@ fqdn: %s
         instance_id = node.instance.instance
         conn.delete_tags([instance_id], [tag_name])
 
+    def cloudserveraction_stop(self, cloudconnectorprofile_id: str,
+                               cloudserver_id: str, **kwargs):
+        force = kwargs.get("force", False)
+        cfg = self.get_config(cloudconnectorprofile_id)
+        conn = self.getEC2Connection(cfg)
+        instance_id = self._get_instance_id_from_cloudserver_id(
+            cloudserver_id)
+        instance = self.__get_instance_by_instance_id(conn, instance_id)
+        instance.stop(force=force)
+
+    def cloudserveraction_start(self, cloudconnectorprofile_id: str,
+                                cloudserver_id: str, **kwargs):
+        cfg = self.get_config(cloudconnectorprofile_id)
+        conn = self.getEC2Connection(cfg)
+        instance_id = self._get_instance_id_from_cloudserver_id(
+            cloudserver_id)
+        instance = self.__get_instance_by_instance_id(conn, instance_id)
+        instance.start()
+
+    def cloudserveraction_restart(self, cloudconnectorprofile_id: str,
+                                  cloudserver_id: str, **kwargs):
+        cfg = self.get_config(cloudconnectorprofile_id)
+        conn = self.getEC2Connection(cfg)
+        instance_id = self._get_instance_id_from_cloudserver_id(
+            cloudserver_id)
+        instance = self.__get_instance_by_instance_id(conn, instance_id)
+        instance.reboot()
+
+    def cloudserveraction_delete(self, cloudconnectorprofile_id: str,
+                                 cloudserver_id: str, **kwargs):
+        cfg = self.get_config(cloudconnectorprofile_id)
+        conn = self.getEC2Connection(cfg)
+        instance_id = self._get_instance_id_from_cloudserver_id(
+            cloudserver_id)
+        conn.terminate_instances([instance_id])
+
+    def _get_instance_id_from_cloudserver_id(self, cloudserver_id) -> str:
+        #
+        # cloud server IDs for AWS are in the form of aws:<instance-id>
+        #
+        id_parts = cloudserver_id.split(':')
+        if len(id_parts) != 2:
+            raise Exception("Invalid cloud server id")
+        if id_parts[0].lower() != self.__adaptername__.lower():
+            raise Exception("Resource adapter mismatch")
+        return id_parts[1]
+
+
 def get_primary_nic(nics: List[Nic]) -> Nic:
     result = [nic for nic in nics if nic.boot]
 
