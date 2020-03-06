@@ -42,6 +42,7 @@ from boto.ec2.autoscale.tag import Tag as AutoscaleTag
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from boto3.resources.base import ServiceResource
+from botocore.client import BaseClient
 from botocore.config import Config
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.session import Session
@@ -167,9 +168,13 @@ class Aws(ResourceAdapter):
 
         return ec2_conn
 
-    def getEC2Connection3(self, configDict: Dict[str, Any]) -> ServiceResource:
+    def getAwsConnection(self, configDict: Dict[str, Any],
+                         service_name='ec2') \
+            -> Union[ServiceResource, BaseClient]:
         """
-        Returns a boto3 conneciton to EC2
+        Returns a boto3 resource or client connection to an AWS service.
+        The default is an EC2 resource, but other options are:
+          * Autoscaling (client only; resource not available)
 
         :raises ConfigurationError: invalid AWS region specified
         """
@@ -183,14 +188,25 @@ class Aws(ResourceAdapter):
         # Set up the session
         session = boto3.Session(region_name=configDict['region'],
                                 **connectionArgs)
-        ec2_conn = session.resource('ec2', config=config)
 
-        if ec2_conn is None:
+        # Get resource or client - we prefer to use a resource, but it's
+        # not presently available for all services
+        if service_name in ['ec2',]:
+            method = 'resource'
+        elif service_name in ['autoscaling',]:
+            method = 'client'
+        else:
+            msg = ('getAwsConnection() method not configured for service '
+                   f'{service_name}')
+            raise ValueError(msg)
+        conn = getattr(session, method)(service_name, config=config)
+
+        if conn is None:
             raise ConfigurationError(
                 'Invalid AWS region [{}]'.format(configDict['region'])
             )
 
-        return ec2_conn
+        return conn
 
     def getAutoScaleConnection(self, configDict: Dict[str, Any]) -> AutoScaleConnection:
         """
@@ -484,7 +500,7 @@ class Aws(ResourceAdapter):
             configDict = self.get_config(resourceAdapterProfile)
 
         # Get boto3 EC2 connection
-        conn3 = self.getEC2Connection3(configDict)
+        conn3 = self.getAwsConnection(configDict, service_name='ec2')
 
         # Set up insertnode_request
         insertnode_request = {
@@ -709,8 +725,8 @@ class Aws(ResourceAdapter):
             )
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
-        launch_request.conn3 = \
-            self.getEC2Connection3(launch_request.configDict)
+        launch_request.conn3 = self.getAwsConnection(launch_request.configDict,
+                                                     service_name='ec2')
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
