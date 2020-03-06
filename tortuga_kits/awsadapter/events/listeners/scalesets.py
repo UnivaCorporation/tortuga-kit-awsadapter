@@ -18,6 +18,7 @@ from tortuga.events.listeners.base import BaseListener
 from tortuga.events.types import (ResourceRequestCreated,
                                   ResourceRequestUpdated,
                                   ResourceRequestDeleted)
+from tortuga.exceptions.validationError import ValidationError
 from tortuga.resources.types import (get_resource_request_class,
                                      BaseResourceRequest,
                                      ScaleSetResourceRequest)
@@ -114,6 +115,9 @@ class AwsScaleSetCreatedListener(AwsScaleSetListenerMixin, BaseListener):
 
         logger.warning('Scale set create request for AWS: %s', ssr.id)
 
+        # Validate scale set request
+        self._validate_scale_set_request(ssr)
+
         # Load the resource adapter for this request
         try:
             adapter = self.get_resource_adapter()
@@ -126,17 +130,38 @@ class AwsScaleSetCreatedListener(AwsScaleSetListenerMixin, BaseListener):
             # Now create the scale set
             adapter.create_scale_set(
                 name=ssr.id,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 minCount=ssr.min_nodes,
                 maxCount=ssr.max_nodes,
                 desiredCount=ssr.desired_nodes,
-                resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 hardwareProfile=ssr.hardwareprofile_name,
                 softwareProfile=ssr.softwareprofile_name,
+                launch_template_name=ssr.instance_template_name,
                 adapter_args=ssr.adapter_arguments)
 
         except Exception as ex:
             logger.error("Error creating resource request: %s", ex)
             self._store.delete(ssr.id)
+
+    def _validate_scale_set_request(self, ssr: ScaleSetResourceRequest):
+        err_msg = None
+        if ssr.instance_template_name:
+            if (ssr.hardwareprofile_name or ssr.softwareprofile_name):
+                err_msg = ('Specify either an instance template name or a '
+                           'hardware profile and software profile to create a '
+                           'scale set, not both.')
+        elif not (ssr.hardwareprofile_name and ssr.softwareprofile_name):
+            err_msg = ('Must specify both a hardware profile and a software '
+                       'profile to create a scale set.')
+        elif not ssr.resourceadapter_name:
+            err_msg = 'Scale set creation requires a resource adapter name.'
+        elif not ssr.resourceadapter_profile_name:
+            err_msg = ('Scale set creation requires a resource adapter '
+                       'profile name.')
+
+        if err_msg:
+            raise ValidationError(err_msg)
+
 
 
 class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
@@ -164,12 +189,10 @@ class AwsScaleSetUpdatedListener(AwsScaleSetListenerMixin, BaseListener):
             # Now create the scale set
             adapter.update_scale_set(
                 name=ssr.id,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 minCount=ssr.min_nodes,
                 maxCount=ssr.max_nodes,
                 desiredCount=ssr.desired_nodes,
-                resourceAdapterProfile=ssr.resourceadapter_profile_name,
-                hardwareProfile=ssr.hardwareprofile_name,
-                softwareProfile=ssr.softwareprofile_name,
                 adapter_args=ssr.adapter_arguments
             )
         except Exception as ex:
@@ -201,8 +224,11 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
 
         # Now create the scale set
         try:
-            adapter.delete_scale_set(name=ssr.id,
-                                     resourceAdapterProfile=ssr.resourceadapter_profile_name)
+            adapter.delete_scale_set(
+                name=ssr.id,
+                resourceAdapterProfile=ssr.resourceadapter_profile_name,
+                adapter_args=ssr.adapter_arguments
+            )
         except Exception as ex:
             logger.error("Error deleting resource request: %s", ex)
             self._store.rollback(ssr)
