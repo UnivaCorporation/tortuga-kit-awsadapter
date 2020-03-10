@@ -42,6 +42,7 @@ from boto.ec2.autoscale.tag import Tag as AutoscaleTag
 from boto.ec2.networkinterface import (NetworkInterfaceCollection,
                                        NetworkInterfaceSpecification)
 from boto3.resources.base import ServiceResource
+from botocore.client import BaseClient
 from botocore.config import Config
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.session import Session
@@ -167,9 +168,13 @@ class Aws(ResourceAdapter):
 
         return ec2_conn
 
-    def getEC2Connection3(self, configDict: Dict[str, Any]) -> ServiceResource:
+    def getAwsConnection(self, configDict: Dict[str, Any],
+                         service_name='ec2') \
+            -> Union[ServiceResource, BaseClient]:
         """
-        Returns a boto3 conneciton to EC2
+        Returns a boto3 resource or client connection to an AWS service.
+        The default is an EC2 resource, but other options are:
+          * Autoscaling (client only; resource not available)
 
         :raises ConfigurationError: invalid AWS region specified
         """
@@ -183,33 +188,25 @@ class Aws(ResourceAdapter):
         # Set up the session
         session = boto3.Session(region_name=configDict['region'],
                                 **connectionArgs)
-        ec2_conn = session.resource('ec2', config=config)
 
-        if ec2_conn is None:
+        # Get resource or client - we prefer to use a resource, but it's
+        # not presently available for all services
+        if service_name in ['ec2',]:
+            method = 'resource'
+        elif service_name in ['autoscaling',]:
+            method = 'client'
+        else:
+            msg = ('getAwsConnection() method not configured for service '
+                   f'{service_name}')
+            raise ValueError(msg)
+        conn = getattr(session, method)(service_name, config=config)
+
+        if conn is None:
             raise ConfigurationError(
                 'Invalid AWS region [{}]'.format(configDict['region'])
             )
 
-        return ec2_conn
-
-    def getAutoScaleConnection(self, configDict: Dict[str, Any]) -> AutoScaleConnection:
-        """
-        :raises ConfigurationError: invalid AWS region specified
-        """
-
-        connectionArgs = self.getConnectionArgs(configDict)
-
-        ec2_conn = boto.ec2.autoscale.connect_to_region(
-            configDict['region'],
-            **connectionArgs,
-        )
-
-        if ec2_conn is None:
-            raise ConfigurationError(
-                'Invalid AWS region [{}]'.format(configDict['region'])
-            )
-
-        return ec2_conn
+        return conn
 
     def process_config(self, config: Dict[str, Any]):
         #
@@ -432,157 +429,251 @@ class Aws(ResourceAdapter):
 
     def delete_scale_set(self,
               name: str,
-              resourceAdapterProfile: str):
-
+              resourceAdapterProfile: str,
+              adapter_args: dict={}):
         """
         Delete an existing scale set
 
         :raises InvalidArgument:
         """
+        # Get configuration dict
+        configDict = self.get_config(resourceAdapterProfile)
 
-        configDict = self.get_config(
-            resourceAdapterProfile
-        )
+        # Add scale-set prefix to name
+        normalized_name = f'scale-set-{name}'
 
-        autoconn = self.getAutoScaleConnection(configDict)
+        # Set up connection objects to AutoScaling and EC2 APIs
+        as_conn = self.getAwsConnection(configDict,
+                                        service_name='autoscaling')
+
+        # Delete auto scaling group
         try:
-            autoconn.delete_auto_scaling_group(name, force_delete=True)
-        except boto.exception.BotoServerError as ex:
-            if not ex.message.startswith("AutoScalingGroup name not found"):
-                raise
+            as_conn.delete_auto_scaling_group(
+                AutoScalingGroupName=normalized_name,
+                ForceDelete=True
+            )
+        except Exception as ex:
+            self._logger.error('Error updating auto-scaling group')
+            raise ex
         finally:
+            # Try to delete launch template with normalized name (i.e., if
+            # a launch template was created specifically for this scale set,
+            # we delete it). Otherwise, the launch template will have a
+            # different name and we don't want to delete it.
             try:
-                autoconn.delete_launch_configuration(name)
-            except boto.exception.BotoServerError as ex:
-                if not ex.message.startswith("Launch configuration name not found"):
-                    raise
+                ec2_conn = self.getAwsConnection(configDict,
+                                                 service_name='ec2')
+                ec2_conn.meta.client.delete_launch_template(
+                    LaunchTemplateName=normalized_name
+                )
+            except Exception as ex:
+                # Only pass if error is like "launch template not found" - need to test
+                pass
 
-    def create_scale_set(self,
+    def create_launch_template(self,
               name: str,
               resourceAdapterProfile: str,
               hardwareProfile: str,
               softwareProfile: str,
-              minCount: int,
-              maxCount: int,
-              desiredCount: int,
-              adapter_args: dict):
-
+              adapter_args: dict,
+              configDict: dict={}):
         """
-        Create a new scale set
+        Create an AWS launch template, which can be used for launching
+        individual instances or auto scaling groups.
+
+        :param name: name of resulting launch template
+        :param resourceAdapterProfile: name of resource adapter profile
+        :param hardwareProfile: name of hardware profile
+        :param softwareProfile: name of software profile
+        :param adapter_args: dict of extra args
+        :param configDict: resource adapter configuration dict (optional);
+            if not provided, it will be loaded from the database
 
         :raises InvalidArgument:
+
+        :return: launch template dict (see boto3 docs for details)
         """
+        if not configDict:
+            configDict = self.get_config(resourceAdapterProfile)
 
-        configDict = self.get_config(
-            resourceAdapterProfile
-        )
+        # Get boto3 EC2 connection
+        conn3 = self.getAwsConnection(configDict, service_name='ec2')
 
-        autoconn = self.getAutoScaleConnection(configDict)
-        conn = self.getEC2Connection(configDict)
+        # Set up insertnode_request
         insertnode_request = {
             'softwareProfile': softwareProfile,
             'hardwareProfile': hardwareProfile,
-            'apply_tags_post_launch': False,
             'resource_adapter_configuration': resourceAdapterProfile,
         }
-        lcArgs = self.__get_launch_config_args(
-            conn,
-            configDict,
-            encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
+        encrypted_insertnode_request = encrypt_insertnode_request(
+            self._cm.get_encryption_key(),
+            insertnode_request
         )
+
+        # Set up addNodesRequest
+        addNodesRequest = {
+            'hardwareProfile': hardwareProfile,
+            'softwareProfile': softwareProfile,
+        }
+
+        # Set up request parameters
+        template_args = self.__get_common_launch_args3(
+            conn3,
+            configDict,
+            addNodesRequest=addNodesRequest,
+            insertnode_request=encrypted_insertnode_request
+        )
+        # Add AMI
+        template_args['ImageId'] = configDict['ami']
+
+        # Get spot price, if any
         spot_price = adapter_args.get('spot_request',{}).get('price')
         if spot_price is None:
             spot_price = configDict.get('spot_price')
-        lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
-                         spot_price=spot_price,
-                         **lcArgs)
-        autoconn.create_launch_configuration(lc)
+        if spot_price:
+            template_args['InstanceMarketOptions'] = {
+                'MarketType': 'spot',
+                'SpotOptions': {'MaxPrice': spot_price},
+            }
 
-        # Get list of boto.ec2.autoscale.tag.Tag objects to apply to the
-        # auto-scaling group and propagate to new instances
-        tags = self._get_scale_set_tags(name, configDict, hardwareProfile,
-                                        softwareProfile)
-
+        # Try to create a launch template
         try:
-            ag = AutoScalingGroup(group_name=name,
-                          vpc_zone_identifier=configDict.get("subnet_id"),
-                          launch_config=lc, min_size=minCount, max_size=maxCount,
-                          desired_capacity=desiredCount,
-                          health_check_period=configDict.get("healthcheck_period"),
-                          connection=autoconn, tags=tags)
-            autoconn.create_auto_scaling_group(ag)
+            launch_template = conn3.meta.client.create_launch_template(
+                LaunchTemplateName=name,
+                LaunchTemplateData=template_args
+            )
         except Exception as ex:
-            autoconn.delete_launch_configuration(lc.name)
+            self._logger.exception("Error creating launch template")
+            raise ex
+
+        return launch_template
+
+    def create_instance_template(self, *args, **kwargs):
+        """
+        This method just calls the create_launch_template() method.
+        It exists simply to provide a consistent method name for creating
+        instance templates across all adapter kits.
+        """
+        return self.create_launch_template(*args, **kwargs)
+
+    def create_scale_set(self,
+              name: str,
+              resourceAdapterProfile: str,
+              minCount: int,
+              maxCount: int,
+              desiredCount: int,
+              hardwareProfile: str=None,
+              softwareProfile: str=None,
+              launch_template_name: str=None,
+              adapter_args: dict={}):
+        """
+        Create a new scale set in AWS. If launch_template_name is provided,
+        the corresponding launch template will be used to generate the scale
+        set. If not, a launch template will be created specifically for this
+        scale set.
+
+        :raises InvalidArgument:
+        """
+        # Get configuration dict
+        configDict = self.get_config(resourceAdapterProfile)
+
+        # Add the 'scale-set-' prefix to the name - this is kind of an
+        # implicit indicator that the scale set is managed by Tortuga
+        name = f'scale-set-{name}'
+
+        # Set up connection objects to AutoScaling and EC2 APIs
+        as_conn = self.getAwsConnection(configDict,
+                                        service_name='autoscaling')
+        ec2_conn = self.getAwsConnection(configDict, service_name='ec2')
+
+        # If launch template name provided, create a new launch template
+        # specifically for this scale set
+        template_created = False
+        create_template = not bool(launch_template_name)
+        if launch_template_name:
+            # Verify that launch template exists
+            response = ec2_conn.meta.client.describe_launch_templates(
+                LaunchTemplateNames=[launch_template_name]
+            )
+            if not response:
+                msg = ('Lookup of provided launch template '
+                       f'"{launch_template_name}" failed. Creating a new '
+                       'launch template.')
+                self._logger.warning(msg)
+                create_template = True
+
+        # If launch template name not provided or lookup of provided launch
+        # template failed, then we create a template specifically for this
+        # scale set
+        if create_template:
+            launch_template = self.create_launch_template(
+                name,
+                resourceAdapterProfile,
+                hardwareProfile,
+                softwareProfile,
+                adapter_args
+            )
+            template_created = True
+            launch_template_name = \
+                launch_template['LaunchTemplate']['LaunchTemplateName']
+
+        # Generate request data structure
+        request_data = {
+            'AutoScalingGroupName': name,
+            'LaunchTemplate': {'LaunchTemplateName': launch_template_name},
+            'MinSize': minCount,
+            'MaxSize': maxCount,
+            'DesiredCapacity': desiredCount,
+            'VPCZoneIdentifier': configDict.get('subnet_id'),
+            'HealthCheckGracePeriod': configDict.get('healthcheck_period'),
+        }
+
+        # Request creation of auto scaling group
+        try:
+            as_conn.create_auto_scaling_group(**request_data)
+        except Exception as ex:
+            self._logger.error('Error creating auto-scaling group')
+            if template_created:
+                ec2_conn.meta.client.delete_launch_template(
+                    LaunchTemplateName=launch_template_name
+                )
             raise ex
 
     def update_scale_set(self,
               name: str,
               resourceAdapterProfile: str,
-              hardwareProfile: str,
-              softwareProfile: str,
               minCount: int,
               maxCount: int,
               desiredCount: int,
-              adapter_args: dict):
-
+              adapter_args: dict={}):
         """
         Update an existing scale set
 
         :raises InvalidArgument:
         """
+        # Get configuration dict
+        configDict = self.get_config(resourceAdapterProfile)
 
-        configDict = self.get_config(
-            resourceAdapterProfile
-        )
+        # Add scale-set prefix to name
+        normalized_name = f'scale-set-{name}'
 
-        autoconn = self.getAutoScaleConnection(configDict)
-        conn = self.getEC2Connection(configDict)
-        insertnode_request = {
-                   'softwareProfile': softwareProfile,
-                   'hardwareProfile': hardwareProfile,
+        # Set up connection objects to AutoScaling and EC2 APIs
+        as_conn = self.getAwsConnection(configDict,
+                                        service_name='autoscaling')
+
+        # Set up request data
+        request_data = {
+            'AutoScalingGroupName': normalized_name,
+            'MinSize': minCount,
+            'MaxSize': maxCount,
+            'DesiredCapacity': desiredCount,
         }
-        lcArgs = self.__get_launch_config_args(
-            conn,
-            configDict,
-            encrypt_insertnode_request(self._cm.get_encryption_key(), insertnode_request)
-        )
-        spot_price = adapter_args.get('spot_request',{}).get('price')
-        if spot_price is None:
-            spot_price = configDict.get('spot_price')
-        lc = LaunchConfiguration(name=name, image_id=configDict['ami'],
-                         spot_price=spot_price,
-                         **lcArgs)
+
         try:
-            ag = AutoScalingGroup(group_name=name,
-                          vpc_zone_identifier=configDict.get("subnet_id"),
-                          launch_config=lc, min_size=minCount, max_size=maxCount,
-                          desired_capacity=desiredCount,
-                          health_check_period=configDict.get("healthcheck_period"),
-                          connection=autoconn)
-            ag.update()
+            as_conn.update_auto_scaling_group(**request_data)
         except Exception as ex:
+            self._logger.error('Error updating auto-scaling group')
             raise ex
-
-    def _get_scale_set_tags(self, group_name: str, configDict: Dict[str, Any],
-                            hardwareprofile_name: str,
-                            softwareprofile_name: str) -> List[AutoscaleTag]:
-
-        # Get dict of key-value pairs for default tags
-        tag_dict = self.get_initial_tags(configDict, hardwareprofile_name,
-                                         softwareprofile_name)
-
-        # Convert to a list of boto.ec2.autoscale.tag.Tag objects
-        # Set "propagate-at-launch" to be always True so that instances in
-        # the group are assigned the tags when they are launched.
-        autoscale_tags = [
-            AutoscaleTag(
-                resource_id=group_name, resource_type='auto-scaling-group',
-                key=k, value=v, propagate_at_launch=True
-            )
-            for k, v in tag_dict.items()
-        ]
-
-        return autoscale_tags
 
     def start(self, addNodesRequest: dict, dbSession: Session,
               dbHardwareProfile: HardwareProfile,
@@ -623,8 +714,8 @@ class Aws(ResourceAdapter):
             )
 
         launch_request.conn = self.getEC2Connection(launch_request.configDict)
-        launch_request.conn3 = \
-            self.getEC2Connection3(launch_request.configDict)
+        launch_request.conn3 = self.getAwsConnection(launch_request.configDict,
+                                                     service_name='ec2')
 
         if 'nodeDetails' in addNodesRequest and \
                 addNodesRequest['nodeDetails']:
@@ -1271,30 +1362,54 @@ insertnode_request = %s
         """
 
         if 'user_data_script_template' in config:
-            with open(config['user_data_script_template']) as fp:
-                return self.__get_user_data_script(fp, config, node=node,
-                    insertnode_request=insertnode_request)
+            return self.__get_user_data_script(
+                config,
+                node=node,
+                insertnode_request=insertnode_request
+            )
 
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
         return self.expand_cloud_init_user_data_template(config, node=node)
 
-    def __get_user_data_script(self, fp: TextIO,
-                               config: Dict[str, str],
-                               node: Optional[Node] = None,
-                               insertnode_request: Optional[bytes] = None) -> str:
+    def generate_startup_script(self, config: Dict[str, str],
+                                node: Optional[Node] = None,
+                                insertnode_request: Optional[bytes] = None) \
+            -> str:
+        """
+        Build a node/instance-specific startup script that will initialize
+        VPN, install Puppet, and bootstrap the instance.
+
+        :param configDict: resource adapter configuration settings
+        :param node: Node instance, optional
+        :param insertnode_request: encrypted insertnode_request, optional
+
+        :return: full startup script as a `str`
+        """
         settings_dict = self.__get_common_user_data_settings(config, node)
 
         result = ''
+        with open(config['user_data_script_template']) as fp:
+            for inp in fp.readlines():
+                if inp.startswith('### SETTINGS'):
+                    # substitute "SETTINGS" section in template
+                    result += self.__get_common_user_data_content(
+                        settings_dict, insertnode_request
+                    )
+                    continue
+                result += inp
+        return result
 
-        for inp in fp.readlines():
-            if inp.startswith('### SETTINGS'):
-                # substitute "SETTINGS" section in template
-                result += self.__get_common_user_data_content(settings_dict, insertnode_request)
+    def __get_user_data_script(self, config: Dict[str, str],
+                               node: Optional[Node] = None,
+                               insertnode_request: Optional[bytes] = None) \
+            -> str:
 
-                continue
-
-            result += inp
+        result = self.generate_startup_script(
+            config,
+            node=node,
+            insertnode_request=insertnode_request
+        )
 
         if node and not config['use_instance_hostname']:
             # Use cloud-init to set fully-qualified domain name of instance
@@ -1325,7 +1440,6 @@ fqdn: %s
 
         # Fallback to default behaviour
         return result
-
     def __prelaunch_instances(self, dbSession: Session,
                               launch_request: LaunchRequest):
         """
@@ -2902,7 +3016,7 @@ def get_private_ip_address_argument(addNodesRequest: Dict[str, Any]) \
     """
 
     private_ip_address = None
-    if addNodesRequest and addNodesRequest['count'] == 1 and \
+    if addNodesRequest and addNodesRequest.get('count') == 1 and \
             'nodeDetails' in addNodesRequest:
         node_spec = addNodesRequest['nodeDetails'][0]
 

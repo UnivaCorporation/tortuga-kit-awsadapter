@@ -65,6 +65,10 @@ def addNode():
                 }
             }
            }
+    # Add nodes workflow must print insertnode_request as JSON with specified
+    # prefix so other tools can read this information
+    print('Instance details: ' + json.dumps(data))
+
     url = 'https://%s:%s/v1/node-token/%s' % (installerHostName, port, insertnode_request)
     req = urllib2.Request(url)
 
