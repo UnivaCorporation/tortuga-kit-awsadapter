@@ -453,7 +453,7 @@ class Aws(ResourceAdapter):
                 ForceDelete=True
             )
         except Exception as ex:
-            self._logger.error('Error updating auto-scaling group')
+            self._logger.error('Error deleting auto-scaling group')
             raise ex
         finally:
             # Try to delete launch template with normalized name (i.e., if
