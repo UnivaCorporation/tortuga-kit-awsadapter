@@ -14,6 +14,7 @@
 
 # pylint: disable=no-member,logging-not-lazy,logging-format-interpolation
 
+import base64
 import csv
 import itertools
 import json
@@ -521,7 +522,8 @@ class Aws(ResourceAdapter):
             conn3,
             configDict,
             addNodesRequest=addNodesRequest,
-            insertnode_request=encrypted_insertnode_request
+            insertnode_request=encrypted_insertnode_request,
+            encode_user_data=True
         )
         # Add AMI
         template_args['ImageId'] = configDict['ami']
@@ -2209,7 +2211,8 @@ fqdn: %s
             self, conn3: ServiceResource, configDict: Dict[str, Any],
             node: Optional[Node] = None, *,
             addNodesRequest: Optional[dict] = None,
-            insertnode_request: Optional[bytes] = None) -> Dict[str, Any]:
+            insertnode_request: Optional[bytes] = None,
+            encode_user_data: Optional[bool] = False) -> Dict[str, Any]:
         """
         Return key-value pairs of arguments for passing to launch API
         """
@@ -2234,11 +2237,16 @@ fqdn: %s
 
         # User data
         if configDict['cloud_init']:
-            args['UserData'] = self.__get_user_data(
+            user_data = self.__get_user_data(
                 configDict,
                 node=node,
                 insertnode_request=insertnode_request
             )
+            if encode_user_data:
+                user_data = base64.b64encode(
+                    user_data.encode('ascii')
+                ).decode('ascii')
+            args['UserData'] = user_data
 
         # Kernel ID
         if 'aki' in configDict and configDict['aki']:
