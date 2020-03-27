@@ -47,7 +47,7 @@ insertnode_request = None
 class RequestMixin:
     class NotFound(Exception):
         pass
-    
+
     class InvalidCredentials(Exception):
         pass
 
@@ -113,6 +113,12 @@ class RequestMixin:
 
 
 class CloudProviderBase(RequestMixin):
+    def __init__(self):
+        self.bootstrapper = None
+
+    def set_bootstrapper(self, bootstrapper):
+        self.bootstrapper = bootstrapper
+
     def get_node_name(self):
         raise NotImplementedError()
 
@@ -126,6 +132,8 @@ class BootstrapperBase(RequestMixin):
                  dns_domain=None, dns_search=None, dns_options=None,
                  dns_nameservers=None, insertnode_request=None):
         self.cloud_provider_helper = cloud_provider_helper
+        self.cloud_provider_helper.set_bootstrapper(self)
+
         self.installer_hostname = installer_hostname
         self.installer_ip_address = installer_ip_address
         self.port = port
@@ -187,7 +195,7 @@ class BootstrapperBase(RequestMixin):
         if not self.insertnode_request:
             print("No insertnode_request, skipping add_node")
             return
-            
+
         if not self.installer_ip_address:
             raise Exception("Installer IP address not set")
 
@@ -214,14 +222,14 @@ class BootstrapperBase(RequestMixin):
         headers = {
             'Content-Type': 'application/json'
         }
-        
+
         for nCount in range(5):
             try:
                 print('Add node: {}'.format(url))
                 response = self.request(url, headers=headers,
                                         data=json.dumps(data))
                 break
-                
+
             except self.InvalidCredentials:
                 raise Exception('Invalid Tortuga webservice credentials')
             except self.NotFound:
@@ -294,6 +302,51 @@ class AwsCloudProvider(CloudProviderBase):
             raise Exception('Unable to communicate with metadata webservice')
 
 
+class AzureCloudProvider(CloudProviderBase):
+    def get_node_name(self):
+        if self.bootstrapper.override_dns_domain:
+            return socket.getfqdn() + "." + self.bootstrapper.dns_domain
+        else:
+            return socket.gethostname() + "." + \
+                   self.bootstrapper.installer_hostname.split('.', 1)[1]
+
+    def get_node_metadata(self):
+        instance_name = self._get_instance_data('/compute/name')
+        try:
+            scale_set_name = self._get_instance_data(
+                '/compute/vmScaleSetName')
+            instance_id = int(instance_name.rsplit('_', 1)[1])
+        except:
+            instance_id = instance_name
+            scale_set_name = ""
+
+        return {
+            'instance_id': instance_id,
+            'private_ip': self._get_instance_data(
+                '/network/interface/0/ipv4/ipAddress/0/privateIpAddress'),
+            'scale_set_name': scale_set_name,
+        }
+
+    def _get_instance_data(self, path):
+        url = ('http://169.254.169.254/metadata/instance{}'
+               '?api-version=2019-04-30&format=text'.format(path))
+        headers = {
+            'Metadata': 'true'
+        }
+
+        for i in range(5):
+            try:
+                print('Get instance data: {}'.format(url))
+                return self.request(url, headers)
+            except self.NotFound:
+                raise
+            except Exception as ex:
+                print(ex)
+                time.sleep(2 ** (i + 1))
+        else:
+            raise Exception('Unable to communicate with metadata webservice')
+
+
 class GcpCloudProvider(CloudProviderBase):
     def get_node_name(self):
         return self._get_instance_data('/hostname')
@@ -322,7 +375,7 @@ class GcpCloudProvider(CloudProviderBase):
             raise Exception('Unable to communicate with metadata webservice')
 
 
-class CentBootstrapperBase(BootstrapperBase):
+class CentOsBootstrapper(BootstrapperBase):
     def install_puppet(self):
         if self._is_pkg_installed('puppet-agent'):
             return
@@ -475,14 +528,15 @@ class DebianBootstrapper(BootstrapperBase):
 
 
 BOOTSTRAPPER_REGISTRY = {
-    'centos': CentBootstrapperBase,
+    'centos': CentOsBootstrapper,
     'debian': DebianBootstrapper
 }
 
 
 CLOUDPROVIDER_REGISTRY = {
-    'gcp': GcpCloudProvider,
     'aws': AwsCloudProvider,
+    'azure': AzureCloudProvider,
+    'gcp': GcpCloudProvider,
 }
 
 
