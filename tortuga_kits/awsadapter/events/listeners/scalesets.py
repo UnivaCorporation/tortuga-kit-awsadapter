@@ -233,8 +233,8 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
             )
         except botocore.exceptions.ClientError as ex:
             # Check for "not found" exception by parsing response string. If
-            # found, the auto scaling group doesn't exist and there is no need
-            # to roll back the deletion request
+            # that is the case, the auto scaling group doesn't exist and there
+            # is no need to roll back the deletion request
             response_msg = ex.response.get("Error", {}).get("Message", "")
             if not "AutoScalingGroup name not found" in response_msg:
                 logger.exception("Error deleting resource request: %s", ex)
