@@ -454,7 +454,7 @@ class Aws(ResourceAdapter):
                 ForceDelete=True
             )
         except Exception as ex:
-            self._logger.error('Error deleting auto-scaling group')
+            self._logger.error(f"Error deleting auto-scaling group: {str(ex)}")
             raise ex
         finally:
             # Try to delete launch template with normalized name (i.e., if
@@ -467,9 +467,14 @@ class Aws(ResourceAdapter):
                 ec2_conn.meta.client.delete_launch_template(
                     LaunchTemplateName=normalized_name
                 )
-            except Exception as ex:
-                # Only pass if error is like "launch template not found" - need to test
-                pass
+            except botocore.exceptions.ClientError as ex:
+                # If launch template not found error, pass
+                resp_code = ex.response.get("Error", {}).get("Code", "")
+                if resp_code == "InvalidLaunchTemplateName.NotFoundException":
+                    self._logger.warning(f"Launch template '{normalized_name}'"
+                                         " not found for deletion")
+                else:
+                    raise ex
 
     def create_launch_template(self,
               name: str,

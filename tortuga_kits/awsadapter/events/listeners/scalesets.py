@@ -14,6 +14,8 @@
 import logging
 from typing import Optional
 
+import botocore.exceptions
+
 from tortuga.events.listeners.base import BaseListener
 from tortuga.events.types import (ResourceRequestCreated,
                                   ResourceRequestUpdated,
@@ -229,6 +231,14 @@ class AwsScaleSetDeletedListener(AwsScaleSetListenerMixin, BaseListener):
                 resourceAdapterProfile=ssr.resourceadapter_profile_name,
                 adapter_args=ssr.adapter_arguments
             )
+        except botocore.exceptions.ClientError as ex:
+            # Check for "not found" exception by parsing response string. If
+            # that is the case, the auto scaling group doesn't exist and there
+            # is no need to roll back the deletion request
+            response_msg = ex.response.get("Error", {}).get("Message", "")
+            if not "AutoScalingGroup name not found" in response_msg:
+                logger.exception("Error deleting resource request: %s", ex)
+                self._store.rollback(ssr)
         except Exception as ex:
-            logger.error("Error deleting resource request: %s", ex)
+            logger.exception("Error deleting resource request: %s", ex)
             self._store.rollback(ssr)
