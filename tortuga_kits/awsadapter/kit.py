@@ -19,6 +19,9 @@ from tortuga.kit.mixins import ResourceAdapterMixin
 class AWSKitInstaller(ResourceAdapterMixin, KitInstallerBase):
     config_files = [
         'bootstrap.tmpl',
+        'bootstrap-aws-centos7.py',
+        'bootstrap-aws-centos8.py',
+        'bootstrap-aws-ubuntu18.py',
         'aws-instances.csv',
         'aws-bootstrap-offline.tmpl',
     ]
