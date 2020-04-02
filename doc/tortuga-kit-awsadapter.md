@@ -24,7 +24,7 @@ cloud-based node addition/removal.
 The AWS Adapter Kit installs as a standard kit using `install-kit`:
 
 ```shell
-install-kit kit-awsadapter-7.0.3-0.tar.bz2
+install-kit kit-awsadapter-7.1.1-0.tar.bz2
 ```
 
 ### Enable management component
@@ -32,7 +32,7 @@ install-kit kit-awsadapter-7.0.3-0.tar.bz2
 Before proceeding with configuration of the AWS resource adapter, it is first necessary to enable the `management` component on the Tortuga installer:
 
 ```shell
-enable-component -p awsadapter-7.0.3-0 management-7.0.3
+enable-component -p awsadapter-7.1.1-0 management-7.1.1
 puppet agent -t
 ```
 
