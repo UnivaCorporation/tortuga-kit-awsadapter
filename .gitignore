@@ -4,6 +4,7 @@ man/**/*.8
 *.swp
 *.egg-info/
 **/puppet_modules/**/pkg/
+**/puppet_modules/**/kit.json
 .mypy_cache/
 __pycache__/
 .pytest_cache/
