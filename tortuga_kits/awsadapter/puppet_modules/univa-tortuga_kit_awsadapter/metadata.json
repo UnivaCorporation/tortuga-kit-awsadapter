@@ -1,6 +1,6 @@
 {
   "name": "univa-tortuga_kit_awsadapter",
-  "version": "7.0.3",
+  "version": "7.1.1",
   "author": "Univa Corporation",
   "summary": "Tortuga AWS adapter kit integration module",
   "license": "Apache-2.0",

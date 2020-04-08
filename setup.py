@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import json
 from setuptools import find_packages, setup
 
 
-VERSION = '7.0.3'
+def get_version():
+    with open('kit.json') as fp:
+        kit_data = json.load(fp)
+        return '{}+{}'.format(kit_data['version'], kit_data['iteration'])
 
 
 def get_requirements():
@@ -27,7 +30,7 @@ def get_requirements():
 
 setup(
     name='tortuga-aws-adapter',
-    version=VERSION,
+    version=get_version(),
     url='http://univa.com',
     author='Univa Corporation',
     author_email='support@univa.com',
