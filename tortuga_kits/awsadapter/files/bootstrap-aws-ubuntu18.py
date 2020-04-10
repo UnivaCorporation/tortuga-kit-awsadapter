@@ -66,6 +66,8 @@ class ReqMixin:
     def _req_py3(self, u, h=None, d=None):
         from urllib import request, error
         req = request.Request(u)
+        if isinstance(d, str):
+            d = d.encode()
         if h:
             for k, v in h.items():
                 req.add_header(k, v)
@@ -159,13 +161,7 @@ class BootstrapperBase(ReqMixin):
             return
         if not self.installer_ip_address:
             raise Exception("Installer IP address not set")
-        self.try_cmd("mkdir -p /etc/pki/ca-trust/source/anchors/")
-        self.try_cmd(
-            "curl http://{}:8008/ca.pem > "
-            "/etc/pki/ca-trust/source/anchors/tortuga-ca.pem".format(
-                self.installer_ip_address)
-        )
-        self.try_cmd("update-ca-trust")
+        self.add_installer_ca_certificate()
         d = {
             'node_details': {
                 'name': self.cloud_provider_helper.get_node_name(),
@@ -174,7 +170,8 @@ class BootstrapperBase(ReqMixin):
         }
         print('Instance details: ' + json.dumps(d))
         u = 'https://{}:{}/v1/node-token/{}'.format(
-            self.installer_hostname, self.port, self.insertnode_request)
+            self.installer_hostname, self.port,
+            self.insertnode_request.decode())
         h = {
             'Content-Type': 'application/json'
         }
@@ -192,7 +189,16 @@ class BootstrapperBase(ReqMixin):
                 time.sleep(2 ** (i + 1))
         else:
             raise Exception('Unable to communicate with Tortuga')
-        print(json.load(res))
+        print(json.loads(res))
+
+    def add_installer_ca_certificate(self):
+        self.try_cmd("mkdir -p /etc/pki/ca-trust/source/anchors/")
+        self.try_cmd(
+            "curl http://{}:8008/ca.pem > "
+            "/etc/pki/ca-trust/source/anchors/tortuga-ca.pem".format(
+                self.installer_ip_address)
+        )
+        self.try_cmd("update-ca-trust")
 
     def disable_selinux(self):
         self.try_cmd('setenforce permissive')
@@ -430,6 +436,15 @@ class DebianBootstrapper(BootstrapperBase):
     def _is_installed(self, pkg):
         return self.try_cmd(
             'dpkg -l {} 2>/dev/null | grep -q ^ii'.format(pkg)) == 0
+
+    def add_installer_ca_certificate(self):
+        self.try_cmd("mkdir -p /usr/local/share/ca-certificates")
+        self.try_cmd(
+            "curl http://{}:8008/ca.pem > "
+            "/usr/local/share/ca-certificates/tortuga-ca.crt".format(
+                self.installer_ip_address)
+        )
+        self.try_cmd("update-ca-certificates")
 
 
 BOOTSTRAPPERS = {
