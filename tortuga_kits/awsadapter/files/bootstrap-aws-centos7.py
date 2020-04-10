@@ -66,6 +66,8 @@ class ReqMixin:
     def _req_py3(self, u, h=None, d=None):
         from urllib import request, error
         req = request.Request(u)
+        if isinstance(d, str):
+            d = d.encode()
         if h:
             for k, v in h.items():
                 req.add_header(k, v)
