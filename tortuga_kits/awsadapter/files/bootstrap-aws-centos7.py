@@ -188,7 +188,7 @@ class BootstrapperBase(ReqMixin):
                 time.sleep(2 ** (i + 1))
         else:
             raise Exception('Unable to communicate with Tortuga')
-        print(json.load(res))
+        print(json.loads(res))
 
     def add_installer_ca_certificate(self):
         self.try_cmd("mkdir -p /etc/pki/ca-trust/source/anchors/")
