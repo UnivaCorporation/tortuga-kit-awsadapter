@@ -170,7 +170,8 @@ class BootstrapperBase(ReqMixin):
         }
         print('Instance details: ' + json.dumps(d))
         u = 'https://{}:{}/v1/node-token/{}'.format(
-            self.installer_hostname, self.port, self.insertnode_request)
+            self.installer_hostname, self.port,
+            self.insertnode_request.decode())
         h = {
             'Content-Type': 'application/json'
         }
