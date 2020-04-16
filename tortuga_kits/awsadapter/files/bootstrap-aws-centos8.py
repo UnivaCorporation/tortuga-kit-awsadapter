@@ -148,12 +148,23 @@ class BootstrapperBase(ReqMixin):
                     fp.write('nameserver {}\n'.format(ns))
                 if not self.dns_domain:
                     raise Exception("DNS domain not set")
-                fqdn = '{}.{}'.format(
-                    socket.getfqdn().split('.', 1)[0],
-                    self.dns_domain
-                )
-                self.try_cmd(
-                    'hostnamectl set-hostname --static {}'.format(fqdn))
+            fqdn = '{}.{}'.format(
+                socket.getfqdn().split('.', 1)[0],
+                self.dns_domain
+            )
+            self.try_cmd(
+                'hostnamectl set-hostname --static {}'.format(fqdn))
+        else:
+            with open('/etc/resolv.conf', 'r') as fp:
+                data = fp.read().strip().split('\n')
+            data = ['# Rewritten by Tortuga'] + data
+            ns_line = \
+                next((l for l in data if l.startswith('nameserver ')), None)
+            if ns_line is not None:
+                data.insert(data.index(ns_line),
+                            'nameserver {}'.format(installerIpAddress))
+            with open('/etc/resolv.conf', 'w') as fp:
+                fp.write("\n".join(data))
 
     def add_node(self):
         if not self.insertnode_request:
