@@ -1740,6 +1740,12 @@ fqdn: %s
                 resource_adapter_configuration=resource_adapter_configuration,
             )
 
+        # Update 'tortuga-name' tag on the node if the instance hostname does not
+        # match what we have in tortuga
+        if instance.private_dns_name != node.name:
+            conn = self.getEC2Connection(launch_request.configDict)
+            self._tag_resources(conn, [instance.id], {'tortuga-name':node.name})
+
         # Commit node record changes (incl. host name and/or IP address)
         dbSession.commit()
 
