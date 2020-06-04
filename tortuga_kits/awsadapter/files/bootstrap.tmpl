@@ -49,12 +49,11 @@ def get_instance_data(path):
         raise Exception('Unable to read %s' % path)
     return response.read()
 
-def addNode():
+def addNode(local_hostname):
     tryCommand("mkdir -p /etc/pki/ca-trust/source/anchors/")
     tryCommand("curl http://%s:8008/ca.pem > /etc/pki/ca-trust/source/anchors/tortuga-ca.pem" % installerIpAddress)
     tryCommand("update-ca-trust")
     instance_id = get_instance_data('/instance-id')
-    local_hostname = get_instance_data('/local-hostname')
     local_ipv4 = get_instance_data('/local-ipv4')
     data = {
             'node_details': {
@@ -174,6 +173,7 @@ def bootstrapPuppet():
 
 
 def main():
+    fqdn = get_instance_data('/local-hostname')
     if override_dns_domain:
         with open('/etc/resolv.conf', 'w') as fp:
             fp.write('# Created by Tortuga\n')
@@ -192,7 +192,7 @@ def main():
             tryCommand('hostnamectl set-hostname --static %s' % (fqdn))
 
     if insertnode_request is not None:
-        addNode()
+        addNode(fqdn)
     tryCommand('setenforce permissive')
 
     # append /etc/hosts entry for installer
