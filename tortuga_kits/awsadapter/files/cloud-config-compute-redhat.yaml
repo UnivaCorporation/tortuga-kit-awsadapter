@@ -1,3 +1,4 @@
+## template: jinja
 #cloud-config
 # vim: syntax=yaml
 
@@ -21,12 +22,44 @@ runcmd:
   - 'sed -i "s/SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config'
   - 'cloud-init single --name users-groups --frequency always'
   - 'cloud-init single --name puppet --frequency always'
+  - curl -o /etc/pki/ca-trust/source/anchors/tortuga-ca.pem http://{{ installer }}:8008/ca.pem
+  - update-ca-trust
+  - systemctl daemon-reload
+  - systemctl start launch-register-node.service
 
 # example mount of a filesystem on attached block device
 #mounts:
 #  - [UUID=3cdb34c8-47f0-4e7e-b521-a75b9492e36b, /opt/R, auto, ro, '0', '0']
 
 write_files:
+{% if insertnode_request is defined %}
+  - path: /etc/launch_node_details
+    owner: root:root
+    permissions: '0644'
+    content: |
+      {
+          "node_details": {
+              "name": {{ '"{{ ds.meta_data.local_hostname }}"' }},
+              "metadata": {
+                  "ec2_instance_id": {{ '"{{ v1.instance_id }}"' }},
+                  "ec2_ipaddress": {{ '"{{ ds.meta_data.local_ipv4 }}"' }}
+              }
+          }
+      }
+  - path: /etc/systemd/system/launch-register-node.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Register node with Navops Launch
+      [Service]
+      Type=simple
+      ExecStart=/bin/curl -X POST -H "Content-Type: application/json" \
+        -d @/etc/launch_node_details \
+        https://{{ installer }}:8443/v1/node-token/{{ insertnode_request }}
+      Restart=on-failure
+      RestartSec=30s
+{% endif %}
   - path: /etc/pki/rpm-gpg/RPM-GPG-KEY-puppet5-release
     owner: root:root
     permissions: '0644'
