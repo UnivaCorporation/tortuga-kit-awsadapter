@@ -1377,7 +1377,8 @@ insertnode_request = %s
 
         # process template file specified by 'cloud_init_script_template'
         # as YAML cloud-init configuration data
-        return self.expand_cloud_init_user_data_template(config, node=node)
+        return self.expand_cloud_init_user_data_template(config, node=node,
+            insertnode_request=insertnode_request)
 
     def generate_startup_script(self, config: Dict[str, str],
                                 node: Optional[Node] = None,
