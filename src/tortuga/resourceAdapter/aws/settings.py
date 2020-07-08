@@ -16,6 +16,7 @@ from boto3.session import Session
 
 from tortuga.resourceAdapterConfiguration import settings
 
+DEFAULT_SPOT_REQUEST_DURATION = '3600'
 
 GROUP_INSTANCES = {
     'group': 'Instances',
@@ -250,6 +251,16 @@ SETTINGS = {
         display_name='Price when bidding on spot instances',
         requires=['enable_spot'],
         **GROUP_SPOT
+    ),
+    'spot_request_duration': settings.FloatSetting(
+        display_name='The duration, in seconds, a spot request is valid.',
+        **GROUP_SPOT,
+        default=DEFAULT_SPOT_REQUEST_DURATION,
+    ),
+    'spot_provision_timeout': settings.FloatSetting(
+        display_name='The duration, in seconds, to wait for a instance to provision.',
+        **GROUP_SPOT,
+        default='900'
     ),
 
     #

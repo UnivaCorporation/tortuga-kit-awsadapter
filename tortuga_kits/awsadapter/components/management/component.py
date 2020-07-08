@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 from tortuga.kit.mixins.resource_adapter import \
     ResourceAdapterManagementComponentInstaller
 
+COMPONENT_PKG = re.sub(r'\.component$', '', __name__)
 
 class ComponentInstaller(ResourceAdapterManagementComponentInstaller):
     name = 'management'
+    task_modules = ['{}.tasks'.format(COMPONENT_PKG)]
+    installer_only = True
     version = '7.0.3'
     os_list = [
         {'family': 'rhel', 'version': '6', 'arch': 'x86_64'},
