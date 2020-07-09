@@ -2,37 +2,52 @@
 #cloud-config
 # vim: syntax=yaml
 
-# OUTLINE
-# the version of cloud-init available to us at first boot may be ancient
-# and not provide support for latest features (e.g. puppet 5). Therefore,
-# goal is to upgrade everything in sight and re-run modules that are flaky
-# in early versions. Can remove explicit references to cloud-init from
-# runcmd (but not bootcmd) if version at boot is recent.
+# the runcmd module installs the script defined below but scripts-user actually
+# executes it. Both runcmd and scripts-user should precede the puppet module.
+# These values are modified from the AWS CentOS 7 AMI to meet our needs.
+cloud_config_modules:
+  - mounts
+  - yum-add-repo
+  - package-update-upgrade-install
+  - runcmd
+
+cloud_final_modules:
+  - scripts-per-once
+  - scripts-per-boot
+  - scripts-per-instance
+  - scripts-user
+  - puppet
+  - ssh-authkey-fingerprints
+  - keys-to-console
+  - final-message
 
 # each command below runs very early on every boot unless marked with "instance"
 # in which case it should run only once on first boot in lifetime of an instance
 bootcmd:
-  - 'setenforce 0'
-  - 'cloud-init-per instance dns_installer echo {{ installer_ip_address }} {{ installer }} >> /etc/hosts'
+  - setenforce 0
+  - cloud-init-per instance dns_installer echo {{ installer_ip_address }} {{ installer }} >> /etc/hosts
 
 # 1. Disable selinux on reboots
-# 2. upgraded cloud-init properly supports puppet 5
-# 3. upgraded cloud-init creates sudo rule for default user
 runcmd:
-  - 'sed -i "s/SELINUX=enforcing/SELINUX=disabled/g" /etc/selinux/config'
-  - 'cloud-init single --name users-groups --frequency always'
-  - 'cloud-init single --name puppet --frequency always'
+  - sed -i "s/SELINUX=.*/SELINUX=disabled/g" /etc/selinux/config
   - curl -o /etc/pki/ca-trust/source/anchors/tortuga-ca.pem http://{{ installer }}:8008/ca.pem
   - update-ca-trust
+{%- if insertnode_request is defined %}
   - systemctl daemon-reload
   - systemctl start launch-register-node.service
+{%- endif %}
+
+# example to enable Launch as DNS resolver
+# manage_resolv_conf: true
+# resolv_conf:
+#   nameservers: [ '{{ installer }}' ]
 
 # example mount of a filesystem on attached block device
-#mounts:
-#  - [UUID=3cdb34c8-47f0-4e7e-b521-a75b9492e36b, /opt/R, auto, ro, '0', '0']
+# mounts:
+#   - [UUID=3cdb34c8-47f0-4e7e-b521-a75b9492e36b, /opt/R, auto, ro, '0', '0']
 
 write_files:
-{% if insertnode_request is defined %}
+{%- if insertnode_request is defined %}
   - path: /etc/launch_node_details
     owner: root:root
     permissions: '0644'
@@ -54,12 +69,23 @@ write_files:
       Description=Register node with Navops Launch
       [Service]
       Type=simple
+      RemainAfterExit=yes
       ExecStart=/bin/curl -X POST -H "Content-Type: application/json" \
         -d @/etc/launch_node_details \
         https://{{ installer }}:8443/v1/node-token/{{ insertnode_request }}
       Restart=on-failure
-      RestartSec=30s
-{% endif %}
+      RestartSec=15s
+  - path: /etc/systemd/system/puppet.service.d/depends.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Wants=launch-register-node.service
+      [Service]
+      ExecStartPre=/bin/systemctl is-active launch-register-node.service
+      Restart=on-failure
+      RestartSec=15s
+{%- endif %}
   - path: /etc/pki/rpm-gpg/RPM-GPG-KEY-puppet5-release
     owner: root:root
     permissions: '0644'
@@ -100,7 +126,7 @@ packages:
   - vim
 
 # do full upgrade of all installed packages
-package_upgrade: true
+package_upgrade: false
 
 yum_repos:
   puppet5:
@@ -115,4 +141,8 @@ puppet:
   package: puppet-agent
   conf:
     agent:
+      onetime: 'true'
+      runinterval: 10m
+      splay: 'true'
+      splaylimit: 1m
       server: {{ installer }}
