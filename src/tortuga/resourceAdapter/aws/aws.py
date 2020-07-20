@@ -22,6 +22,7 @@ import random
 import socket
 import sys
 import xml.etree.cElementTree as ET
+import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, NoReturn, Optional, Union
@@ -71,7 +72,7 @@ from .exceptions import AWSOperationTimeoutError
 from .helpers import (_get_encoded_list, _quote_str,
                       ec2_get_root_block_devices)
 from .launchRequest import LaunchRequest, init_node_request_queue
-from .settings import SETTINGS
+from .settings import SETTINGS, DEFAULT_SPOT_REQUEST_DURATION
 
 
 class Aws(ResourceAdapter):
@@ -1106,6 +1107,11 @@ class Aws(ResourceAdapter):
             # user_data to bytes before passing it to launch
             args['user_data'] = args['user_data'].encode('utf-8')
 
+        # Configured validatity
+        duration = configDict.get('spot_request_duration',DEFAULT_SPOT_REQUEST_DURATION)
+        valid_until = (datetime.datetime.now() + datetime.timedelta(seconds=duration)).replace(microsecond=0)
+        args['valid_until'] = valid_until.isoformat()
+
         return args
 
     def __post_add_spot_instance_request(
@@ -1123,14 +1129,8 @@ class Aws(ResourceAdapter):
         """
         for r in resv:
             request = {
-                'action': 'add',
-                'spot_instance_request_id': r.id,
                 'softwareprofile': softwareprofile.name,
-                'hardwareprofile': hardwareprofile.name,
             }
-
-            if dnsdomain:
-                request['dnsdomain'] = dnsdomain
 
             if cfgname:
                 request['resource_adapter_configuration'] = cfgname
