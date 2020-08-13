@@ -70,7 +70,7 @@ write_files:
       [Service]
       Type=simple
       RemainAfterExit=yes
-      ExecStart=/bin/curl -X POST -H "Content-Type: application/json" \
+      ExecStart=/bin/curl --fail -X POST -H "Content-Type: application/json" \
         -d @/etc/launch_node_details \
         https://{{ installer }}:8443/v1/node-token/{{ insertnode_request }}
       Restart=on-failure
