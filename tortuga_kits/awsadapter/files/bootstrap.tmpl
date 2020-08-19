@@ -23,6 +23,7 @@ import urllib2
 import time
 import base64
 import json
+import os.path
 
 ### SETTINGS
 
@@ -179,6 +180,16 @@ def bootstrapPuppet():
 def main():
     fqdn = get_instance_data('/local-hostname')
     if override_dns_domain:
+        # Disable NetworkManager dns if we can
+        if os.path.isdir('/etc/NetworkManager/conf.d'):
+            with open('/etc/NetworkManager/conf.d/dns.conf', 'w') as fp:
+                fp.write('# Disabling for Tortuga custom domain name\n')
+                fp.write('[main]\n')
+                fp.write('dns=none\n')
+            enabled = os.system('systemctl is-enabled NetworkManager')
+            if enabled == 0:
+                tryCommand('systemctl restart NetworkManager')
+
         with open('/etc/resolv.conf', 'w') as fp:
             fp.write('# Created by Tortuga\n')
 
