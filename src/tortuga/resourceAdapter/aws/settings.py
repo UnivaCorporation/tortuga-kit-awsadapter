@@ -295,7 +295,7 @@ SETTINGS = {
     'cost_sync_enabled': settings.BooleanSetting(
         display_name='Cost Synchronization Enabled',
         description='Enable AWS cost synchronization',
-        requires=['cost_bucket_name', 'cost_bucket_prefix'],
+        requires=['cost_bucket_name'],
         **GROUP_COST
     ),
     'cost_bucket_name': settings.StringSetting(
