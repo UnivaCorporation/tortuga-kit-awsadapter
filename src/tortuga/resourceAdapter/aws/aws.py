@@ -534,14 +534,20 @@ class Aws(ResourceAdapter):
         # Add AMI
         template_args['ImageId'] = configDict['ami']
 
-        # Get spot price, if any
+        # Get spot price override.  If present this enables spot as well.
         spot_price = adapter_args.get('spot_request',{}).get('price')
+
+        # If we don't have an override spot must be explicitly enabled.
         if spot_price is None:
-            spot_price = configDict.get('spot_price')
+            if configDict.get('enable_spot'):
+                spot_price = configDict.get('spot_price')
         if spot_price:
+            # We intentially aren't using ValidUntil since templates are often
+            # used in autoscaling groups and ValidUntil is a specific date not
+            # a relative duration from spot request creation.
             template_args['InstanceMarketOptions'] = {
                 'MarketType': 'spot',
-                'SpotOptions': {'MaxPrice': spot_price},
+                'SpotOptions': {'MaxPrice': str(spot_price)},
             }
 
         # Try to create a launch template
@@ -1088,7 +1094,7 @@ class Aws(ResourceAdapter):
                 )
 
                 resv = conn.request_spot_instances(
-                    spot_price,
+                    str(spot_price),
                     configDict['ami'],
                     **args,
                 )
@@ -1137,7 +1143,7 @@ class Aws(ResourceAdapter):
                     )
 
                     resv = conn.request_spot_instances(
-                        spot_price,
+                        str(spot_price),
                         configDict['ami'], **args)
 
                     # Update instance cache
