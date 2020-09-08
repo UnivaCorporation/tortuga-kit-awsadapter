@@ -1109,8 +1109,9 @@ class Aws(ResourceAdapter):
 
         # Configured validatity
         duration = configDict.get('spot_request_duration',DEFAULT_SPOT_REQUEST_DURATION)
-        valid_until = (datetime.datetime.now() + datetime.timedelta(seconds=duration)).replace(microsecond=0)
-        args['valid_until'] = valid_until.isoformat()
+        time_now = datetime.datetime.now().astimezone().replace(microsecond=0)
+        expire_at = time_now + datetime.timedelta(seconds=duration)
+        args['valid_until'] = expire_at.isoformat()
 
         return args
 
