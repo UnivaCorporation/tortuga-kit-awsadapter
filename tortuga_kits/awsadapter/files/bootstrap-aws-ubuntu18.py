@@ -121,7 +121,7 @@ class BootstrapperBase(ReqMixin):
             with open('/etc/resolv.conf', 'w') as fp:
                 fp.write('# Created by Tortuga\n')
                 if self.dns_search:
-                    fp.write('search {}}\n'.format(self.dns_search))
+                    fp.write('search {}\n'.format(self.dns_search))
                 if self.dns_opts:
                     fp.write('options {}\n'.format(self.dns_opts))
                 if not self.dns_nameservers:
