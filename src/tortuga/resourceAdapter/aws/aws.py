@@ -2402,11 +2402,24 @@ fqdn: %s
 
         is_boto3_conn = isinstance(conn, ServiceResource)
         if is_boto3_conn:
+            # Get image and call load() method to ensure AMI ID is valid;
+            # load() will throw an exception if AMI is invalid.
             ami = conn.Image(image_id)
+            try:
+                ami.load()
+            except Exception as ex:
+                self._logger.error(f"Invalid AMI: {str(ex)}")
+                raise ex
+
+            # Get block devices for AMI
             block_devices = \
                 [bdm['DeviceName'] for bdm in ami.block_device_mappings]
         else:
             ami = conn.get_image(image_id)
+            if ami is None:
+                msg = f"Invalid AMI: image ID {image_id} not found"
+                self._logger.error(msg)
+                raise ConfigurationError(msg)
             block_devices = list(ami.block_device_mapping)
 
         # determine root device name
