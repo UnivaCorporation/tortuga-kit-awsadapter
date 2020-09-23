@@ -118,6 +118,7 @@ class BootstrapperBase(ReqMixin):
             fp.write('{}\t{}\n'.format(
                 self.inst_ip, self.inst_hname))
         if self.override_dns_domain:
+            self.try_cmd('rm -f /etc/resolv.conf')
             with open('/etc/resolv.conf', 'w') as fp:
                 fp.write('# Created by Tortuga\n')
                 if self.dns_search:
