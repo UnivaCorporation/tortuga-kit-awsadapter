@@ -2,7 +2,6 @@
 
 import itertools, json, os, random, socket, subprocess, sys, tempfile, time
 
-# Default settings
 operating_system = 'centos'
 cloud_provider = 'aws'
 installerIpAddress = None
@@ -68,7 +67,7 @@ class ReqMixin:
         return res.read().decode()
 
 
-class ProviderBase(ReqMixin):
+class ProvBase(ReqMixin):
     def __init__(self):
         self.bootstrapper = None
 
@@ -105,8 +104,8 @@ class BootstrapperBase(ReqMixin):
     def run(self):
         self.cfg_dns()
         self.add_node()
-        self.disable_selinux()
-        self.install_puppet()
+        self.dis_selinux()
+        self.inst_puppet()
         self.boot_puppet()
 
     def cfg_dns(self):
@@ -191,36 +190,39 @@ class BootstrapperBase(ReqMixin):
         )
         self.try_cmd(self.cert_update_cmd)
 
-    def disable_selinux(self):
+    def dis_selinux(self):
         self.try_cmd('setenforce permissive')
 
-    def install_puppet(self):
+    def inst_puppet(self):
         raise NotImplementedError()
 
     def boot_puppet(self):
         self.try_cmd('touch /tmp/puppet_bootstrap.log')
-        cmd = (
-            '/opt/puppetlabs/bin/puppet agent --logdest '
-            '/tmp/puppet_bootstrap.log --no-daemonize --onetime --server {}'
-            ' --waitforcert 120'.format(self.inst_hname)
-        )
-        self.try_cmd(cmd, good_return_values=(0, 2), time_limit=10 * 60)
+        cmd = ('/opt/puppetlabs/bin/puppet agent'
+               ' --logdest /tmp/puppet_bootstrap.log --no-daemonize'
+               ' --splay --splaylimit 3m --onetime'
+               ' --server {} --waitforcert 120'.format(self.inst_hname))
+        self.try_cmd(cmd, valid_return=(0, 2), time_limit=10 * 60)
 
-    def try_cmd(self, cmd, good_return_values=(0,), retry_limit=0,
-                time_limit=0, max_sleep_time=15000, sleep_interval=2000):
-        total_sleep = 0
-        for retries in itertools.count(0):
+    def try_cmd(self, cmd, valid_return=(0,), retries=0, time_limit=0,
+                max_sleep=15000, sleep_int=2000):
+        sleep = 0
+        for r in itertools.count(0):
             rv = subprocess.Popen(cmd, shell=True).wait()
-            if rv in good_return_values or retries >= retry_limit or \
-                    total_sleep >= time_limit:
+            if rv in valid_return:
                 return rv
-            seed = min(max_sleep_time, sleep_interval * 2 ** retries)
+            if retries is not None and r >= retries:
+                return rv
+            if time_limit is not None and sleep >= time_limit:
+                return rv
+
+            seed = min(max_sleep, sleep_int * 2 ** r)
             sleep_for = (seed / 2 + random.randint(0, seed / 2)) / 1000.0
-            total_sleep += sleep_for
+            sleep += sleep_for
             time.sleep(sleep_for)
 
 
-class AwsProvider(ProviderBase):
+class AwsProv(ProvBase):
     def get_node_name(self):
         return self._get_inst_data('/local-hostname')
 
@@ -245,7 +247,7 @@ class AwsProvider(ProviderBase):
             raise Exception('Unable to communicate with metadata service')
 
 
-class AzureProvider(ProviderBase):
+class AzureProv(ProvBase):
     def get_node_name(self):
         if self.bootstrapper.override_dns_domain:
             return socket.getfqdn() + "." + self.bootstrapper.dns_domain
@@ -285,7 +287,7 @@ class AzureProvider(ProviderBase):
             raise Exception('Unable to communicate with metadata webservice')
 
 
-class GcpProvider(ProviderBase):
+class GcpProv(ProvBase):
     def get_node_name(self):
         return self._get_inst_data('/hostname')
 
@@ -309,7 +311,7 @@ class GcpProvider(ProviderBase):
 
 
 class CentOsBootstrapper(BootstrapperBase):
-    def install_puppet(self):
+    def inst_puppet(self):
         if self._is_installed('puppet-agent'):
             return
         if not self._is_installed('git'):
@@ -319,7 +321,7 @@ class CentOsBootstrapper(BootstrapperBase):
             ver = self._get_major_ver()
             u = 'http://yum.puppetlabs.com/puppet5/{}-el-{}.noarch.rpm'.format(
                 pkg, ver)
-            result = self.try_cmd('rpm -ivh {}'.format(u), retry_limit=5)
+            result = self.try_cmd('rpm -ivh {}'.format(u), retries=5)
             if result != 0:
                 raise Exception('Unable to install package: {}'.format(pkg))
         self._install('puppet-agent')
@@ -347,7 +349,7 @@ class CentOsBootstrapper(BootstrapperBase):
         if opts:
             cmd.append(opts)
         cmd.extend(['-y', 'install', pkg])
-        result = self.try_cmd(' '.join(cmd), retry_limit=retries)
+        result = self.try_cmd(' '.join(cmd), retries=retries)
         if result != 0:
             raise Exception('Error installing package: {}'.format(pkg))
 
@@ -360,7 +362,7 @@ class DebianBootstrapper(BootstrapperBase):
     cert_ext = "crt"
     cert_update_cmd = "update-ca-certificates"
 
-    def install_puppet(self):
+    def inst_puppet(self):
         if self._is_installed('puppet-agent'):
             return
         pkg = 'puppet5-release'
@@ -414,7 +416,7 @@ class DebianBootstrapper(BootstrapperBase):
 
     def _install(self, pkg, retries=10):
         cmd = 'apt-get --assume-yes install {}'.format(pkg)
-        result = self.try_cmd(cmd, retry_limit=retries)
+        result = self.try_cmd(cmd, retries=retries)
         if result != 0:
             raise Exception('Error installing package: {}'.format(pkg))
 
@@ -424,7 +426,7 @@ class DebianBootstrapper(BootstrapperBase):
 
 
 BOOTSTRAPPERS = {'centos': CentOsBootstrapper, 'debian': DebianBootstrapper}
-PROVIDERS = {'aws': AwsProvider, 'azure': AzureProvider, 'gcp': GcpProvider}
+PROVIDERS = {'aws': AwsProv, 'azure': AzureProv, 'gcp': GcpProv}
 
 
 if __name__ == '__main__':
