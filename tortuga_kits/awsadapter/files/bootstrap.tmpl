@@ -21,7 +21,6 @@ import subprocess
 import random
 import urllib2
 import time
-import base64
 import json
 import os.path
 
@@ -112,8 +111,11 @@ def tryCommand(command, good_return_values=(0,), retry_limit=0,
     total_sleep_time = 0
     for retries in itertools.count(0):
         returned = subprocess.Popen(command, shell=True).wait()
-        if returned in good_return_values or \
-                retries >= retry_limit or total_sleep_time >= time_limit:
+        if returned in good_return_values:
+            return returned
+        if retry_limit is not None and retries >= retry_limit:
+            return returned
+        if time_limit is not None and total_sleep_time >= time_limit:
             return returned
 
         seed = min(max_sleep_time, sleep_interval * 2 ** retries)
@@ -171,10 +173,11 @@ def bootstrapPuppet():
     tryCommand('touch /tmp/puppet_bootstrap.log')
     cmd = ('/opt/puppetlabs/bin/puppet agent'
            ' --logdest /tmp/puppet_bootstrap.log'
-           ' --no-daemonize'
+           ' --no-daemonize --splay --splaylimit 3m'
            ' --onetime --server %s --waitforcert 120' % installerHostName)
 
-    tryCommand(cmd, good_return_values=(0, 2), time_limit=10*60)
+    tryCommand(cmd, good_return_values=(0, 2), retry_limit=None,
+               time_limit=None)
 
 
 def main():
