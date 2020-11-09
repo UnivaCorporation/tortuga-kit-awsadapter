@@ -316,10 +316,10 @@ class CentOsBootstrapper(BootstrapperBase):
             return
         if not self._is_installed('git'):
             self._install('git')
-        pkg = 'puppet5-release'
+        pkg = 'puppet6-release'
         if not self._is_installed(pkg):
             ver = self._get_major_ver()
-            u = 'http://yum.puppetlabs.com/puppet5/{}-el-{}.noarch.rpm'.format(
+            u = 'http://yum.puppetlabs.com/puppet6/{}-el-{}.noarch.rpm'.format(
                 pkg, ver)
             result = self.try_cmd('rpm -ivh {}'.format(u), retries=5)
             if result != 0:
@@ -365,7 +365,7 @@ class DebianBootstrapper(BootstrapperBase):
     def inst_puppet(self):
         if self._is_installed('puppet-agent'):
             return
-        pkg = 'puppet5-release'
+        pkg = 'puppet6-release'
         if not self._is_installed(pkg):
             ver = self._get_ver()
             u = 'http://apt.puppetlabs.com/{}-{}.deb'.format(pkg, ver)

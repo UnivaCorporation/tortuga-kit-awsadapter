@@ -61,9 +61,9 @@ def _isPackageInstalled(pkgName):
 
 
 def installPuppet(ostype, vers):
-    pkgname = 'puppet5-release'
+    pkgname = 'puppet6-release'
 
-    url = 'http://yum.puppetlabs.com/puppet5'
+    url = 'http://yum.puppetlabs.com/puppet6'
 
     if ostype == 'fedora':
         url += '/{0}-fedora-{1}.noarch.rpm'.format(pkgname, vers)
