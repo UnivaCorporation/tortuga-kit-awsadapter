@@ -537,18 +537,23 @@ class Aws(ResourceAdapter):
         # Get spot price override.  If present this enables spot as well.
         spot_price = adapter_args.get('spot_request',{}).get('price')
 
+
+        # We intentially aren't using ValidUntil since templates are often
+        # used in autoscaling groups and ValidUntil is a specific date not
+        # a relative duration from spot request creation.
+        spot_args = { 'MarketType': 'spot' }
+
         # If we don't have an override spot must be explicitly enabled.
         if spot_price is None:
             if configDict.get('enable_spot'):
+                # This is a spot request.  Don't set price until we know it is good.
+                template_args['InstanceMarketOptions'] = spot_args
                 spot_price = configDict.get('spot_price')
-        if spot_price:
-            # We intentially aren't using ValidUntil since templates are often
-            # used in autoscaling groups and ValidUntil is a specific date not
-            # a relative duration from spot request creation.
-            template_args['InstanceMarketOptions'] = {
-                'MarketType': 'spot',
-                'SpotOptions': {'MaxPrice': str(spot_price)},
-            }
+
+        if spot_price is not None:
+            # This is definitely a spot request and has a good price
+            spot_args['SpotOptions'] =  {'MaxPrice': str(spot_price)}
+            template_args['InstanceMarketOptions'] = spot_args
 
         # Try to create a launch template
         try:
@@ -1057,7 +1062,7 @@ class Aws(ResourceAdapter):
 
         spot_price = addNodesRequest.get('spot_instance_request',{}).get('price')
         if spot_price is None:
-            spot_price = configDict.get('spot_price')
+            spot_price = configDict.get('spot_price','')
 
         # Set up insertnode_request
         insertnode_request = {
