@@ -86,7 +86,7 @@ write_files:
       Restart=on-failure
       RestartSec=15s
 {%- endif %}
-  - path: /etc/pki/rpm-gpg/RPM-GPG-KEY-puppet5-release
+  - path: /etc/pki/rpm-gpg/RPM-GPG-KEY-puppet6-release
     owner: root:root
     permissions: '0644'
     content: |
@@ -129,12 +129,12 @@ packages:
 package_upgrade: false
 
 yum_repos:
-  puppet5:
-    name: Puppet 5 Repository el $releasever - $basearch
+  puppet6:
+    name: Puppet 6 Repository el $releasever - $basearch
     enabled: 1
-    baseurl: http://puppet-mirror.univa.com/yum.puppetlabs.com/puppet5/el/$releasever/$basearch
+    baseurl: http://puppet-mirror.univa.com/yum.puppetlabs.com/puppet6/el/$releasever/$basearch
     gpgcheck: 1
-    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-puppet5-release
+    gpgkey: file:///etc/pki/rpm-gpg/RPM-GPG-KEY-puppet6-release
 
 puppet:
   conf_file: /etc/puppetlabs/puppet/puppet.conf
